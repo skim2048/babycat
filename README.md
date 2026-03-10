@@ -2,7 +2,7 @@
 
 > **목적**: 이 문서는 Claude Code와의 협업을 위한 프로젝트 시작 기준 문서입니다.  
 > 미결 사항(Open Issues)이 다수 존재하며, 설계 진행 중 이 문서를 지속 갱신합니다.  
-> **버전**: v0.8 (Draft)
+> **버전**: v0.9 (Draft)
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -14,6 +14,7 @@
 | v0.6 | 컨테이너 통합 (App+NanoLLM → App, DB → API 서버 내장 SQLite), OI-08 확정 |
 | v0.7 | Branch A 구조 변경: GStreamer tee 제거, MediaMTX가 카메라 직접 pull. GStreamer는 MediaMTX에서 읽어 Branch B(AI)만 처리. config/mediamtx.yml 추가 |
 | v0.8 | Branch B에 videorate 복원 (역할 재정의: FPS 제한 → 카메라 FPS 정규화). 프레임 샘플링 전략 및 gc.collect() 주의사항 추가. VILA1.5-3b 벤치마크 결과 반영 |
+| v0.9 | Ring Buffer 역할 재정의 (VLM 추론 전용). 클립 저장을 MediaMTX 세그먼트 녹화로 이전 (OI-06 방향 확정). OI-04 범위 축소 |
 
 ---
 
@@ -93,6 +94,7 @@ flowchart TD
 
         subgraph MEDIAMTX["MediaMTX 컨테이너"]
             MTX["RTSP/WebRTC\n스트리밍 서버\n(config/mediamtx.yml)"]
+            REC["세그먼트 녹화\n(순환 저장, 공유 볼륨)"]
         end
 
         subgraph APP["App 컨테이너\n(GStreamer + NanoLLM + Python)"]
@@ -107,7 +109,7 @@ flowchart TD
 
             subgraph PYAPP["Python Application"]
                 ACCUM["프레임 누적\n(N장 모일 때까지 대기)"]
-                RING["Ring Buffer\n(최근 N초 순환 저장\n※ 약 7.91MB/frame @ 1080p RGBA)"]
+                RING["Ring Buffer\n(VLM 전용, 1fps × 30s\n※ ~237MB @ 1080p RGBA)"]
                 INFER["추론 요청\n(비동기)"]
                 VLM["VLM 추론\n(NanoLLM/VILA)"]
                 JUDGE["이벤트 판정\n(연속 감지 조건)"]
@@ -126,10 +128,11 @@ flowchart TD
 
     STORAGE["MP4 클립\n(로컬 스토리지)"]
 
-    %% Branch A: 카메라 → MediaMTX → 클라이언트
+    %% Branch A: 카메라 → MediaMTX → 클라이언트 + 세그먼트 녹화
     CAM -->|"RTSP Stream (H.264)"| MTX
     MTX -->|"실시간 스트림"| WEB
     MTX -->|"실시간 스트림"| APP_MOB
+    MTX -->|"순환 세그먼트 기록"| REC
 
     %% Branch B: MediaMTX → GStreamer → AI 분석
     MTX -->|"RTSP (내부)"| SRC
@@ -141,8 +144,8 @@ flowchart TD
     VLM -->|"감지 결과"| JUDGE
 
     %% 이벤트 처리
-    JUDGE -->|"이상 감지"| RING
-    RING -->|"사전 프레임 병합"| STORAGE
+    JUDGE -->|"이상 감지: 세그먼트 보존 요청"| REC
+    REC -->|"클립 파일"| STORAGE
     JUDGE -->|"알림 발송"| FCM
     FCM --> WEB
     FCM --> APP_MOB
@@ -157,8 +160,12 @@ flowchart TD
 - `videorate(target_fps)`: 카메라 FPS(25/30/60)에 무관하게 균일 간격 프레임 추출. `target_fps = N_frames / inference_interval`로 결정 (OI-02)
 - `queue(drop=true, max-buffers 제한)`: VLM 추론 중 프레임 적체 방지. 추론 완료 후 최신 프레임부터 재개
 - Python: `appsink`에서 N장 누적 → `ChatHistory`에 순서대로 주입 → VLM 추론 → `gc.collect()` 필수 (메모리 누수 방지, NanoLLM GitHub issue #39)
-- Ring Buffer: 최근 N초 프레임을 메모리에 순환 보관 (1080p RGBA 기준 약 7.91MB/frame)
-- 이상 감지 시 Ring Buffer(사전) + 이후 프레임을 병합하여 MP4로 저장
+- **Ring Buffer (VLM 전용)**: 1fps × 30초 = 30프레임 (~237MB). VLM 컨텍스트 유지용. 클립 저장 목적 없음
+
+**클립 저장 (MediaMTX 세그먼트 녹화)**:
+- MediaMTX가 스트림을 세그먼트 단위(예: 30초)로 공유 볼륨에 순환 저장
+- 이상 감지 시 App이 해당 세그먼트 보존을 요청 → pre-event + post-event 클립 구성
+- 클립은 원본 H.264 화질 그대로 full FPS 보존. Python에서 별도 인코딩 불필요
 
 ### 4.3 설계 원칙
 
@@ -227,9 +234,9 @@ Claude Code와 함께 아래 항목들을 순서대로 결정한다.
 | OI-01 | VLM 모델 최종 선정 | Jetson에서 후보 모델별 메모리/추론속도 벤치마크 |
 | OI-02 | 프레임 샘플링 주기 (Branch B FPS) | 추론 지연과 감지 반응성 간 트레이드오프 측정 |
 | OI-03 | 연속 감지 조건 기준값 (N회, T초) | 오탐율과 반응속도 간 균형점 실험 |
-| OI-04 | Ring Buffer 크기 (N초) · 저장 포맷 · 저장 FPS | 메모리 예산, 클립 저장 요건과 연동하여 결정. 저장 포맷(RGB vs 인코딩) 및 저장 FPS도 함께 결정 |
+| OI-04 | Ring Buffer 크기 (N초) | VLM 전용으로 역할 축소. 1fps × 30초 = ~237MB를 기본값으로 채택. Phase 1에서 컨텍스트 윈도우 실험 후 조정 |
 | OI-05 | ~~Tee 분리 파이프라인 구조 채택 여부~~ → **확정** | GStreamer tee 제거. MediaMTX가 카메라를 직접 pull(Branch A). GStreamer는 MediaMTX에서 읽어 Branch B만 처리. `config/mediamtx.yml`로 관리 |
-| OI-06 | 이벤트 영상 클립 저장 구현 방식 | Ring Buffer 크기, 스토리지 용량 계획과 연동 |
+| OI-06 | 이벤트 영상 클립 저장 구현 방식 → **방향 확정** | MediaMTX 세그먼트 녹화 채택. 세그먼트 길이·보존 개수·공유 볼륨 경로는 구현 시 결정 |
 | OI-07 | 웹앱 vs Android 앱 우선순위 | 보류 유지. Phase 1 FCM 종단 테스트를 위한 최소 테스트 클라이언트 필요 여부는 추후 결정 |
 | OI-08 | ~~컨테이너 간 통신 방식~~ → **확정** | App+NanoLLM 통합으로 컨테이너 간 추론 통신 제거. App ↔ API 서버는 Docker 내부 네트워크 REST HTTP. DB는 API 서버 내장 SQLite |
 
