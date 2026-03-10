@@ -2,7 +2,7 @@
 
 > **목적**: 이 문서는 Claude Code와의 협업을 위한 프로젝트 시작 기준 문서입니다.  
 > 미결 사항(Open Issues)이 다수 존재하며, 설계 진행 중 이 문서를 지속 갱신합니다.  
-> **버전**: v0.7 (Draft)
+> **버전**: v0.8 (Draft)
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -13,6 +13,7 @@
 | v0.5 | Branch A 패스스루 구조 확정, 컨테이너 구성에 API 서버·DB 추가, OI 항목 업데이트 |
 | v0.6 | 컨테이너 통합 (App+NanoLLM → App, DB → API 서버 내장 SQLite), OI-08 확정 |
 | v0.7 | Branch A 구조 변경: GStreamer tee 제거, MediaMTX가 카메라 직접 pull. GStreamer는 MediaMTX에서 읽어 Branch B(AI)만 처리. config/mediamtx.yml 추가 |
+| v0.8 | Branch B에 videorate 복원 (역할 재정의: FPS 제한 → 카메라 FPS 정규화). 프레임 샘플링 전략 및 gc.collect() 주의사항 추가. VILA1.5-3b 벤치마크 결과 반영 |
 
 ---
 
@@ -100,10 +101,12 @@ flowchart TD
                 QB["queue\n(drop=true, max-buffers 제한)"]
                 DEC["nvv4l2decoder\n(GPU 하드웨어 디코딩)"]
                 CONV["nvvidconv\n(포맷 변환, RGBA)"]
+                RATE["videorate\n(FPS 정규화: target_fps)"]
                 SINK["appsink"]
             end
 
             subgraph PYAPP["Python Application"]
+                ACCUM["프레임 누적\n(N장 모일 때까지 대기)"]
                 RING["Ring Buffer\n(최근 N초 순환 저장\n※ 약 7.91MB/frame @ 1080p RGBA)"]
                 INFER["추론 요청\n(비동기)"]
                 VLM["VLM 추론\n(NanoLLM/VILA)"]
@@ -130,9 +133,10 @@ flowchart TD
 
     %% Branch B: MediaMTX → GStreamer → AI 분석
     MTX -->|"RTSP (내부)"| SRC
-    SRC --> QB --> DEC --> CONV --> SINK
+    SRC --> QB --> DEC --> CONV --> RATE --> SINK
     SINK -->|"프레임 Push"| RING
-    SINK -->|"프레임 추출 (비동기)"| INFER
+    SINK -->|"프레임 Push"| ACCUM
+    ACCUM -->|"N장 누적 완료"| INFER
     INFER -->|"추론 요청"| VLM
     VLM -->|"감지 결과"| JUDGE
 
@@ -150,7 +154,9 @@ flowchart TD
 
 **Branch B — AI 분석**:
 - GStreamer가 MediaMTX에서 스트림을 읽어 GPU 디코딩 수행 (`nvv4l2decoder`)
-- `appsink`의 `drop=true`, `max-buffers` 제한으로 파이프라인 블로킹 방지
+- `videorate(target_fps)`: 카메라 FPS(25/30/60)에 무관하게 균일 간격 프레임 추출. `target_fps = N_frames / inference_interval`로 결정 (OI-02)
+- `queue(drop=true, max-buffers 제한)`: VLM 추론 중 프레임 적체 방지. 추론 완료 후 최신 프레임부터 재개
+- Python: `appsink`에서 N장 누적 → `ChatHistory`에 순서대로 주입 → VLM 추론 → `gc.collect()` 필수 (메모리 누수 방지, NanoLLM GitHub issue #39)
 - Ring Buffer: 최근 N초 프레임을 메모리에 순환 보관 (1080p RGBA 기준 약 7.91MB/frame)
 - 이상 감지 시 Ring Buffer(사전) + 이후 프레임을 병합하여 MP4로 저장
 
@@ -203,7 +209,7 @@ flowchart TD
 | 리스크 | 내용 | 대응 방향 |
 |---|---|---|
 | 메모리 부족 (OOM) | VLM + Ring Buffer + 영상 파이프라인이 16GB 통합 메모리를 경합 | 컴포넌트별 메모리 예산 사전 설계, 모델 양자화(INT4/INT8) |
-| Ring Buffer 크기 | 1080p RGB 기준 1프레임 약 6.22MB — N초 버퍼가 메모리에 직접 영향 | 해상도·FPS·버퍼 시간 트레이드오프 결정 필요 |
+| Ring Buffer 크기 | 1080p RGBA 기준 1프레임 약 7.91MB (실측) — N초 버퍼가 메모리에 직접 영향 | 해상도·FPS·버퍼 시간 트레이드오프 결정 필요 |
 | 추론 지연 | VLM 추론 수 초 소요 — Branch B FPS와 감지 반응성에 영향 | TensorRT 최적화, 샘플링 주기 조정 |
 | 파이프라인 블로킹 | appsink 처리 지연 시 GStreamer 파이프라인 정지 위험 | drop=true, max-buffers 제한으로 오래된 프레임 강제 폐기 |
 | VLM 오탐율 | 유사 행동 혼동 (정상 핥기 vs. 과다 핥기 등) | 연속 감지 조건, 신뢰도 임계값 튜닝 |
