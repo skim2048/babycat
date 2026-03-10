@@ -1,0 +1,18 @@
+###############################################
+# MediaMTX configuration for Petcubator
+###############################################
+
+# Log level
+logLevel: info
+
+# RTSP server
+rtspAddress: :8554
+
+# WebRTC server
+webrtcAddress: :8889
+
+paths:
+  live:
+    # Pull directly from IP camera (Branch A passthrough)
+    source: rtsp://tapoadmin:ace4421000!@192.168.1.101:554/stream1
+    sourceProtocol: tcp
