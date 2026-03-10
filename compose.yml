@@ -1,0 +1,65 @@
+services:
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554"   # RTSP
+      - "8889:8889"   # WebRTC HTTP
+      - "8890:8890/udp"  # WebRTC ICE
+    volumes:
+      - ./config/mediamtx.yml:/mediamtx.yml:ro
+      - recordings:/recordings
+    networks:
+      - petcubator
+
+  app:
+    image: petcubator-app
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    container_name: petcubator-app
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      # NVIDIA GStreamer plugins are mounted from host (see volumes below)
+      - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+    volumes:
+      - /home/skim/data/models:/data/models                        # NanoLLM model cache (MLC compiled)
+      - recordings:/recordings                                      # shared with mediamtx (read clips)
+      - ./src/app:/app                                              # live-mount source for development
+      # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
+      - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
+      - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
+    depends_on:
+      - mediamtx
+    networks:
+      - petcubator
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    container_name: petcubator-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - api_data:/data
+      - recordings:/recordings:ro             # read-only access to clips
+    networks:
+      - petcubator
+
+volumes:
+  recordings:
+    driver: local
+  api_data:
+    driver: local
+
+networks:
+  petcubator:
+    driver: bridge

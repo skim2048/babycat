@@ -16,3 +16,11 @@ paths:
     # Pull directly from IP camera (Branch A passthrough)
     source: rtsp://tapoadmin:ace4421000!@192.168.1.101:554/stream1
     sourceProtocol: tcp
+
+    # Segment recording for event clip storage (OI-06)
+    # Segments are stored on shared volume; App preserves relevant segments on event detection
+    record: yes
+    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
+    recordFormat: fmp4
+    recordSegmentDuration: 60s
+    recordDeleteAfter: 2h
