@@ -16,12 +16,15 @@ FROM dustynv/nano_llm:r36.4.0
 # This avoids the l4t-core pre-install script that requires /proc/device-tree at build time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gstreamer1.0-plugins-bad \
+        kmod \
     && rm -rf /var/lib/apt/lists/*
 
 # Python dependencies for the application
 RUN pip install --no-cache-dir \
     pillow \
-    numpy
+    numpy \
+    google-auth \
+    requests
 
 WORKDIR /app
 COPY src/app/ .

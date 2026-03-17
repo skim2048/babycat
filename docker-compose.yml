@@ -27,14 +27,35 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       # NVIDIA GStreamer plugins are mounted from host (see volumes below)
       - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
-      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+      - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+      # 클립 저장 경로 (MediaMTX 세그먼트 → 이벤트 보존)
+      - RECORDINGS_DIR=/recordings/live
+      - EVENTS_DIR=/recordings/events
+      # FCM 알림 (미설정 시 로그 출력만)
+      # FCM 활성화 방법:
+      #   1. Firebase Console에서 service account JSON 키 발급 → config/fcm_credentials.json 저장
+      #   2. 아래 두 줄 주석 해제 후 FCM_TOKEN 값 입력
+      #   3. volumes 섹션의 fcm_credentials 마운트도 주석 해제
+      #- FCM_CREDENTIALS=/run/fcm/credentials.json
+      #- FCM_TOKEN=<기기_FCM_등록_토큰>
+    group_add:
+      - video                                                       # /dev/nvmap은 video 그룹(GID 44) 소유 — NvRmMemInitNvmap 접근 필수
+    devices:
+      - /dev/v4l2-nvdec                                             # HW 비디오 디코더 (Orin NX)
+      - /dev/v4l2-nvenc                                             # HW 비디오 인코더 (Orin NX)
+      - /dev/nvmap                                                  # GPU 메모리 관리자 (nvv4l2decoder 필수)
+      - /dev/nvhost-ctrl-gpu                                        # GPU 제어
+      - /dev/nvhost-gpu                                             # GPU 채널
     volumes:
       - /home/skim/data/models:/data/models                        # NanoLLM model cache (MLC compiled)
       - recordings:/recordings                                      # shared with mediamtx (read clips)
+      #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
       - ./src/app:/app                                              # live-mount source for development
       # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
+      - /tmp/nvscsock:/tmp/nvscsock                                 # NvSciIPC 데몬 소켓 — NvMMLite HW 경로 필수 (없으면 cuvidv4l2로 폴백 후 CUDA_GPU_ID EINVAL)
+    ipc: host      # NvSciIPC uses POSIX shm/mqueue on host IPC namespace
     depends_on:
       - mediamtx
     networks:

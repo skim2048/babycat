@@ -2,7 +2,7 @@
 
 > **목적**: 이 문서는 Claude Code와의 협업을 위한 프로젝트 시작 기준 문서입니다.  
 > 미결 사항(Open Issues)이 다수 존재하며, 설계 진행 중 이 문서를 지속 갱신합니다.  
-> **버전**: v0.9 (Draft)
+> **버전**: v1.0
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -15,6 +15,7 @@
 | v0.7 | Branch A 구조 변경: GStreamer tee 제거, MediaMTX가 카메라 직접 pull. GStreamer는 MediaMTX에서 읽어 Branch B(AI)만 처리. config/mediamtx.yml 추가 |
 | v0.8 | Branch B에 videorate 복원 (역할 재정의: FPS 제한 → 카메라 FPS 정규화). 프레임 샘플링 전략 및 gc.collect() 주의사항 추가. VILA1.5-3b 벤치마크 결과 반영 |
 | v0.9 | Ring Buffer 역할 재정의 (VLM 추론 전용). 클립 저장을 MediaMTX 세그먼트 녹화로 이전 (OI-06 방향 확정). OI-04 범위 축소 |
+| v1.0 | Phase 1 완료: FCM 알림 구현(stub), 영상 클립 보존(preserve_clip), E2E 통합 테스트(12/12 PASS). OI-06 확정 |
 
 ---
 
@@ -253,12 +254,12 @@ Claude Code와 함께 아래 항목들을 순서대로 결정한다.
 - [ ] Branch B FPS 및 Ring Buffer 크기 실험 → **OI-02, OI-04 결정**
 
 ### Phase 1 — 핵심 감지 시스템 구축
-- [ ] GStreamer 파이프라인 구현 (확정된 구조 기반)
-- [ ] VLM 프롬프트 설계 (7종 행동 분류)
-- [ ] 이벤트 판정 로직 구현 → **OI-03 결정**
-- [ ] FCM 연동 및 알림 발송 구현
-- [ ] 영상 클립 저장 구현 → **OI-06 결정**
-- [ ] 종단 통합 테스트
+- [x] GStreamer 파이프라인 구현 (확정된 구조 기반)
+- [x] VLM 프롬프트 설계 (7종 행동 분류)
+- [x] 이벤트 판정 로직 구현 (EventJudge, CONSEC_N) → **OI-03 미결** (값 튜닝은 Phase 2)
+- [x] FCM 연동 및 알림 발송 구현 (stub; 실 FCM_CREDENTIALS 설정 시 활성화)
+- [x] 영상 클립 저장 구현 (preserve_clip) → **OI-06 확정**
+- [x] 종단 통합 테스트 (test_e2e.py 12/12 PASS)
 
 ### Phase 2 — 청각 감지 추가 및 정확도 개선
 - [ ] 마이크 입력 통합
