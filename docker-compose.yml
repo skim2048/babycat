@@ -78,14 +78,30 @@ services:
     networks:
       - wally-backend
 
-  frontend:
+  webapp:
     build:
       context: ./webapp
       dockerfile: docker/Dockerfile
-    container_name: wally-frontend
+    container_name: wally-webapp
     restart: unless-stopped
     ports:
       - "3000:80"
+    profiles:
+      - prod
+    networks:
+      - wally-backend
+
+  webapp-dev:
+    image: node:22-alpine
+    container_name: wally-webapp-dev
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "5176:5176"
+    volumes:
+      - ./webapp:/app
+    profiles:
+      - dev
     networks:
       - wally-backend
 
