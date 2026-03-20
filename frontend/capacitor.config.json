@@ -1,0 +1,13 @@
+{
+  "appId": "com.wally.app",
+  "appName": "wally",
+  "webDir": "dist",
+   "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#FFFBF5",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    }
+  }
+}
