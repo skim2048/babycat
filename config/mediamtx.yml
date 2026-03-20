@@ -10,6 +10,8 @@ rtspAddress: :8554
 
 # WebRTC server
 webrtcAddress: :8889
+webrtcICEHostNAT1To1IPs:
+  - 172.27.1.205
 
 paths:
   live:

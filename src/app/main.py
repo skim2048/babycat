@@ -31,6 +31,8 @@ from google.oauth2 import service_account
 from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
+from debug_server import state as debug_state, start_debug_server
+
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://mediamtx:8554/live")
@@ -38,7 +40,7 @@ MODEL_ID     = os.getenv("VLM_MODEL",    "Efficient-Large-Model/VILA1.5-3b")
 
 # Branch B 프레임 샘플링 (OI-02: Phase 1에서 실 데이터 기반 결정)
 TARGET_FPS = float(os.getenv("TARGET_FPS", "1.0"))  # videorate 타겟 (fps)
-N_FRAMES   = int(os.getenv("N_FRAMES",   "1"))       # 추론당 프레임 수
+N_FRAMES   = int(os.getenv("N_FRAMES",   "4"))       # 추론당 프레임 수
 
 # Ring Buffer 크기 (OI-04: 1fps × 30s = 30프레임, ~237MB RGBA)
 RING_SIZE = int(os.getenv("RING_SIZE", "30"))
@@ -70,21 +72,23 @@ BEHAVIORS = {
     "excessive_panting":  "헐떡임 과다",
 }
 
-INFERENCE_PROMPT = """\
-You are a veterinary monitoring AI watching a dog inside a pet house.
-Analyze the image and determine if the dog shows any of these abnormal behaviors:
-- seizure: convulsions, uncontrolled muscle movements, falling over
-- vomiting: active vomiting
-- retching: repeated dry heaving or pre-vomit abdominal contractions
-- scratching: repeated, intense scratching of body parts
-- circling: spinning in tight circles repeatedly
-- excessive_licking: compulsively licking body parts or surfaces
-- excessive_panting: heavy panting without apparent physical exertion
+# INFERENCE_PROMPT = """\
+# You are a veterinary monitoring AI watching a dog inside a pet house.
+# Analyze the image and determine if the dog shows any of these abnormal behaviors:
+# - seizure: convulsions, uncontrolled muscle movements, falling over
+# - vomiting: active vomiting
+# - retching: repeated dry heaving or pre-vomit abdominal contractions
+# - scratching: repeated, intense scratching of body parts
+# - circling: spinning in tight circles repeatedly
+# - excessive_licking: compulsively licking body parts or surfaces
+# - excessive_panting: heavy panting without apparent physical exertion
+#
+# If an abnormal behavior is detected, respond ONLY with:
+#   DETECTED: <behavior_key>
+# If the dog appears normal, respond ONLY with:
+#   NORMAL"""
 
-If an abnormal behavior is detected, respond ONLY with:
-  DETECTED: <behavior_key>
-If the dog appears normal, respond ONLY with:
-  NORMAL"""
+INFERENCE_PROMPT = "What is the person doing? Answer in one sentence."
 
 
 # ── Ring Buffer ───────────────────────────────────────────────────────────────
@@ -272,11 +276,13 @@ def parse_vlm_response(text: str) -> Optional[str]:
     return None
 
 
-def run_inference(model: NanoLLM, frames: list) -> Optional[str]:
+def run_inference(model: NanoLLM, frames: list) -> tuple[Optional[str], str]:
     """
     PIL 프레임 리스트로 VLM 추론 실행.
     ChatHistory API 사용 (NanoLLM 멀티모달 올바른 방법).
     chat.reset() + gc.collect() 필수 (NanoLLM GitHub issue #39, 메모리 누수 방지).
+
+    반환: (행동 키 또는 None, VLM 원본 텍스트)
     """
     chat = ChatHistory(model)
     for img in frames:
@@ -288,11 +294,11 @@ def run_inference(model: NanoLLM, frames: list) -> Optional[str]:
     for token in model.generate(embedding, max_new_tokens=32, streaming=True):
         tokens.append(token)
 
-    result = "".join(tokens)
+    raw = "".join(tokens).replace("</s>", "").strip()
     chat.reset()
     gc.collect()
 
-    return parse_vlm_response(result)
+    return parse_vlm_response(raw), raw
 
 
 # ── 추론 워커 스레드 ───────────────────────────────────────────────────────────
@@ -315,11 +321,13 @@ def inference_worker(model: NanoLLM, ring: RingBuffer, judge: EventJudge,
             continue
 
         t0 = time.time()
-        behavior = run_inference(model, frames)
+        behavior, raw = run_inference(model, frames)
         elapsed_ms = (time.time() - t0) * 1000
 
         label = BEHAVIORS.get(behavior, "정상") if behavior else "정상"
         print(f"[infer] {elapsed_ms:.0f}ms  → {label}", flush=True)
+
+        debug_state.update_inference(label, raw.strip(), elapsed_ms)
 
         alert = judge.update(behavior)
         if alert:
@@ -371,6 +379,7 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
         buf.unmap(map_info)
 
         ring.push(img)
+        debug_state.update_frame(img, w, h)
 
         # 추론 큐에 신호 (non-blocking, 추론 중이면 drop)
         try:
@@ -413,6 +422,13 @@ def main() -> None:
     judge    = EventJudge()
     infer_q  = queue.Queue(maxsize=1)  # maxsize=1: 추론 중 중복 트리거 방지
 
+    # 디버그 대시보드에 참조 전달
+    debug_state.set_refs(ring, RING_SIZE, judge, {
+        "target_fps": TARGET_FPS,
+        "n_frames": N_FRAMES,
+        "consec_n": CONSEC_N,
+    })
+
     # 추론 워커 스레드 시작
     worker = threading.Thread(
         target=inference_worker,
@@ -432,6 +448,9 @@ def main() -> None:
 
     pipeline.set_state(Gst.State.PLAYING)
     print("[init] Pipeline PLAYING\n", flush=True)
+
+    # 디버그 웹서버 시작
+    start_debug_server(8080)
 
     loop = GLib.MainLoop()
     try:

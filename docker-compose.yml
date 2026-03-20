@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "8554:8554"   # RTSP
+      - "8888:8888"   # HLS
       - "8889:8889"   # WebRTC HTTP
       - "8890:8890/udp"  # WebRTC ICE
     volumes:
@@ -22,6 +23,8 @@ services:
     container_name: petcubator-app
     restart: unless-stopped
     runtime: nvidia
+    ports:
+      - "8080:8080"   # Debug web UI
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
