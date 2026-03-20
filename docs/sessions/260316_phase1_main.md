@@ -188,7 +188,7 @@ Phase 1 검증을 2단계로 분리 확정:
 
 ### 8.2 Phase 1 VLM 테스트 결과
 
-`main.py`가 정상 구동 중 (IP 카메라 → MediaMTX → petcubator-app):
+`main.py`가 정상 구동 중 (IP 카메라 → MediaMTX → wally-backend-app):
 
 | 검증 항목 | 결과 | 비고 |
 |---|---|---|

@@ -1,4 +1,4 @@
-# Petcubator — Project Initiation Document
+# Wally-backend — Project Initiation Document
 
 > **목적**: 이 문서는 Claude Code와의 협업을 위한 프로젝트 시작 기준 문서입니다.  
 > 미결 사항(Open Issues)이 다수 존재하며, 설계 진행 중 이 문서를 지속 갱신합니다.  
@@ -8,7 +8,7 @@
 |---|---|
 | v0.1 | 최초 작성 |
 | v0.2 | 파이프라인 아키텍처 초안 추가 (Tee 분리 모델, Ring Buffer, 실시간 스트리밍 뷰, Docker 컨테이너 운영 방식) — 미확정, Claude Code와의 협의 대상 |
-| v0.3 | 프로젝트명 Petcubator로 확정 |
+| v0.3 | 프로젝트명 Wally-backend로 확정 |
 | v0.4 | 4.2 파이프라인 다이어그램을 Mermaid 문법으로 교체 |
 | v0.5 | Branch A 패스스루 구조 확정, 컨테이너 구성에 API 서버·DB 추가, OI 항목 업데이트 |
 | v0.6 | 컨테이너 통합 (App+NanoLLM → App, DB → API 서버 내장 SQLite), OI-08 확정 |

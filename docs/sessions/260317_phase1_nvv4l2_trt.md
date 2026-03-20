@@ -76,7 +76,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ### 3.1 실행 환경
 
-- 컨테이너: `petcubator-app` (dustynv/nano_llm:r36.4.0 기반)
+- 컨테이너: `wally-backend-app` (dustynv/nano_llm:r36.4.0 기반)
 - 모델: VILA1.5-3b q4f16_ft (MLC)
 - 파이프라인: `rtspsrc → rtph264depay → h264parse → nvv4l2decoder → nvvidconv → appsink`
 - 소스: IP 카메라 → MediaMTX (`rtsp://mediamtx:8554/live`)
@@ -161,7 +161,7 @@ def parse_vlm_response(text: str) -> Optional[str]:
 
 ```yaml
 app:
-  image: petcubator-app
+  image: wally-backend-app
   runtime: nvidia
   environment:
     - NVIDIA_VISIBLE_DEVICES=all
@@ -268,7 +268,7 @@ def preserve_clip(behavior: str, event_time: float) -> None:
 ### 8.2 실행 결과
 
 ```
-docker exec petcubator-app python3 /app/test_e2e.py
+docker exec wally-backend-app python3 /app/test_e2e.py
 ```
 
 ```

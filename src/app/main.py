@@ -1,5 +1,5 @@
 """
-Petcubator — App 메인 엔트리포인트
+Wally-backend — App 메인 엔트리포인트
 Phase 1: GStreamer 파이프라인 + VLM 추론 + 이벤트 판정
 
 파이프라인 (Branch B):
@@ -231,7 +231,7 @@ def send_alert(behavior: str) -> None:
         "message": {
             "token": FCM_TOKEN,
             "notification": {
-                "title": "Petcubator 이상 행동 감지",
+                "title": "Wally-backend 이상 행동 감지",
                 "body": f"반려견이 {label}을(를) 보이고 있습니다.",
             },
             "data": {"behavior": behavior},
@@ -395,7 +395,7 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print("=== Petcubator App 시작 ===", flush=True)
+    print("=== Wally-backend App 시작 ===", flush=True)
     print(f"  MEDIAMTX_URL : {MEDIAMTX_URL}", flush=True)
     print(f"  MODEL_ID     : {MODEL_ID}", flush=True)
     print(f"  TARGET_FPS   : {TARGET_FPS}", flush=True)

@@ -12,7 +12,7 @@ MediaMTX에서 3갈래로 분기:
 
 1. **Branch A** — WebRTC/HLS로 클라이언트에 직접 재배포 (실시간 스트리밍)
 2. **세그먼트 녹화** — `/recordings/live/*.mp4` (60초 단위 순환 저장)
-3. **Branch B** — petcubator-app이 RTSP로 pull → GStreamer → VLM 추론
+3. **Branch B** — wally-backend-app이 RTSP로 pull → GStreamer → VLM 추론
 
 Branch B는 사실상 Branch A의 RTSP를 소비하는 내부 클라이언트.
 

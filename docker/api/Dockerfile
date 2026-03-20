@@ -1,4 +1,4 @@
-# Petcubator — API Server Container
+# Wally-backend — API Server Container
 # REST API + SQLite (embedded)
 # TODO: implement in Phase 1
 

@@ -13,14 +13,14 @@ services:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
       - recordings:/recordings
     networks:
-      - petcubator
+      - wally-backend
 
   app:
-    image: petcubator-app
+    image: wally-backend-app
     build:
       context: .
       dockerfile: docker/app/Dockerfile
-    container_name: petcubator-app
+    container_name: wally-backend-app
     restart: unless-stopped
     runtime: nvidia
     ports:
@@ -62,13 +62,13 @@ services:
     depends_on:
       - mediamtx
     networks:
-      - petcubator
+      - wally-backend
 
   api:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
-    container_name: petcubator-api
+    container_name: wally-backend-api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -76,7 +76,7 @@ services:
       - api_data:/data
       - recordings:/recordings:ro             # read-only access to clips
     networks:
-      - petcubator
+      - wally-backend
 
 volumes:
   recordings:
@@ -85,5 +85,5 @@ volumes:
     driver: local
 
 networks:
-  petcubator:
+  wally-backend:
     driver: bridge

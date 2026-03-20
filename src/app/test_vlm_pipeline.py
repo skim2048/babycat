@@ -1,5 +1,5 @@
 """
-Petcubator — VLM Phase 1 검증 테스트
+Wally-backend — VLM Phase 1 검증 테스트
 GStreamer 파이프라인 + VLM 추론 통합 확인
 
 검증 항목:
@@ -121,7 +121,7 @@ def make_frame_callback(frame_q: queue.Queue):
 
 def main() -> None:
     print("=" * 55)
-    print("  Petcubator VLM Phase 1 검증 테스트")
+    print("  Wally-backend VLM Phase 1 검증 테스트")
     print("=" * 55)
     print(f"  URL          : {MEDIAMTX_URL}")
     print(f"  MODEL        : {MODEL_ID}")
