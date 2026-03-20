@@ -10,6 +10,10 @@ import Nav from '@/components/Nav/Nav.vue'
 </script>
 
 <style>
+:root {
+  --nav-height: 64px;
+}
+
 * {
   margin: 0;
   padding: 0;

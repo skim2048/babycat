@@ -29,7 +29,13 @@ defineProps({
   text-decoration: none;
 }
 
+.nav-item img {
+  width: 24px;
+  height: 24px;
+}
+
 span {
+  font-size: 11px;
   font-family: 'Bazzi', sans-serif;
 }
 </style>

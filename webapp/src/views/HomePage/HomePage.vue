@@ -1,5 +1,5 @@
 <template>
-  <div :class="$style.page">
+  <div class="page">
     <AppLogo />
     <StateBar />
     <CamView />
@@ -18,13 +18,13 @@ import CamBar from './CamBar.vue'
 import HomeIcons from './HomeIcons.vue'
 </script>
 
-<style module>
+<style scoped>
 .page {
-  position: fixed;
-  top: 0;
-  left: 0;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  padding-bottom: var(--nav-height);
   overflow: hidden;
 }
 </style>
