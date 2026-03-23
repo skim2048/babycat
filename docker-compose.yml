@@ -10,17 +10,17 @@ services:
       - "8889:8889"   # WebRTC HTTP
       - "8890:8890/udp"  # WebRTC ICE
     volumes:
-      - ./server/config/mediamtx.yml:/mediamtx.yml:ro
+      - ./config/mediamtx.yml:/mediamtx.yml:ro
       - recordings:/recordings
     networks:
-      - wally-backend
+      - wally
 
   app:
-    image: wally-backend-app
+    image: wally-app
     build:
-      context: ./server
+      context: .
       dockerfile: docker/app/Dockerfile
-    container_name: wally-backend-app
+    container_name: wally-app
     restart: unless-stopped
     runtime: nvidia
     ports:
@@ -36,13 +36,13 @@ services:
       - EVENTS_DIR=/recordings/events
       # FCM 알림 (미설정 시 로그 출력만)
       # FCM 활성화 방법:
-      #   1. Firebase Console에서 service account JSON 키 발급 → server/config/fcm_credentials.json 저장
+      #   1. Firebase Console에서 service account JSON 키 발급 → config/fcm_credentials.json 저장
       #   2. 아래 두 줄 주석 해제 후 FCM_TOKEN 값 입력
       #   3. volumes 섹션의 fcm_credentials 마운트도 주석 해제
       #- FCM_CREDENTIALS=/run/fcm/credentials.json
       #- FCM_TOKEN=<기기_FCM_등록_토큰>
     group_add:
-      - video                                                       # /dev/nvmap은 video 그룹(GID 44) 소유 — NvRmMemInitNvmap 접근 필수
+      - video                                                       # /dev/nvmap은 video 그룹(GID 44) 소유 — NrRmMemInitNvmap 접근 필수
     devices:
       - /dev/v4l2-nvdec                                             # HW 비디오 디코더 (Orin NX)
       - /dev/v4l2-nvenc                                             # HW 비디오 인코더 (Orin NX)
@@ -52,8 +52,8 @@ services:
     volumes:
       - /home/skim/data/models:/data/models                        # NanoLLM model cache (MLC compiled)
       - recordings:/recordings                                      # shared with mediamtx (read clips)
-      #- ./server/config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
-      - ./server/src/app:/app                                      # live-mount source for development
+      #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
+      - ./app:/app                                                  # live-mount source for development
       # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
@@ -62,13 +62,13 @@ services:
     depends_on:
       - mediamtx
     networks:
-      - wally-backend
+      - wally
 
   api:
     build:
-      context: ./server
+      context: .
       dockerfile: docker/api/Dockerfile
-    container_name: wally-backend-api
+    container_name: wally-api
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -76,34 +76,7 @@ services:
       - api_data:/data
       - recordings:/recordings:ro             # read-only access to clips
     networks:
-      - wally-backend
-
-  webapp:
-    build:
-      context: ./webapp
-      dockerfile: docker/Dockerfile
-    container_name: wally-webapp
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    profiles:
-      - prod
-    networks:
-      - wally-backend
-
-  webapp-dev:
-    image: node:22-alpine
-    container_name: wally-webapp-dev
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports:
-      - "5176:5176"
-    volumes:
-      - ./webapp:/app
-    profiles:
-      - dev
-    networks:
-      - wally-backend
+      - wally
 
 volumes:
   recordings:
@@ -112,5 +85,5 @@ volumes:
     driver: local
 
 networks:
-  wally-backend:
+  wally:
     driver: bridge
