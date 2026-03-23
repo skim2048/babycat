@@ -7,6 +7,7 @@ Wally-backend — 디버그 대시보드 (stdlib only, 외부 의존성 없음)
   GET  /stream      MJPEG 스트림 (VLM 입력 프레임)
   GET  /events      SSE (추론 결과 + 하드웨어 상태 실시간)
   POST /ptz         PTZ 제어 (move / stop / absolute / save)
+  POST /event       이벤트 테스트 (alert / clip) — 검증용
 """
 
 import base64
@@ -283,13 +284,21 @@ class DebugState:
         self._judge     = None
         self._config:   dict  = {}
 
+        # TODO: 리팩토링 시 main.py 의존성 역전 고려 (현재 main→debug 단방향 콜백으로 임시 해결)
+        self._send_alert    = None
+        self._preserve_clip = None
+        self._last_event:   str = ""
+
         self._sse_queues: list[queue.Queue] = []
 
-    def set_refs(self, ring, ring_size: int, judge, config: dict):
-        self._ring      = ring
-        self._ring_size = ring_size
-        self._judge     = judge
-        self._config    = config
+    def set_refs(self, ring, ring_size: int, judge, config: dict,
+                 send_alert_fn=None, preserve_clip_fn=None):
+        self._ring          = ring
+        self._ring_size     = ring_size
+        self._judge         = judge
+        self._config        = config
+        self._send_alert    = send_alert_fn
+        self._preserve_clip = preserve_clip_fn
 
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         with self._lock:
@@ -302,6 +311,15 @@ class DebugState:
             self.infer_label = label
             self.infer_raw   = raw
             self.infer_ms    = elapsed_ms
+        for q in list(self._sse_queues):
+            try:
+                q.put_nowait(True)
+            except queue.Full:
+                pass
+
+    def update_event_result(self, msg: str):
+        with self._lock:
+            self._last_event = msg
         for q in list(self._sse_queues):
             try:
                 q.put_nowait(True)
@@ -324,6 +342,7 @@ class DebugState:
                 "infer_label": self.infer_label,
                 "infer_raw":   self.infer_raw,
                 "infer_ms":    round(self.infer_ms, 1),
+                "last_event":  self._last_event,
             }
 
         judge_streak = ""
@@ -457,6 +476,12 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 .ptz-action-btn.go { background: #eef6ee; border-color: #b5d8b5; color: #2a7a2a; }
 .ptz-action-btn.go:hover { background: #d8efd8; }
 .ptz-status-txt { font-size: 11px; color: #aaa; text-align: center; margin-top: 6px; }
+
+/* ── Events ── */
+.ev-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.ev-select { flex: 1; font-size: 12px; padding: 4px 6px; border: 1px solid #ccc;
+             border-radius: 4px; background: #fafafa; }
+.ev-btn-row { display: flex; gap: 6px; }
 </style>
 </head>
 <body>
@@ -575,6 +600,23 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
       </div>
     </div>
 
+    <!-- Events -->
+    <div class="section" id="sec-events">
+      <div class="section-title" onclick="toggleSection('sec-events')">
+        Events <span class="arrow">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="ev-row">
+          <select class="ev-select" id="ev-behavior"></select>
+        </div>
+        <div class="ev-btn-row">
+          <button class="ptz-action-btn" id="btn-ev-alert">알림 발송</button>
+          <button class="ptz-action-btn go" id="btn-ev-clip">클립 저장</button>
+        </div>
+        <div class="ptz-status-txt" id="ev-status">대기</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -660,7 +702,51 @@ es.onmessage = function(e) {
   document.getElementById("v-ptz-tilt").textContent  = fmt(d.ptz_tilt);
   document.getElementById("v-saved-pan").textContent  = fmt(d.ptz_saved_pan);
   document.getElementById("v-saved-tilt").textContent = fmt(d.ptz_saved_tilt);
+
+  // Events
+  if (d.cfg_behaviors) window._initBehaviors(d.cfg_behaviors);
+  if (d.last_event)    document.getElementById("ev-status").textContent = d.last_event;
 };
+
+// ── 이벤트 테스트 ─────────────────────────────────────────────────────────────
+(function() {
+  var behaviorsLoaded = false;
+  var select = document.getElementById("ev-behavior");
+  var status = document.getElementById("ev-status");
+
+  window._initBehaviors = function(behaviors) {
+    if (behaviorsLoaded) return;
+    behaviorsLoaded = true;
+    Object.keys(behaviors).forEach(function(key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = behaviors[key] + " (" + key + ")";
+      select.appendChild(opt);
+    });
+  };
+
+  function eventPost(action) {
+    return fetch("/event", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: action, behavior: select.value || "test"})
+    }).then(function(r) { return r.json(); });
+  }
+
+  document.getElementById("btn-ev-alert").addEventListener("click", function() {
+    status.textContent = "발송 중...";
+    eventPost("alert").then(function(r) {
+      status.textContent = r.ok ? r.msg : "실패: " + r.msg;
+    });
+  });
+
+  document.getElementById("btn-ev-clip").addEventListener("click", function() {
+    status.textContent = "저장 중...";
+    eventPost("clip").then(function(r) {
+      status.textContent = r.ok ? r.msg : "실패: " + r.msg;
+    });
+  });
+})();
 
 // ── PTZ 제어 ──────────────────────────────────────────────────────────────────
 (function() {
@@ -743,7 +829,42 @@ class DebugHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path == "/ptz":
+        if self.path == "/event":
+            length   = int(self.headers.get("Content-Length", 0))
+            body     = json.loads(self.rfile.read(length) or b"{}")
+            action   = body.get("action")
+            behavior = body.get("behavior", "test")
+            ok  = True
+            msg = ""
+
+            if action == "alert":
+                if state._send_alert:
+                    threading.Thread(
+                        target=state._send_alert, args=(behavior,), daemon=True
+                    ).start()
+                    msg = f"알림 발송: {behavior}"
+                else:
+                    ok = False; msg = "send_alert 미연결"
+            elif action == "clip":
+                if state._preserve_clip:
+                    threading.Thread(
+                        target=state._preserve_clip,
+                        args=(behavior, time.time()),
+                        daemon=True,
+                    ).start()
+                    msg = f"클립 저장: {behavior}"
+                else:
+                    ok = False; msg = "preserve_clip 미연결"
+            else:
+                ok = False; msg = f"알 수 없는 action: {action}"
+
+            state.update_event_result(msg)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": ok, "msg": msg}).encode())
+
+        elif self.path == "/ptz":
             length = int(self.headers.get("Content-Length", 0))
             body   = json.loads(self.rfile.read(length) or b"{}")
             action = body.get("action")

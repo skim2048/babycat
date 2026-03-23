@@ -425,9 +425,10 @@ def main() -> None:
     # 디버그 대시보드에 참조 전달
     debug_state.set_refs(ring, RING_SIZE, judge, {
         "target_fps": TARGET_FPS,
-        "n_frames": N_FRAMES,
-        "consec_n": CONSEC_N,
-    })
+        "n_frames":   N_FRAMES,
+        "consec_n":   CONSEC_N,
+        "behaviors":  BEHAVIORS,
+    }, send_alert_fn=send_alert, preserve_clip_fn=preserve_clip)
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(
