@@ -1,9 +1,9 @@
-# Wally-backend — App Container
+# Watchdog — App Container
 # Base: NanoLLM (VILA VLM inference + PyTorch + CUDA)
 # Added: nvidia-l4t-gstreamer (nvv4l2decoder, nvvidconv) + gstreamer1.0-plugins-bad
 #
 # Target: Jetson Orin NX 16GB, JetPack 6.2 (L4T R36.5.x)
-# Build:  docker build -f docker/app/Dockerfile -t wally-backend-app .
+# Build:  docker build -f docker/app/Dockerfile -t watchdog-app .
 # Run:    see compose.yml
 
 FROM dustynv/nano_llm:r36.4.0

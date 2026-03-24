@@ -1,5 +1,5 @@
 """
-Wally-backend — E2E 통합 테스트 (비즈니스 로직 레이어)
+Watchdog — E2E 통합 테스트 (비즈니스 로직 레이어)
 
 GStreamer / VLM 없이 아래 흐름을 검증한다:
   EventJudge → send_alert() → preserve_clip() → 클립 파일 생성
@@ -20,7 +20,7 @@ import time
 # ── 임시 녹화 디렉토리를 환경변수로 주입 (테스트 격리) ────────────────────────
 # main.py 는 모듈 임포트 시 환경변수로 상수를 확정하므로, import 전에 설정해야 함.
 
-_tmp = tempfile.mkdtemp(prefix="wally_backend_test_")
+_tmp = tempfile.mkdtemp(prefix="watchdog_test_")
 _RECORDINGS_DIR = os.path.join(_tmp, "live")
 _EVENTS_DIR     = os.path.join(_tmp, "events")
 os.makedirs(_RECORDINGS_DIR)

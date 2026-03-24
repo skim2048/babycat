@@ -13,14 +13,14 @@ services:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
       - recordings:/recordings
     networks:
-      - wally
+      - watchdog
 
   app:
-    image: wally-app
+    image: watchdog-app
     build:
       context: .
       dockerfile: docker/app/Dockerfile
-    container_name: wally-app
+    container_name: watchdog-app
     restart: unless-stopped
     runtime: nvidia
     ports:
@@ -62,21 +62,22 @@ services:
     depends_on:
       - mediamtx
     networks:
-      - wally
+      - watchdog
 
   api:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
-    container_name: wally-api
+    container_name: watchdog-api
     restart: unless-stopped
+    profiles: [api]
     ports:
       - "8000:8000"
     volumes:
       - api_data:/data
       - recordings:/recordings:ro             # read-only access to clips
     networks:
-      - wally
+      - watchdog
 
 volumes:
   recordings:
@@ -85,5 +86,6 @@ volumes:
     driver: local
 
 networks:
-  wally:
+  watchdog:
+    name: watchdog
     driver: bridge
