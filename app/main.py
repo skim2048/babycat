@@ -13,6 +13,7 @@ import json
 import os
 import queue
 import shutil
+import subprocess
 import threading
 import time
 from collections import deque
@@ -55,7 +56,10 @@ FCM_TOKEN       = os.getenv("FCM_TOKEN",       "")   # 수신 기기 FCM 등록 
 # 클립 저장 설정 (MediaMTX 세그먼트 → events 디렉토리로 복사)
 RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "/recordings/live")    # MediaMTX 세그먼트 경로
 EVENTS_DIR        = os.getenv("EVENTS_DIR",        "/recordings/events")  # 이벤트 클립 보존 경로
-CLIP_PRE_SEGMENTS = int(os.getenv("CLIP_PRE_SEGMENTS", "2"))              # 보존할 세그먼트 수 (60s × 2 = 최대 2분)
+CLIP_PRE_SEGMENTS = int(os.getenv("CLIP_PRE_SEGMENTS", "1"))              # 보존할 세그먼트 수 (10s × 1 = 최대 10초)
+TRIGGER_CLIP_DIR  = os.getenv("TRIGGER_CLIP_DIR", "/app/clip")           # 트리거 이벤트 클립 저장 경로
+TRIGGER_COOLDOWN  = float(os.getenv("TRIGGER_COOLDOWN", "30"))           # 트리거 클립 저장 쿨다운 (초)
+TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))             # 트리거 클립 녹화 길이 (초)
 
 # SigLIP 입력 해상도 (VLM 내부에서 384×384로 리사이즈됨, 추론 시간에 무관)
 VLM_INPUT_SIZE = (384, 384)
@@ -88,7 +92,7 @@ BEHAVIORS = {
 # If the dog appears normal, respond ONLY with:
 #   NORMAL"""
 
-INFERENCE_PROMPT = "What is the person doing? Answer in one sentence."
+INFERENCE_PROMPT_DEFAULT = "What is the person doing? Answer in one sentence."
 
 
 # ── Ring Buffer ───────────────────────────────────────────────────────────────
@@ -205,6 +209,44 @@ def preserve_clip(behavior: str, event_time: float) -> None:
     print(f"[clip] 클립 저장 완료: {dest_dir}", flush=True)
 
 
+_trigger_last_save: float = 0.0
+
+
+def save_trigger_clip(matched_keywords: list[str], event_time: float) -> None:
+    """
+    트리거 키워드 이벤트 발생 시 ffmpeg로 RTSP 스트림에서 TRIGGER_CLIP_DUR초 직접 녹화.
+    TRIGGER_COOLDOWN 이내 재호출은 무시.
+    """
+    global _trigger_last_save
+    if event_time - _trigger_last_save < TRIGGER_COOLDOWN:
+        return
+    _trigger_last_save = event_time
+
+    ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(event_time))
+    tag = "_".join(matched_keywords[:3])
+    dest_dir = Path(TRIGGER_CLIP_DIR)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    out_path = dest_dir / f"{ts}_{tag}.mp4"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-rtsp_transport", "tcp",
+        "-i", MEDIAMTX_URL,
+        "-t", str(TRIGGER_CLIP_DUR),
+        "-c:v", "copy", "-c:a", "aac",
+        str(out_path),
+    ]
+    print(f"[trigger-clip] 녹화 시작: {out_path.name} ({TRIGGER_CLIP_DUR}s)", flush=True)
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=TRIGGER_CLIP_DUR + 10)
+        print(f"[trigger-clip] 녹화 완료: {out_path.name}", flush=True)
+    except subprocess.TimeoutExpired:
+        print(f"[trigger-clip] 녹화 타임아웃: {out_path.name}", flush=True)
+    except Exception as e:
+        print(f"[trigger-clip] 녹화 오류: {e}", flush=True)
+
+
 def send_alert(behavior: str) -> None:
     """
     FCM HTTP v1 API로 푸시 알림 발송 + 이벤트 클립 보존.
@@ -287,7 +329,7 @@ def run_inference(model: NanoLLM, frames: list) -> tuple[Optional[str], str]:
     chat = ChatHistory(model)
     for img in frames:
         chat.append('user', image=img)
-    chat.append('user', text=INFERENCE_PROMPT)
+    chat.append('user', text=debug_state.get_prompt())
 
     embedding, _ = chat.embed_chat()
     tokens = []
@@ -324,10 +366,25 @@ def inference_worker(model: NanoLLM, ring: RingBuffer, judge: EventJudge,
         behavior, raw = run_inference(model, frames)
         elapsed_ms = (time.time() - t0) * 1000
 
-        label = BEHAVIORS.get(behavior, "정상") if behavior else "정상"
-        print(f"[infer] {elapsed_ms:.0f}ms  → {label}", flush=True)
+        # 트리거 키워드 매칭
+        triggers = debug_state.get_triggers()
+        raw_lower = raw.strip().lower()
+        matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
+        event_triggered = len(matched) > 0
 
-        debug_state.update_inference(label, raw.strip(), elapsed_ms)
+        label = BEHAVIORS.get(behavior, "정상") if behavior else "정상"
+        if event_triggered:
+            print(f"[infer] {elapsed_ms:.0f}ms  → EVENT: {matched}", flush=True)
+        else:
+            print(f"[infer] {elapsed_ms:.0f}ms  → {label}", flush=True)
+
+        debug_state.update_inference(label, raw.strip(), elapsed_ms,
+                                     event_triggered=event_triggered)
+
+        if event_triggered:
+            threading.Thread(
+                target=save_trigger_clip, args=(matched, time.time()), daemon=True
+            ).start()
 
         alert = judge.update(behavior)
         if alert:
@@ -422,13 +479,19 @@ def main() -> None:
     judge    = EventJudge()
     infer_q  = queue.Queue(maxsize=1)  # maxsize=1: 추론 중 중복 트리거 방지
 
+    # 초기 프롬프트 설정
+    debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
+
     # 디버그 대시보드에 참조 전달
     debug_state.set_refs(ring, RING_SIZE, judge, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
         "consec_n":   CONSEC_N,
         "behaviors":  BEHAVIORS,
-    }, send_alert_fn=send_alert, preserve_clip_fn=preserve_clip)
+    })
+
+    # 디버그 웹서버 시작 (파이프라인보다 먼저 — RTSP 미연결 시에도 대시보드 접근 가능)
+    start_debug_server(8080)
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(
@@ -449,9 +512,6 @@ def main() -> None:
 
     pipeline.set_state(Gst.State.PLAYING)
     print("[init] Pipeline PLAYING\n", flush=True)
-
-    # 디버그 웹서버 시작
-    start_debug_server(8080)
 
     loop = GLib.MainLoop()
     try:

@@ -284,6 +284,9 @@ class DebugState:
         self._config:   dict  = {}
 
         self._sse_queues: list[queue.Queue] = []
+        self.inference_prompt: str = ""
+        self.trigger_keywords: list[str] = []
+        self.event_triggered: bool = False
 
     def set_refs(self, ring, ring_size: int, judge, config: dict):
         self._ring      = ring
@@ -291,17 +294,35 @@ class DebugState:
         self._judge     = judge
         self._config    = config
 
+    def set_prompt(self, prompt: str):
+        with self._lock:
+            self.inference_prompt = prompt
+
+    def get_prompt(self) -> str:
+        with self._lock:
+            return self.inference_prompt
+
+    def set_triggers(self, keywords: list[str]):
+        with self._lock:
+            self.trigger_keywords = keywords
+
+    def get_triggers(self) -> list[str]:
+        with self._lock:
+            return list(self.trigger_keywords)
+
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         with self._lock:
             self.frame   = frame.copy()
             self.frame_w = orig_w
             self.frame_h = orig_h
 
-    def update_inference(self, label: str, raw: str, elapsed_ms: float):
+    def update_inference(self, label: str, raw: str, elapsed_ms: float,
+                         event_triggered: bool = False):
         with self._lock:
             self.infer_label = label
             self.infer_raw   = raw
             self.infer_ms    = elapsed_ms
+            self.event_triggered = event_triggered
         for q in list(self._sse_queues):
             try:
                 q.put_nowait(True)
@@ -354,6 +375,9 @@ class DebugState:
             "ptz_tilt":      ptz_cur["tilt"],
             "ptz_saved_pan":  ptz_save["pan"],
             "ptz_saved_tilt": ptz_save["tilt"],
+            "inference_prompt": self.inference_prompt,
+            "trigger_keywords": ",".join(self.trigger_keywords),
+            "event_triggered": self.event_triggered,
             **{f"cfg_{k}": v for k, v in self._config.items()},
         }
 
@@ -387,7 +411,7 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
           display: flex; justify-content: space-between; align-items: center; }
 .header h1 { font-size: 16px; color: #2a7a2a; }
 .header .uptime { font-size: 12px; color: #999; }
-.main { display: flex; height: calc(100vh - 45px); overflow: hidden; }
+.main { display: flex; height: calc(100vh - 45px); overflow: auto; }
 .video-area { flex: 1; min-width: 0; padding: 12px; }
 .video-box video { width: 100%; display: block;
                    border: 1px solid #ddd; background: #000; border-radius: 4px; }
@@ -397,7 +421,7 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
         padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
 /* ── 아코디언 섹션 ── */
-.section { background: #fff; border-radius: 6px; border: 1px solid #e0e0e0; overflow: hidden; }
+.section { background: #fff; border-radius: 6px; border: 1px solid #e0e0e0; overflow: visible; }
 .section-title {
   font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px;
   padding: 8px 12px; cursor: pointer; user-select: none;
@@ -432,6 +456,19 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 .temp.cool { background: #eef6ee; color: #2a7a2a; }
 .temp.warm { background: #f6f3ee; color: #aa8800; }
 .temp.hot  { background: #f6eeee; color: #cc3333; }
+
+/* ── Prompt ── */
+.prompt-row { display: flex; gap: 6px; margin-top: 8px; }
+.prompt-fields { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.prompt-input { width: 100%; font-family: 'Courier New', monospace; font-size: 13px;
+                padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;
+                outline: none; }
+.prompt-input:focus { border-color: #5599cc; }
+.prompt-btn { padding: 6px 14px; font-size: 13px; font-weight: bold;
+              border: 1px solid #b5d8b5; background: #eef6ee; color: #2a7a2a;
+              border-radius: 4px; cursor: pointer; white-space: nowrap;
+              align-self: stretch; }
+.prompt-btn:hover { background: #d8efd8; }
 
 /* ── PTZ ── */
 .ptz-grid { display: grid; grid-template-columns: repeat(3, 48px);
@@ -472,6 +509,13 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
       <div class="video-label">Live Stream</div>
       <video id="live-stream" autoplay muted playsinline></video>
     </div>
+    <div class="prompt-row">
+      <div class="prompt-fields">
+        <input type="text" class="prompt-input" id="prompt-input" placeholder="VLM 프롬프트 입력..." />
+        <input type="text" class="prompt-input" id="trigger-input" placeholder="이벤트 트리거 키워드 (쉼표 구분)" />
+      </div>
+      <button class="prompt-btn" id="btn-apply-prompt">적용</button>
+    </div>
   </div>
   <div class="dash">
 
@@ -483,7 +527,6 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
       <div class="section-body">
         <img class="infer-img" id="stream" src="/stream" alt="VLM input" />
         <div class="result-box normal" id="result-box" style="margin-top:8px;">
-          <div class="result-label normal" id="v-result">대기 중</div>
           <div class="result-raw" id="v-raw"></div>
         </div>
         <div style="margin-top:8px;">
@@ -630,11 +673,8 @@ es.onmessage = function(e) {
   document.getElementById("v-uptime").textContent = d.uptime;
 
   // Inference
-  const label   = d.infer_label || "대기 중";
-  const isAlert = label !== "정상" && label !== "대기 중";
-  document.getElementById("v-result").textContent  = label;
-  document.getElementById("v-result").className    = "result-label " + (isAlert ? "alert" : "normal");
-  document.getElementById("result-box").className  = "result-box "   + (isAlert ? "alert" : "normal");
+  const isAlert = d.event_triggered === true;
+  document.getElementById("result-box").className  = "result-box " + (isAlert ? "alert" : "normal");
   document.getElementById("v-raw").textContent     = d.infer_raw || "";
   document.getElementById("v-infer-time").textContent = d.infer_ms + " ms";
 
@@ -663,7 +703,49 @@ es.onmessage = function(e) {
   document.getElementById("v-saved-pan").textContent  = fmt(d.ptz_saved_pan);
   document.getElementById("v-saved-tilt").textContent = fmt(d.ptz_saved_tilt);
 
+  // 초기 프롬프트/트리거 동기화
+  if (window._setInitialPrompt) window._setInitialPrompt(d.inference_prompt, d.trigger_keywords);
 };
+
+// ── Prompt ────────────────────────────────────────────────────────────────────
+(function() {
+  const promptInput  = document.getElementById("prompt-input");
+  const triggerInput = document.getElementById("trigger-input");
+  const btn          = document.getElementById("btn-apply-prompt");
+  let loaded = false;
+
+  // SSE에서 초기 동기화 (최초 1회)
+  window._setInitialPrompt = function(prompt, triggers) {
+    if (!loaded && (prompt || triggers)) {
+      if (prompt)   promptInput.value  = prompt;
+      if (triggers) triggerInput.value  = triggers;
+      loaded = true;
+    }
+  };
+
+  btn.addEventListener("click", function() {
+    const prompt   = promptInput.value.trim();
+    const triggers = triggerInput.value.trim();
+    if (!prompt) return;
+    fetch("/prompt", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({prompt: prompt, triggers: triggers})
+    }).then(function(r) { return r.json(); }).then(function(r) {
+      if (r.ok) {
+        btn.textContent = "적용됨";
+        setTimeout(function() { btn.textContent = "적용"; }, 1500);
+      }
+    });
+  });
+
+  promptInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") btn.click();
+  });
+  triggerInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") btn.click();
+  });
+})();
 
 // ── PTZ 제어 ──────────────────────────────────────────────────────────────────
 (function() {
@@ -746,7 +828,23 @@ class DebugHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path == "/ptz":
+        if self.path == "/prompt":
+            length = int(self.headers.get("Content-Length", 0))
+            body   = json.loads(self.rfile.read(length) or b"{}")
+            prompt = body.get("prompt", "").strip()
+            triggers_raw = body.get("triggers", "").strip()
+            if prompt:
+                state.set_prompt(prompt)
+                print(f"[prompt] 프롬프트 변경: {prompt[:80]}", flush=True)
+            keywords = [k.strip().lower() for k in triggers_raw.split(",") if k.strip()]
+            state.set_triggers(keywords)
+            if keywords:
+                print(f"[prompt] 트리거 키워드: {keywords}", flush=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": bool(prompt)}).encode())
+        elif self.path == "/ptz":
             length = int(self.headers.get("Content-Length", 0))
             body   = json.loads(self.rfile.read(length) or b"{}")
             action = body.get("action")
