@@ -25,6 +25,9 @@ cypress/videos/
 cypress/screenshots/
 __screenshots__/
 
+# Runtime
+app/clip/
+
 # OS
 .DS_Store
 
