@@ -19,6 +19,7 @@ import queue
 import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Optional
@@ -287,12 +288,29 @@ class DebugState:
         self.inference_prompt: str = ""
         self.trigger_keywords: list[str] = []
         self.event_triggered: bool = False
+        self._clip_dir: str = ""
 
     def set_refs(self, ring, ring_size: int, judge, config: dict):
         self._ring      = ring
         self._ring_size = ring_size
         self._judge     = judge
         self._config    = config
+
+    def set_clip_dir(self, path: str):
+        self._clip_dir = path
+
+    def list_clips(self) -> list[dict]:
+        """클립 디렉토리의 mp4 파일 목록 반환 (최신순 → 최신이 상단)."""
+        if not self._clip_dir:
+            return []
+        from pathlib import Path
+        d = Path(self._clip_dir)
+        if not d.exists():
+            return []
+        files = sorted(d.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        # ffmpeg 녹화 중인 불완전한 파일 제외 (10KB 미만)
+        return [{"name": f.name, "size": f.stat().st_size}
+                for f in files if f.stat().st_size >= 10240]
 
     def set_prompt(self, prompt: str):
         with self._lock:
@@ -378,6 +396,7 @@ class DebugState:
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
             "event_triggered": self.event_triggered,
+            "clip_count": len(self.list_clips()),
             **{f"cfg_{k}": v for k, v in self._config.items()},
         }
 
@@ -411,12 +430,15 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
           display: flex; justify-content: space-between; align-items: center; }
 .header h1 { font-size: 16px; color: #2a7a2a; }
 .header .uptime { font-size: 12px; color: #999; }
-.main { display: flex; height: calc(100vh - 45px); overflow: auto; }
-.video-area { flex: 1; min-width: 0; padding: 12px; }
-.video-box video { width: 100%; display: block;
+.main { display: flex; height: calc(100vh - 45px); }
+.video-area { flex: 1; min-width: 0; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+              overflow: hidden; }
+.video-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.video-box video { flex: 1; min-height: 0; width: 100%; object-fit: contain;
                    border: 1px solid #ddd; background: #000; border-radius: 4px; }
 .video-label { font-size: 11px; color: #333; font-weight: bold;
-               text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+               text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;
+               flex-shrink: 0; }
 .dash { width: 340px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid #ddd;
         padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
@@ -457,8 +479,8 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 .temp.warm { background: #f6f3ee; color: #aa8800; }
 .temp.hot  { background: #f6eeee; color: #cc3333; }
 
-/* ── Prompt ── */
-.prompt-row { display: flex; gap: 6px; margin-top: 8px; }
+/* ── Prompting ── */
+.prompt-row { display: flex; gap: 6px; flex-shrink: 0; }
 .prompt-fields { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .prompt-input { width: 100%; font-family: 'Courier New', monospace; font-size: 13px;
                 padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px;
@@ -469,6 +491,66 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
               border-radius: 4px; cursor: pointer; white-space: nowrap;
               align-self: stretch; }
 .prompt-btn:hover { background: #d8efd8; }
+
+/* ── Clip Sidebar (left) ── */
+.clip-sidebar { width: 260px; flex-shrink: 0; border-right: 1px solid #ddd;
+                padding: 12px; display: flex; flex-direction: column; gap: 8px;
+                overflow: hidden; }
+.clip-sidebar .video-label { flex-shrink: 0; }
+.clip-toolbar { display: flex; gap: 4px; align-items: center; flex-shrink: 0; flex-wrap: wrap; }
+.clip-search { flex: 1; min-width: 80px; font-family: 'Courier New', monospace; font-size: 12px;
+               padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; outline: none; }
+.clip-search:focus { border-color: #5599cc; }
+.clip-action-btn { font-size: 10px; padding: 3px 6px; border-radius: 4px;
+                   border: 1px solid #ccc; background: #f5f5f5; cursor: pointer;
+                   white-space: nowrap; }
+.clip-action-btn:hover { background: #e8e8e8; }
+.clip-action-btn.danger { border-color: #d8b5b5; color: #cc3333; }
+.clip-action-btn.danger:hover { background: #f6eeee; }
+.clip-action-btn:disabled { opacity: 0.4; cursor: default; }
+.clip-gallery { flex: 1; display: flex; flex-direction: column; gap: 8px;
+                overflow-y: auto; padding: 2px 0; }
+.clip-gallery::-webkit-scrollbar { width: 6px; }
+.clip-gallery::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.clip-item { flex-shrink: 0; background: #000; border-radius: 6px;
+             overflow: hidden; border: 1px solid #ddd; position: relative; }
+.clip-item.checked { border-color: #5599cc; box-shadow: 0 0 0 2px rgba(85,153,204,0.3); }
+.clip-item.hidden { display: none; }
+.clip-top-bar { display: flex; align-items: center; justify-content: space-between;
+                padding: 3px 6px; background: #111; }
+.clip-chk { width: 14px; height: 14px; cursor: pointer; accent-color: #5599cc; }
+.clip-del-btn { background: none; border: none; color: #666; font-size: 14px;
+                cursor: pointer; padding: 0 2px; line-height: 1; }
+.clip-del-btn:hover { color: #cc3333; }
+.clip-video-wrap { position: relative; width: 100%; cursor: pointer; }
+.clip-video-wrap video { width: 100%; display: block; }
+.clip-overlay { position: absolute; inset: 0; display: flex; align-items: center;
+                justify-content: center; background: rgba(0,0,0,0.3);
+                transition: opacity 0.2s; pointer-events: none; }
+.clip-overlay.hidden { opacity: 0; }
+.clip-play-icon { width: 36px; height: 36px; background: rgba(255,255,255,0.9);
+                  border-radius: 50%; display: flex; align-items: center;
+                  justify-content: center; }
+.clip-play-icon::after { content: ""; display: block; width: 0; height: 0;
+                         border-style: solid; border-width: 7px 0 7px 13px;
+                         border-color: transparent transparent transparent #333;
+                         margin-left: 2px; }
+.clip-controls { display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+                 background: #111; }
+.clip-ctrl-btn { background: none; border: none; color: #ccc; font-size: 14px;
+                 cursor: pointer; padding: 0; line-height: 1; }
+.clip-ctrl-btn:hover { color: #fff; }
+.clip-progress { flex: 1; height: 4px; background: #444; border-radius: 2px;
+                 cursor: pointer; position: relative; }
+.clip-progress-bar { height: 100%; background: #5599cc; border-radius: 2px;
+                     width: 0%; pointer-events: none; }
+.clip-time { font-size: 10px; color: #888; font-family: 'Courier New', monospace;
+             white-space: nowrap; }
+.clip-info { padding: 4px 8px 6px; background: #111; }
+.clip-name { font-size: 10px; color: #888; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap;
+             font-family: 'Courier New', monospace; }
+.clip-empty { font-size: 12px; color: #aaa; padding: 12px 0; }
 
 /* ── PTZ ── */
 .ptz-grid { display: grid; grid-template-columns: repeat(3, 48px);
@@ -500,15 +582,27 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 </head>
 <body>
 <div class="header">
-  <h1>Watchdog Pipeline Debug</h1>
+  <h1>Watchdog Backend Debug</h1>
   <span class="uptime" id="v-uptime">-</span>
 </div>
 <div class="main">
+  <div class="clip-sidebar">
+    <div class="video-label">Event Clips</div>
+    <div class="clip-toolbar">
+      <input type="text" class="clip-search" id="clip-search" placeholder="검색..." />
+      <button class="clip-action-btn danger" id="btn-clip-del-sel" disabled>선택 삭제</button>
+      <button class="clip-action-btn danger" id="btn-clip-del-all">모두 삭제</button>
+    </div>
+    <div class="clip-gallery" id="clip-gallery">
+      <div class="clip-empty">녹화된 클립 없음</div>
+    </div>
+  </div>
   <div class="video-area">
     <div class="video-box">
       <div class="video-label">Live Stream</div>
       <video id="live-stream" autoplay muted playsinline></video>
     </div>
+    <div class="video-label">Prompting</div>
     <div class="prompt-row">
       <div class="prompt-fields">
         <input type="text" class="prompt-input" id="prompt-input" placeholder="VLM 프롬프트 입력..." />
@@ -525,7 +619,7 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
         Inference <span class="arrow">▼</span>
       </div>
       <div class="section-body">
-        <img class="infer-img" id="stream" src="/stream" alt="VLM input" />
+        <img class="infer-img" id="stream" alt="VLM input" />
         <div class="result-box normal" id="result-box" style="margin-top:8px;">
           <div class="result-raw" id="v-raw"></div>
         </div>
@@ -625,6 +719,11 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 
 <script>
 // ── 아코디언 ──────────────────────────────────────────────────────────────────
+// 페이지 로드 완료 후 MJPEG 스트림 연결 (로딩 스피너 방지)
+window.addEventListener("load", function() {
+  document.getElementById("stream").src = "/stream";
+});
+
 function toggleSection(id) {
   document.getElementById(id).classList.toggle('collapsed');
 }
@@ -703,9 +802,203 @@ es.onmessage = function(e) {
   document.getElementById("v-saved-pan").textContent  = fmt(d.ptz_saved_pan);
   document.getElementById("v-saved-tilt").textContent = fmt(d.ptz_saved_tilt);
 
+  // Clip gallery 갱신
+  if (window._checkClipCount) window._checkClipCount(d.clip_count);
+
   // 초기 프롬프트/트리거 동기화
   if (window._setInitialPrompt) window._setInitialPrompt(d.inference_prompt, d.trigger_keywords);
 };
+
+// ── Clip Gallery ──────────────────────────────────────────────────────────────
+(function() {
+  var gallery   = document.getElementById("clip-gallery");
+  var searchBox = document.getElementById("clip-search");
+  var btnDelSel = document.getElementById("btn-clip-del-sel");
+  var btnDelAll = document.getElementById("btn-clip-del-all");
+  var knownCount = -1;
+  var allClips = [];     // 현재 전체 클립 데이터
+  var checked = {};      // name → boolean
+
+  function fmtTime(s) {
+    if (isNaN(s)) return "0:00";
+    var m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return m + ":" + (sec < 10 ? "0" : "") + sec;
+  }
+
+  function updateDelSelBtn() {
+    var n = Object.keys(checked).filter(function(k) { return checked[k]; }).length;
+    btnDelSel.disabled = n === 0;
+    btnDelSel.textContent = n > 0 ? "선택 삭제 (" + n + ")" : "선택 삭제";
+  }
+
+  function applyFilter() {
+    var q = searchBox.value.trim().toLowerCase();
+    gallery.querySelectorAll(".clip-item").forEach(function(el) {
+      var name = el.dataset.name.toLowerCase();
+      el.classList.toggle("hidden", q !== "" && name.indexOf(q) === -1);
+    });
+  }
+
+  function deleteClips(names) {
+    return fetch("/clips", {
+      method: "DELETE",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({names: names})
+    }).then(function(r) { return r.json(); });
+  }
+
+  function buildGallery(clips) {
+    allClips = clips || [];
+    gallery.innerHTML = "";
+    checked = {};
+    updateDelSelBtn();
+
+    if (allClips.length === 0) {
+      gallery.innerHTML = '<div class="clip-empty">녹화된 클립 없음</div>';
+      return;
+    }
+
+    allClips.forEach(function(c) {
+      var item = document.createElement("div");
+      item.className = "clip-item";
+      item.dataset.name = c.name;
+
+      // top bar: checkbox + delete
+      var topBar = document.createElement("div");
+      topBar.className = "clip-top-bar";
+      var chk = document.createElement("input");
+      chk.type = "checkbox"; chk.className = "clip-chk";
+      var delBtn = document.createElement("button");
+      delBtn.className = "clip-del-btn";
+      delBtn.innerHTML = "&#10005;";  // ✕
+      topBar.appendChild(chk);
+      topBar.appendChild(delBtn);
+
+      // video wrapper + overlay
+      var wrap = document.createElement("div");
+      wrap.className = "clip-video-wrap";
+      var vid = document.createElement("video");
+      vid.src = "/clip/" + encodeURIComponent(c.name) + "?s=" + c.size;
+      vid.preload = "metadata";
+      vid.muted = true; vid.playsInline = true;
+      var overlay = document.createElement("div");
+      overlay.className = "clip-overlay";
+      overlay.innerHTML = '<div class="clip-play-icon"></div>';
+      wrap.appendChild(vid); wrap.appendChild(overlay);
+
+      // controls bar
+      var controls = document.createElement("div");
+      controls.className = "clip-controls";
+      var btnPlay = document.createElement("button");
+      btnPlay.className = "clip-ctrl-btn";
+      btnPlay.innerHTML = "&#9654;";
+      var progress = document.createElement("div");
+      progress.className = "clip-progress";
+      var progressBar = document.createElement("div");
+      progressBar.className = "clip-progress-bar";
+      progress.appendChild(progressBar);
+      var timeLabel = document.createElement("span");
+      timeLabel.className = "clip-time"; timeLabel.textContent = "0:00";
+      controls.appendChild(btnPlay);
+      controls.appendChild(progress);
+      controls.appendChild(timeLabel);
+
+      // info bar
+      var info = document.createElement("div");
+      info.className = "clip-info";
+      var nameEl = document.createElement("div");
+      nameEl.className = "clip-name"; nameEl.textContent = c.name;
+      info.appendChild(nameEl);
+
+      item.appendChild(topBar);
+      item.appendChild(wrap);
+      item.appendChild(controls);
+      item.appendChild(info);
+      gallery.appendChild(item);
+
+      // ── checkbox ──
+      chk.addEventListener("change", function() {
+        checked[c.name] = chk.checked;
+        item.classList.toggle("checked", chk.checked);
+        updateDelSelBtn();
+      });
+
+      // ── individual delete ──
+      delBtn.addEventListener("click", function() {
+        deleteClips([c.name]).then(function() { refreshClips(); });
+      });
+
+      // ── player interactions ──
+      function togglePlay() {
+        if (vid.paused) { vid.muted = false; vid.play(); }
+        else { vid.pause(); }
+      }
+      wrap.addEventListener("click", togglePlay);
+      btnPlay.addEventListener("click", togglePlay);
+
+      vid.addEventListener("play", function() {
+        overlay.classList.add("hidden");
+        btnPlay.innerHTML = "&#9646;&#9646;";
+      });
+      vid.addEventListener("pause", function() {
+        overlay.classList.remove("hidden");
+        btnPlay.innerHTML = "&#9654;";
+      });
+      vid.addEventListener("ended", function() {
+        vid.muted = true; vid.currentTime = 0;
+        overlay.classList.remove("hidden");
+        btnPlay.innerHTML = "&#9654;";
+        progressBar.style.width = "0%";
+      });
+      vid.addEventListener("timeupdate", function() {
+        if (vid.duration) {
+          progressBar.style.width = (vid.currentTime / vid.duration * 100) + "%";
+          timeLabel.textContent = fmtTime(vid.currentTime) + " / " + fmtTime(vid.duration);
+        }
+      });
+      vid.addEventListener("loadedmetadata", function() {
+        timeLabel.textContent = "0:00 / " + fmtTime(vid.duration);
+      });
+      progress.addEventListener("click", function(e) {
+        if (vid.duration) {
+          vid.currentTime = (e.offsetX / progress.offsetWidth) * vid.duration;
+        }
+      });
+    });
+
+    applyFilter();
+  }
+
+  // ── 검색 필터 ──
+  searchBox.addEventListener("input", applyFilter);
+
+  // ── 선택 삭제 ──
+  btnDelSel.addEventListener("click", function() {
+    var names = Object.keys(checked).filter(function(k) { return checked[k]; });
+    if (names.length === 0) return;
+    deleteClips(names).then(function() { refreshClips(); });
+  });
+
+  // ── 모두 삭제 ──
+  btnDelAll.addEventListener("click", function() {
+    if (allClips.length === 0) return;
+    var names = allClips.map(function(c) { return c.name; });
+    deleteClips(names).then(function() { refreshClips(); });
+  });
+
+  function refreshClips() {
+    fetch("/clips").then(function(r) { return r.json(); }).then(buildGallery);
+  }
+
+  window._checkClipCount = function(count) {
+    if (count !== knownCount) {
+      knownCount = count;
+      refreshClips();
+    }
+  };
+
+  refreshClips();
+})();
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
 (function() {
@@ -824,6 +1117,10 @@ class DebugHandler(BaseHTTPRequestHandler):
             self._serve_mjpeg()
         elif self.path == "/events":
             self._serve_sse()
+        elif self.path == "/clips":
+            self._serve_clip_list()
+        elif self.path.startswith("/clip/"):
+            self._serve_clip_file()
         else:
             self.send_error(404)
 
@@ -879,6 +1176,30 @@ class DebugHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def do_DELETE(self):
+        if self.path == "/clips":
+            from pathlib import Path
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            names = body.get("names", [])
+            clip_dir = state._clip_dir
+            deleted = 0
+            if clip_dir:
+                for name in names:
+                    if "/" in name or "\\" in name or ".." in name:
+                        continue
+                    fpath = Path(clip_dir) / name
+                    if fpath.exists() and fpath.is_file():
+                        fpath.unlink()
+                        deleted += 1
+            print(f"[clip] 삭제: {deleted}개", flush=True)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True, "deleted": deleted}).encode())
+        else:
+            self.send_error(404)
+
     def _serve_html(self):
         body = HTML_PAGE.encode("utf-8")
         self.send_response(200)
@@ -927,6 +1248,64 @@ class DebugHandler(BaseHTTPRequestHandler):
             pass
         finally:
             state.sse_unsubscribe(q)
+
+    def _serve_clip_list(self):
+        clips = state.list_clips()
+        body = json.dumps(clips, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_clip_file(self):
+        from pathlib import Path
+        raw = self.path[len("/clip/"):]
+        name = urllib.parse.unquote(raw.split("?", 1)[0])
+        # 경로 탈출 방지
+        if "/" in name or "\\" in name or ".." in name:
+            self.send_error(400)
+            return
+        clip_dir = state._clip_dir
+        if not clip_dir:
+            self.send_error(404)
+            return
+        fpath = Path(clip_dir) / name
+        if not fpath.exists() or not fpath.is_file():
+            self.send_error(404)
+            return
+
+        file_size = fpath.stat().st_size
+        range_header = self.headers.get("Range")
+
+        if range_header:
+            # Range 요청 처리 (브라우저 비디오 재생에 필수)
+            m = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if not m:
+                self.send_error(416)
+                return
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else file_size - 1
+            end = min(end, file_size - 1)
+            length = end - start + 1
+
+            self.send_response(206)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            with open(fpath, "rb") as f:
+                f.seek(start)
+                self.wfile.write(f.read(length))
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            with open(fpath, "rb") as f:
+                self.wfile.write(f.read())
 
 
 # ── 서버 시작 ─────────────────────────────────────────────────────────────────

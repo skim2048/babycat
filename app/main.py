@@ -479,8 +479,9 @@ def main() -> None:
     judge    = EventJudge()
     infer_q  = queue.Queue(maxsize=1)  # maxsize=1: 추론 중 중복 트리거 방지
 
-    # 초기 프롬프트 설정
+    # 초기 프롬프트 및 클립 디렉토리 설정
     debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
+    debug_state.set_clip_dir(TRIGGER_CLIP_DIR)
 
     # 디버그 대시보드에 참조 전달
     debug_state.set_refs(ring, RING_SIZE, judge, {
