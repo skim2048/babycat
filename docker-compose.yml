@@ -83,6 +83,22 @@ services:
     networks:
       - babycat
 
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    container_name: babycat-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"    # Vite dev server
+    volumes:
+      - ./web:/app     # live-mount for HMR
+      - /app/node_modules  # anonymous volume — 컨테이너 내부 node_modules 보존
+    depends_on:
+      - app
+    networks:
+      - babycat
+
 volumes:
   recordings:
     driver: local

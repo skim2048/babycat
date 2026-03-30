@@ -32,7 +32,9 @@ from google.oauth2 import service_account
 from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
-from debug_server import state as debug_state, start_debug_server, ptz_is_moving
+from state import state as debug_state
+from server import start_server
+from ptz import is_moving as ptz_is_moving
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
@@ -442,7 +444,7 @@ def main() -> None:
     })
 
     # 디버그 웹서버 시작 (파이프라인보다 먼저 — RTSP 미연결 시에도 대시보드 접근 가능)
-    start_debug_server(8080)
+    start_server(8080)
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(
