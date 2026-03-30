@@ -1,5 +1,5 @@
 """
-Watchdog — 디버그 대시보드 (stdlib only, 외부 의존성 없음)
+Babycat — 디버그 대시보드 (stdlib only, 외부 의존성 없음)
 파이프라인 점검용: VLM 입력 프레임 + 추론 결과 + 하드웨어 상태를 브라우저에서 실시간 확인
 
 엔드포인트:
@@ -422,7 +422,7 @@ HTML_PAGE = """\
 <html>
 <head>
 <meta charset="utf-8">
-<title>Watchdog Debug</title>
+<title>Babycat Debug</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; }
@@ -582,7 +582,7 @@ body { font-family: 'Courier New', monospace; background: #f5f5f5; color: #333; 
 </head>
 <body>
 <div class="header">
-  <h1>Watchdog Backend Debug</h1>
+  <h1>Babycat Backend Debug</h1>
   <span class="uptime" id="v-uptime">-</span>
 </div>
 <div class="main">

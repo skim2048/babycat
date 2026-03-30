@@ -1,5 +1,5 @@
 """
-Watchdog — E2E 통합 테스트 (비즈니스 로직 레이어)
+Babycat — E2E 통합 테스트 (비즈니스 로직 레이어)
 
 GStreamer / VLM 없이 아래 흐름을 검증한다:
   EventJudge → send_alert() → preserve_clip() → 클립 파일 생성
@@ -20,7 +20,7 @@ import time
 # ── 임시 녹화 디렉토리를 환경변수로 주입 (테스트 격리) ────────────────────────
 # main.py 는 모듈 임포트 시 환경변수로 상수를 확정하므로, import 전에 설정해야 함.
 
-_tmp = tempfile.mkdtemp(prefix="watchdog_test_")
+_tmp = tempfile.mkdtemp(prefix="babycat_test_")
 _RECORDINGS_DIR = os.path.join(_tmp, "live")
 _EVENTS_DIR     = os.path.join(_tmp, "events")
 os.makedirs(_RECORDINGS_DIR)
@@ -33,7 +33,7 @@ os.environ["CONSEC_N"]          = "3"
 # main.py 모듈 임포트 (GStreamer / NanoLLM 은 사용하지 않으므로 gi / nano_llm 없어도 됨)
 # 단, import 시 gi.require_version 이 실행되므로 GStreamer 설치 환경에서 실행할 것.
 import main as _main  # noqa: E402
-from main import EventJudge, preserve_clip, send_alert, BEHAVIORS  # noqa: E402
+from main import EventJudge, preserve_clip, send_alert  # noqa: E402
 
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
@@ -55,30 +55,30 @@ judge = EventJudge(consec_n=3)
 
 # 1-1. CONSEC_N 미만: 알림 없음
 for _ in range(2):
-    alert = judge.update("scratching")
+    alert = judge.update("event_a")
 check("CONSEC_N 미만(2회)은 알림 없음", alert is None)
 
 # 1-2. CONSEC_N 도달: 알림 발령
-alert = judge.update("scratching")
-check("CONSEC_N 도달(3회)에 알림 발령", alert == "scratching")
+alert = judge.update("event_a")
+check("CONSEC_N 도달(3회)에 알림 발령", alert == "event_a")
 
 # 1-3. 발령 직후 streak 초기화: 다음 1회는 알림 없음
-alert = judge.update("scratching")
+alert = judge.update("event_a")
 check("발령 후 streak 초기화 (1회 추가 → 알림 없음)", alert is None)
 
-# 1-4. 다른 행동 감지 시 streak 초기화
+# 1-4. 다른 감지 키 수신 시 streak 초기화
 judge2 = EventJudge(consec_n=3)
-judge2.update("scratching")
-judge2.update("scratching")
-alert = judge2.update("circling")   # 다른 행동
-check("다른 행동 감지 시 streak 초기화", alert is None)
-alert = judge2.update("scratching")  # 다시 scratching 1회 — 아직 2회 미만
+judge2.update("event_a")
+judge2.update("event_a")
+alert = judge2.update("event_b")   # 다른 키
+check("다른 감지 키 수신 시 streak 초기화", alert is None)
+alert = judge2.update("event_a")   # 다시 event_a 1회 — 아직 2회 미만
 check("streak 초기화 후 1회: 알림 없음", alert is None)
 
 # 1-5. None(정상) 감지 시 streak 초기화
 judge3 = EventJudge(consec_n=3)
-judge3.update("vomiting")
-judge3.update("vomiting")
+judge3.update("event_c")
+judge3.update("event_c")
 alert = judge3.update(None)          # NORMAL
 check("NORMAL 감지 시 streak 초기화", alert is None)
 
@@ -101,10 +101,10 @@ for i, name in enumerate(seg_names):
     os.utime(path, (time.time() - (len(seg_names) - i) * 10, time.time() - (len(seg_names) - i) * 10))
 
 event_time = time.time()
-preserve_clip("scratching", event_time)
+preserve_clip("event_a", event_time)
 
 ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(event_time))
-event_dir_name = f"{ts}_scratching"
+event_dir_name = f"{ts}_event_a"
 event_dir = os.path.join(_EVENTS_DIR, event_dir_name)
 
 check("이벤트 디렉토리 생성됨", os.path.isdir(event_dir))
@@ -122,7 +122,7 @@ empty_dir = os.path.join(_tmp, "empty_live")
 os.makedirs(empty_dir)
 _main.RECORDINGS_DIR = empty_dir
 try:
-    preserve_clip("vomiting", time.time())  # 파일 없음 → 오류 없이 리턴
+    preserve_clip("event_b", time.time())  # 파일 없음 → 오류 없이 리턴
     check("세그먼트 없을 때 오류 없이 처리", True)
 except Exception as e:
     check(f"세그먼트 없을 때 오류 없이 처리 (예외: {e})", False)
@@ -136,16 +136,16 @@ print("\n[3/3] send_alert 흐름 검증 (FCM 비활성화)")
 
 # FCM 미설정 상태에서 send_alert → 로그 출력 + preserve_clip 호출 후 오류 없어야 함
 try:
-    send_alert("circling")
+    send_alert("event_c")
     time.sleep(0.2)  # preserve_clip 스레드 완료 대기
     check("send_alert 오류 없이 완료 (FCM 비활성화)", True)
 except Exception as e:
     check(f"send_alert 오류 없이 완료 (예외: {e})", False)
 
-# circling 이벤트 디렉토리 생성 확인
+# event_c 이벤트 디렉토리 생성 확인
 events = os.listdir(_EVENTS_DIR) if os.path.isdir(_EVENTS_DIR) else []
-circling_events = [d for d in events if "circling" in d]
-check("send_alert → preserve_clip 클립 생성 확인", len(circling_events) >= 1)
+event_c_events = [d for d in events if "event_c" in d]
+check("send_alert → preserve_clip 클립 생성 확인", len(event_c_events) >= 1)
 
 
 # ── 결과 요약 ─────────────────────────────────────────────────────────────────

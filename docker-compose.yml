@@ -13,14 +13,14 @@ services:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
       - recordings:/recordings
     networks:
-      - watchdog
+      - babycat
 
   app:
-    image: watchdog-app
+    image: babycat-app
     build:
       context: .
       dockerfile: docker/app/Dockerfile
-    container_name: watchdog-app
+    container_name: babycat-app
     restart: unless-stopped
     runtime: nvidia
     ports:
@@ -62,13 +62,13 @@ services:
     depends_on:
       - mediamtx
     networks:
-      - watchdog
+      - babycat
 
   api:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
-    container_name: watchdog-api
+    container_name: babycat-api
     restart: unless-stopped
     profiles: [api]
     ports:
@@ -77,7 +77,7 @@ services:
       - api_data:/data
       - recordings:/recordings:ro             # read-only access to clips
     networks:
-      - watchdog
+      - babycat
 
 volumes:
   recordings:
@@ -86,6 +86,6 @@ volumes:
     driver: local
 
 networks:
-  watchdog:
-    name: watchdog
+  babycat:
+    name: babycat
     driver: bridge

@@ -1,5 +1,5 @@
 """
-Watchdog — VLM Phase 1 검증 테스트
+Babycat — VLM Phase 1 검증 테스트
 GStreamer 파이프라인 + VLM 추론 통합 확인
 
 검증 항목:
@@ -38,22 +38,7 @@ N_INFERENCES  = int(os.getenv("N_INFERENCES", "5"))
 TARGET_FPS    = float(os.getenv("TARGET_FPS",  "1.0"))
 VLM_INPUT_SIZE = (384, 384)
 
-# main.py와 동일한 프롬프트
-INFERENCE_PROMPT = """\
-You are a veterinary monitoring AI watching a dog inside a pet house.
-Analyze the image and determine if the dog shows any of these abnormal behaviors:
-- seizure: convulsions, uncontrolled muscle movements, falling over
-- vomiting: active vomiting
-- retching: repeated dry heaving or pre-vomit abdominal contractions
-- scratching: repeated, intense scratching of body parts
-- circling: spinning in tight circles repeatedly
-- excessive_licking: compulsively licking body parts or surfaces
-- excessive_panting: heavy panting without apparent physical exertion
-
-If an abnormal behavior is detected, respond ONLY with:
-  DETECTED: <behavior_key>
-If the dog appears normal, respond ONLY with:
-  NORMAL"""
+INFERENCE_PROMPT = "What is the person doing? Answer in one sentence."
 
 
 # ── VLM 추론 ──────────────────────────────────────────────────────────────────
@@ -121,7 +106,7 @@ def make_frame_callback(frame_q: queue.Queue):
 
 def main() -> None:
     print("=" * 55)
-    print("  Watchdog VLM Phase 1 검증 테스트")
+    print("  Babycat VLM Phase 1 검증 테스트")
     print("=" * 55)
     print(f"  URL          : {MEDIAMTX_URL}")
     print(f"  MODEL        : {MODEL_ID}")

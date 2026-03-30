@@ -1,5 +1,5 @@
 """
-Watchdog — App 메인 엔트리포인트
+Babycat — App 메인 엔트리포인트
 Phase 1: GStreamer 파이프라인 + VLM 추론 + 이벤트 판정
 
 파이프라인 (Branch B):
@@ -64,34 +64,6 @@ TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))             # 트리
 # SigLIP 입력 해상도 (VLM 내부에서 384×384로 리사이즈됨, 추론 시간에 무관)
 VLM_INPUT_SIZE = (384, 384)
 
-# ── 감지 대상 행동 ─────────────────────────────────────────────────────────────
-
-BEHAVIORS = {
-    "seizure":            "경련 (발작)",
-    "vomiting":           "구토",
-    "retching":           "헛구역질",
-    "scratching":         "긁기 과다",
-    "circling":           "선회운동",
-    "excessive_licking":  "핥기 과다",
-    "excessive_panting":  "헐떡임 과다",
-}
-
-# INFERENCE_PROMPT = """\
-# You are a veterinary monitoring AI watching a dog inside a pet house.
-# Analyze the image and determine if the dog shows any of these abnormal behaviors:
-# - seizure: convulsions, uncontrolled muscle movements, falling over
-# - vomiting: active vomiting
-# - retching: repeated dry heaving or pre-vomit abdominal contractions
-# - scratching: repeated, intense scratching of body parts
-# - circling: spinning in tight circles repeatedly
-# - excessive_licking: compulsively licking body parts or surfaces
-# - excessive_panting: heavy panting without apparent physical exertion
-#
-# If an abnormal behavior is detected, respond ONLY with:
-#   DETECTED: <behavior_key>
-# If the dog appears normal, respond ONLY with:
-#   NORMAL"""
-
 INFERENCE_PROMPT_DEFAULT = "What is the person doing? Answer in one sentence."
 
 
@@ -137,8 +109,8 @@ class EventJudge:
 
     def update(self, detected: Optional[str]) -> Optional[str]:
         """
-        detected: 행동 키(e.g. 'scratching') 또는 None(정상)
-        반환: 알림 발령할 행동 키, 없으면 None
+        detected: 감지 키 또는 None(정상)
+        반환: 알림 발령할 키, 없으면 None
         """
         if detected is None:
             self._streak.clear()
@@ -182,7 +154,7 @@ def init_fcm() -> bool:
         return False
 
 
-def preserve_clip(behavior: str, event_time: float) -> None:
+def preserve_clip(detected: str, event_time: float) -> None:
     """
     MediaMTX 세그먼트 디렉토리에서 최근 CLIP_PRE_SEGMENTS개를 이벤트 디렉토리로 복사.
     recordDeleteAfter(2h)로 삭제되기 전에 보존.
@@ -199,7 +171,7 @@ def preserve_clip(behavior: str, event_time: float) -> None:
         return
 
     ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(event_time))
-    dest_dir = Path(EVENTS_DIR) / f"{ts}_{behavior}"
+    dest_dir = Path(EVENTS_DIR) / f"{ts}_{detected}"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     for seg in segments[:CLIP_PRE_SEGMENTS]:
@@ -247,17 +219,16 @@ def save_trigger_clip(matched_keywords: list[str], event_time: float) -> None:
         print(f"[trigger-clip] 녹화 오류: {e}", flush=True)
 
 
-def send_alert(behavior: str) -> None:
+def send_alert(detected: str) -> None:
     """
     FCM HTTP v1 API로 푸시 알림 발송 + 이벤트 클립 보존.
     FCM_CREDENTIALS 또는 FCM_TOKEN 미설정 시 로그 출력만.
     """
-    label = BEHAVIORS.get(behavior, behavior)
-    print(f"[ALERT] 이상 행동 감지: {label} ({behavior})", flush=True)
+    print(f"[ALERT] 조건 감지: {detected}", flush=True)
 
     # 클립 보존 (별도 스레드 — 파일 복사 동안 추론 스레드 블로킹 방지)
     threading.Thread(
-        target=preserve_clip, args=(behavior, time.time()), daemon=True
+        target=preserve_clip, args=(detected, time.time()), daemon=True
     ).start()
 
     if not _fcm_creds or not FCM_TOKEN:
@@ -273,10 +244,10 @@ def send_alert(behavior: str) -> None:
         "message": {
             "token": FCM_TOKEN,
             "notification": {
-                "title": "Watchdog 이상 행동 감지",
-                "body": f"반려견이 {label}을(를) 보이고 있습니다.",
+                "title": "Babycat 이벤트 감지",
+                "body": f"감지된 조건: {detected}",
             },
-            "data": {"behavior": behavior},
+            "data": {"detected": detected},
         }
     }
     try:
@@ -299,32 +270,13 @@ def send_alert(behavior: str) -> None:
 
 # ── VLM 추론 ──────────────────────────────────────────────────────────────────
 
-def parse_vlm_response(text: str) -> Optional[str]:
-    """
-    VLM 출력 파싱.
-    'DETECTED: <key>' → 행동 키 반환
-    'NORMAL' 또는 파싱 실패 → None 반환
-    """
-    text = text.strip()
-    if text.upper().startswith("DETECTED:"):
-        key = text.split(":", 1)[1].strip().lower()
-        # </s> 등 EOS 토큰 제거
-        key = key.split("<")[0].strip()
-        if key in BEHAVIORS:
-            return key
-        # "none of the above" 등 정상 응답을 DETECTED: 형식으로 출력한 경우 무시
-        if "none" not in key:
-            print(f"[WARN] 알 수 없는 행동 키: {key!r}", flush=True)
-    return None
-
-
-def run_inference(model: NanoLLM, frames: list) -> tuple[Optional[str], str]:
+def run_inference(model: NanoLLM, frames: list) -> str:
     """
     PIL 프레임 리스트로 VLM 추론 실행.
     ChatHistory API 사용 (NanoLLM 멀티모달 올바른 방법).
     chat.reset() + gc.collect() 필수 (NanoLLM GitHub issue #39, 메모리 누수 방지).
 
-    반환: (행동 키 또는 None, VLM 원본 텍스트)
+    반환: VLM 원본 텍스트
     """
     chat = ChatHistory(model)
     for img in frames:
@@ -340,12 +292,12 @@ def run_inference(model: NanoLLM, frames: list) -> tuple[Optional[str], str]:
     chat.reset()
     gc.collect()
 
-    return parse_vlm_response(raw), raw
+    return raw
 
 
 # ── 추론 워커 스레드 ───────────────────────────────────────────────────────────
 
-def inference_worker(model: NanoLLM, ring: RingBuffer, judge: EventJudge,
+def inference_worker(model: NanoLLM, ring: RingBuffer,
                      infer_queue: queue.Queue) -> None:
     """
     appsink 콜백이 infer_queue에 신호를 보내면 ring에서 최신 N_FRAMES를 꺼내
@@ -363,7 +315,7 @@ def inference_worker(model: NanoLLM, ring: RingBuffer, judge: EventJudge,
             continue
 
         t0 = time.time()
-        behavior, raw = run_inference(model, frames)
+        raw = run_inference(model, frames)
         elapsed_ms = (time.time() - t0) * 1000
 
         # 트리거 키워드 매칭
@@ -372,23 +324,20 @@ def inference_worker(model: NanoLLM, ring: RingBuffer, judge: EventJudge,
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
         event_triggered = len(matched) > 0
 
-        label = BEHAVIORS.get(behavior, "정상") if behavior else "정상"
         if event_triggered:
             print(f"[infer] {elapsed_ms:.0f}ms  → EVENT: {matched}", flush=True)
         else:
-            print(f"[infer] {elapsed_ms:.0f}ms  → {label}", flush=True)
+            print(f"[infer] {elapsed_ms:.0f}ms  → 정상", flush=True)
 
-        debug_state.update_inference(label, raw.strip(), elapsed_ms,
-                                     event_triggered=event_triggered)
+        debug_state.update_inference(
+            "EVENT" if event_triggered else "정상",
+            raw.strip(), elapsed_ms,
+            event_triggered=event_triggered)
 
         if event_triggered:
             threading.Thread(
                 target=save_trigger_clip, args=(matched, time.time()), daemon=True
             ).start()
-
-        alert = judge.update(behavior)
-        if alert:
-            send_alert(alert)
 
 
 # ── GStreamer 파이프라인 ───────────────────────────────────────────────────────
@@ -452,7 +401,7 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print("=== Watchdog App 시작 ===", flush=True)
+    print("=== Babycat App 시작 ===", flush=True)
     print(f"  MEDIAMTX_URL : {MEDIAMTX_URL}", flush=True)
     print(f"  MODEL_ID     : {MODEL_ID}", flush=True)
     print(f"  TARGET_FPS   : {TARGET_FPS}", flush=True)
@@ -475,20 +424,18 @@ def main() -> None:
     print(f"[init] 모델 로드 완료 ({time.time() - t0:.1f}s)", flush=True)
 
     # 컴포넌트 초기화
-    ring     = RingBuffer(maxlen=RING_SIZE)
-    judge    = EventJudge()
-    infer_q  = queue.Queue(maxsize=1)  # maxsize=1: 추론 중 중복 트리거 방지
+    ring    = RingBuffer(maxlen=RING_SIZE)
+    infer_q = queue.Queue(maxsize=1)  # maxsize=1: 추론 중 중복 트리거 방지
 
     # 초기 프롬프트 및 클립 디렉토리 설정
     debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     debug_state.set_clip_dir(TRIGGER_CLIP_DIR)
 
     # 디버그 대시보드에 참조 전달
-    debug_state.set_refs(ring, RING_SIZE, judge, {
+    debug_state.set_refs(ring, RING_SIZE, None, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
         "consec_n":   CONSEC_N,
-        "behaviors":  BEHAVIORS,
     })
 
     # 디버그 웹서버 시작 (파이프라인보다 먼저 — RTSP 미연결 시에도 대시보드 접근 가능)
@@ -497,7 +444,7 @@ def main() -> None:
     # 추론 워커 스레드 시작
     worker = threading.Thread(
         target=inference_worker,
-        args=(model, ring, judge, infer_q),
+        args=(model, ring, infer_q),
         daemon=True,
     )
     worker.start()

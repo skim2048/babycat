@@ -1,4 +1,4 @@
-# Watchdog — API Server Container
+# Babycat — API Server Container
 # REST API + SQLite (embedded)
 # TODO: implement in Phase 1
 
