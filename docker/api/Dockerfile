@@ -1,10 +1,9 @@
 # Babycat — API Server Container
-# REST API + SQLite (embedded)
-# TODO: implement in Phase 1
+# REST API (FastAPI) + SQLite (embedded)
 
 FROM python:3.11-slim
 
-RUN pip install --no-cache-dir fastapi uvicorn
+RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic
 
 WORKDIR /app
 COPY api/ .

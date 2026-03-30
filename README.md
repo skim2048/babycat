@@ -1,7 +1,7 @@
 # Babycat
 
 > **목적**: 카메라 영상을 사용자가 정의한 조건에 따라 실시간으로 분석하는 엣지 AI 백엔드.
-> **버전**: v1.7
+> **버전**: v1.8
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -22,6 +22,7 @@
 | v1.5 | 범용 시스템으로 방향 전환. 디렉토리 구조 재편 (server/src/app→app, webapp 제거). 저널 파일명 패턴 정리 |
 | v1.6 | 브라우저 프롬프트/트리거 키워드 입력 UI. 이벤트 감지 시 ffmpeg 직접 녹화 클립 저장 (5s, 30s 쿨다운). MediaMTX 세그먼트 10s로 단축 |
 | v1.7 | 이벤트 클립 좌측 수직 사이드바로 재배치. 클립 검색·선택삭제·모두삭제·개별삭제. 커스텀 미디어 플레이어 컨트롤. LIVE STREAM 잔여 높이 동적 채움(letterbox). 브라우저 로딩 스피너 제거 |
+| v1.8 | API 서버 구현 (FastAPI, SQLite). 클립·이벤트·기기토큰 REST API. PTZ 이동 중 VLM 추론 억제 (OI-10). API 레퍼런스 문서 |
 
 ---
 
@@ -189,8 +190,9 @@ flowchart TD
 ### 예정
 - [x] 감지 조건 외부화 — 브라우저 UI에서 프롬프트/트리거 키워드 실시간 주입
 - [x] 이벤트 클립 저장 — ffmpeg 직접 녹화 (5s, 30s 쿨다운)
+- [x] API 서버 구현 (FastAPI, SQLite) — 클립·이벤트·기기토큰 REST API
+- [x] PTZ 이동 중 VLM 추론 억제 (OI-10)
 - [ ] 클라이언트 앱 (Android) — 실시간 스트리밍, 이벤트 이력, 알림 수신
-- [ ] API 서버 구현 (기기 토큰, 이벤트 이력, 클립 제공)
 
 ---
 
@@ -458,6 +460,41 @@ MJPEG 스트림(`<img src="/stream">`)의 `src`를 HTML에서 제거하고 `wind
 
 ---
 
+### 260330 — API 서버 구현 + PTZ 추론 억제 (v1.8)
+
+#### API 서버 (FastAPI + SQLite)
+
+`api/` 디렉토리에 REST API 서버 구현. App 컨테이너의 퍼시스턴트 데이터(클립, 이벤트, 기기 토큰)를 분리.
+
+| 파일 | 역할 |
+|---|---|
+| `api/main.py` | FastAPI 엔드포인트 (11개) |
+| `api/database.py` | SQLite 초기화 (WAL 모드), events·devices 테이블 |
+| `api/schemas.py` | Pydantic 요청/응답 스키마 |
+
+엔드포인트: `/health`, `/clips` (목록·다운로드·선택삭제·전체삭제), `/events` (조회·기록·삭제), `/devices` (목록·등록/갱신·삭제). 클립 파일 다운로드는 Range 요청 지원 (브라우저 `<video>` 재생).
+
+클립 공유: App 컨테이너가 `./app/clip`에 ffmpeg로 쓰고, API 서버가 같은 호스트 경로를 `/data/clips`로 마운트하여 서빙.
+
+docker-compose: `profiles: [api]` 제거 (기본 시작), 환경변수 `CLIP_DIR`·`DB_PATH` 설정.
+
+테스트: `tests/test_api.py` — 23개 테스트 (23/23 PASS).
+
+#### PTZ 이동 중 VLM 추론 억제 (OI-10)
+
+`ContinuousMove` 중 VLM 추론을 건너뛰도록 구현. PTZ 이동 중 카메라 화면이 흔들려 추론 결과가 무의미하기 때문.
+
+- `debug_server.py`: `_ptz_moving` 플래그 추가. `move` → True, `stop` → False.
+- `main.py`: `inference_worker`가 매 루프에서 `ptz_is_moving()` 확인, True이면 `continue`.
+
+`goto`(AbsoluteMove)는 억제하지 않음 — 카메라가 자체적으로 이동 완료 후 정지.
+
+#### API 레퍼런스 문서
+
+`docs/api.md` — 프론트엔드 개발자용 통합 API 레퍼런스. 3개 서비스(MediaMTX, App, API Server)의 전체 엔드포인트, 요청/응답 스키마, SSE 데이터 형식, 프론트엔드 코드 예시 포함.
+
+---
+
 ### 미결 항목
 
 | # | 항목 | 비고 |
@@ -465,7 +502,7 @@ MJPEG 스트림(`<img src="/stream">`)의 `src`를 HTML에서 제거하고 `wind
 | OI-02 | 프레임 샘플링 주기 (TARGET_FPS, N_FRAMES) | 현재 1fps / 4프레임. 실 영상 기반 결정 필요 |
 | OI-03 | 연속 감지 조건 (CONSEC_N) | 현재 3회. 오탐율 실험 후 결정 |
 | OI-04 | Ring Buffer 크기 | 현재 30프레임 |
-| OI-10 | PTZ 중 VLM 추론 억제 | PTZ 제어 완료. 억제 로직은 미결 |
+| ~~OI-10~~ | ~~PTZ 중 VLM 추론 억제~~ | ~~v1.8에서 완료 (ContinuousMove 중 추론 건너뜀)~~ |
 | — | ~~감지 조건 외부화~~ | ~~v1.6에서 완료 (브라우저 UI 프롬프트/트리거)~~ |
-| — | API 서버 구현 | 미착수 |
+| — | ~~API 서버 구현~~ | ~~v1.8에서 완료 (FastAPI, SQLite, 23/23 테스트 PASS)~~ |
 | — | 클라이언트 앱 (Android) | 미착수 |

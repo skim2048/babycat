@@ -40,3 +40,6 @@ app/clip/
 *.njsproj
 *.sln
 *.sw?
+
+# Claude
+CLAUDE.md

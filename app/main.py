@@ -32,7 +32,7 @@ from google.oauth2 import service_account
 from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
-from debug_server import state as debug_state, start_debug_server
+from debug_server import state as debug_state, start_debug_server, ptz_is_moving
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
@@ -308,6 +308,9 @@ def inference_worker(model: NanoLLM, ring: RingBuffer,
         try:
             infer_queue.get(timeout=5)
         except queue.Empty:
+            continue
+
+        if ptz_is_moving():
             continue
 
         frames = ring.latest(N_FRAMES)

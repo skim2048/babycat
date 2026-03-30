@@ -70,12 +70,16 @@ services:
       dockerfile: docker/api/Dockerfile
     container_name: babycat-api
     restart: unless-stopped
-    profiles: [api]
     ports:
       - "8000:8000"
+    environment:
+      - CLIP_DIR=/data/clips
+      - DB_PATH=/data/db/babycat.db
     volumes:
-      - api_data:/data
-      - recordings:/recordings:ro             # read-only access to clips
+      - ./app/clip:/data/clips               # 클립 공유 (App이 쓰고 API가 읽기/삭제)
+      - api_data:/data/db                    # SQLite 데이터베이스
+    depends_on:
+      - app
     networks:
       - babycat
 

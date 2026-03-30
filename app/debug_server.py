@@ -38,6 +38,12 @@ _PTZ_HOME_FILE = "/app/ptz_home.txt"  # 저장 위치 파일 (호스트: src/app
 _ptz_lock   = threading.Lock()
 _ptz_current: dict = {"pan": None, "tilt": None}   # 폴링으로 갱신
 _ptz_saved:   dict = {"pan": None, "tilt": None}   # 파일에서 로드
+_ptz_moving: bool = False                           # ContinuousMove 중이면 True
+
+
+def ptz_is_moving() -> bool:
+    with _ptz_lock:
+        return _ptz_moving
 
 
 def _onvif_auth_header() -> str:
@@ -1148,12 +1154,17 @@ class DebugHandler(BaseHTTPRequestHandler):
             ok     = True
 
             if action == "move":
+                with _ptz_lock:
+                    global _ptz_moving
+                    _ptz_moving = True
                 threading.Thread(
                     target=ptz_move,
                     args=(float(body.get("pan", 0)), float(body.get("tilt", 0))),
                     daemon=True,
                 ).start()
             elif action == "stop":
+                with _ptz_lock:
+                    _ptz_moving = False
                 threading.Thread(target=ptz_stop, daemon=True).start()
             elif action == "save":
                 ok = ptz_save_home()
