@@ -115,7 +115,7 @@ class AppHandler(BaseHTTPRequestHandler):
         try:
             while True:
                 try:
-                    q.get(timeout=2)
+                    q.get(timeout=1)
                 except queue.Empty:
                     pass
                 snap = state.snapshot()

@@ -14,10 +14,10 @@ function fmt(v) {
 }
 
 const dirs = [
-  { id: 'up',    pan: 0,  tilt: 1,  label: '▲', row: 1, col: 2 },
-  { id: 'left',  pan: -1, tilt: 0,  label: '◀', row: 2, col: 1 },
-  { id: 'right', pan: 1,  tilt: 0,  label: '▶', row: 2, col: 3 },
-  { id: 'down',  pan: 0,  tilt: -1, label: '▼', row: 3, col: 2 },
+  { id: 'up',    pan: 0,  tilt: 1,  label: '▲' },
+  { id: 'down',  pan: 0,  tilt: -1, label: '▼' },
+  { id: 'left',  pan: -1, tilt: 0,  label: '◀' },
+  { id: 'right', pan: 1,  tilt: 0,  label: '▶' },
 ]
 
 function onDown(dir, e) {
@@ -44,21 +44,19 @@ function onUp(dir) {
         &nbsp; Tilt: <span>{{ fmt(state.ptz_tilt) }}</span>
       </div>
 
-      <div class="ptz-grid">
-        <div></div>
-        <template v-for="dir in dirs" :key="dir.id">
-          <button
-            class="ptz-btn"
-            :class="{ pressing: pressing === dir.id }"
-            :style="{ gridRow: dir.row, gridColumn: dir.col }"
-            @mousedown="(e) => onDown(dir, e)"
-            @mouseup="onUp(dir)"
-            @mouseleave="onUp(dir)"
-            @touchstart.prevent="(e) => onDown(dir, e)"
-            @touchend="onUp(dir)"
-          >{{ dir.label }}</button>
-        </template>
-        <button class="ptz-btn stop" style="grid-row: 2; grid-column: 2" @click="forceStop">■</button>
+      <div class="ptz-row">
+        <button
+          v-for="dir in dirs"
+          :key="dir.id"
+          class="ptz-btn"
+          :class="{ pressing: pressing === dir.id }"
+          @mousedown="(e) => onDown(dir, e)"
+          @mouseup="onUp(dir)"
+          @mouseleave="onUp(dir)"
+          @touchstart.prevent="(e) => onDown(dir, e)"
+          @touchend="onUp(dir)"
+        >{{ dir.label }}</button>
+        <button class="ptz-btn stop" @click="forceStop">■</button>
       </div>
 
       <div class="ptz-saved-row">

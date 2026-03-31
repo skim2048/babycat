@@ -4,7 +4,6 @@ import ClipSidebar from './components/ClipSidebar.vue'
 import LiveStream from './components/LiveStream.vue'
 import PromptControl from './components/PromptControl.vue'
 import InferencePanel from './components/InferencePanel.vue'
-import PipelinePanel from './components/PipelinePanel.vue'
 import HardwarePanel from './components/HardwarePanel.vue'
 import PtzPanel from './components/PtzPanel.vue'
 </script>
@@ -19,7 +18,6 @@ import PtzPanel from './components/PtzPanel.vue'
     </div>
     <div class="dash">
       <InferencePanel />
-      <PipelinePanel />
       <HardwarePanel />
       <PtzPanel />
     </div>

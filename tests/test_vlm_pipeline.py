@@ -10,7 +10,7 @@ GStreamer 파이프라인 + VLM 추론 통합 확인
   python /app/test_vlm_pipeline.py
 
 환경변수:
-  MEDIAMTX_URL   RTSP 소스 URL          (기본: rtsp://mediamtx:8554/live)
+  MEDIAMTX_URL   RTSP 소스 URL          (기본: rtsp://babycat-mediamtx:8554/live)
   VLM_MODEL      NanoLLM 모델 ID        (기본: Efficient-Large-Model/VILA1.5-3b)
   N_INFERENCES   추론 횟수              (기본: 5)
   TARGET_FPS     videorate 타겟 FPS     (기본: 1.0)
