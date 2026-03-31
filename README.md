@@ -3,12 +3,7 @@
 ![Badge](https://img.shields.io/badge/FastAPI-009688.svg?&logo=FastAPI&logoColor=fff)
 ![Badge](https://img.shields.io/badge/Vue.js-4FC08D.svg?&logo=Vue.js&logoColor=fff)
 ![Badge](https://img.shields.io/badge/Nginx-009639.svg?&logo=Nginx&logoColor=fff)
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/banner-light.png">
-  <img src="./assets/banner-light.png">
-</picture>
+![](./banner.png)
 
 > **목적**: 카메라 영상을 사용자가 정의한 조건에 따라 실시간으로 분석하는 엣지 AI 백엔드.  
 > **버전**: v1.9
