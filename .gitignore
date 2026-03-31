@@ -21,6 +21,7 @@ lerna-debug.log*
 *.timestamp-*-*.mjs
 
 # Test artifacts
+.pytest_cache/
 cypress/videos/
 cypress/screenshots/
 __screenshots__/
