@@ -32,7 +32,7 @@ from nano_llm import NanoLLM, ChatHistory
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
-MEDIAMTX_URL  = os.getenv("MEDIAMTX_URL",  "rtsp://mediamtx:8554/live")
+MEDIAMTX_URL  = os.getenv("MEDIAMTX_URL",  "rtsp://babycat-mediamtx:8554/live")
 MODEL_ID      = os.getenv("VLM_MODEL",     "Efficient-Large-Model/VILA1.5-3b")
 N_INFERENCES  = int(os.getenv("N_INFERENCES", "5"))
 TARGET_FPS    = float(os.getenv("TARGET_FPS",  "1.0"))

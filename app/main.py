@@ -38,7 +38,7 @@ from ptz import is_moving as ptz_is_moving
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
-MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://mediamtx:8554/live")
+MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://babycat-mediamtx:8554/live")
 MODEL_ID     = os.getenv("VLM_MODEL",    "Efficient-Large-Model/VILA1.5-3b")
 
 # Branch B 프레임 샘플링 (OI-02: Phase 1에서 실 데이터 기반 결정)

@@ -1,8 +1,8 @@
 services:
 
-  mediamtx:
+  babycat-mediamtx:
     image: bluenviron/mediamtx:latest
-    container_name: mediamtx
+    container_name: babycat-mediamtx
     restart: unless-stopped
     ports:
       - "8554:8554"   # RTSP
@@ -60,7 +60,7 @@ services:
       - /tmp/nvscsock:/tmp/nvscsock                                 # NvSciIPC 데몬 소켓 — NvMMLite HW 경로 필수 (없으면 cuvidv4l2로 폴백 후 CUDA_GPU_ID EINVAL)
     ipc: host      # NvSciIPC uses POSIX shm/mqueue on host IPC namespace
     depends_on:
-      - mediamtx
+      - babycat-mediamtx
     networks:
       - babycat
 
