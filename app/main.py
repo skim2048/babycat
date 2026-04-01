@@ -32,6 +32,7 @@ from google.oauth2 import service_account
 from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
+import camera
 from state import state as debug_state
 from server import start_server
 from ptz import is_moving as ptz_is_moving
@@ -445,6 +446,14 @@ def main() -> None:
 
     # 디버그 웹서버 시작 (파이프라인보다 먼저 — RTSP 미연결 시에도 대시보드 접근 가능)
     start_server(8080)
+
+    # 저장된 카메라 설정 적용 (MediaMTX 재시도 포함)
+    threading.Thread(target=camera.startup_apply, daemon=True).start()
+    print("[init] 카메라 설정 대기 중 (최대 60s)...", flush=True)
+    if camera.camera_ready.wait(timeout=60):
+        print("[init] 카메라 설정 적용 완료", flush=True)
+    else:
+        print("[init] 카메라 미설정 — 프론트엔드에서 설정 필요", flush=True)
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(

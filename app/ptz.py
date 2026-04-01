@@ -16,9 +16,6 @@ import urllib.request
 from typing import Optional
 
 
-_ONVIF_URL   = "http://192.168.1.101:2020/onvif/service"
-_ONVIF_USER  = "tapoadmin"
-_ONVIF_PASS  = "ace4421000!"
 _PTZ_PROFILE = "profile_1"
 _PTZ_SPEED   = 0.5
 _PTZ_HOME_FILE = "/app/ptz_home.txt"
@@ -27,6 +24,24 @@ _lock    = threading.Lock()
 _current: dict = {"pan": None, "tilt": None}
 _saved:   dict = {"pan": None, "tilt": None}
 _moving:  bool = False
+
+_ONVIF_URL:  Optional[str] = None
+_ONVIF_USER: Optional[str] = None
+_ONVIF_PASS: Optional[str] = None
+
+
+def configure(url: str, user: str, password: str) -> None:
+    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS
+    with _lock:
+        _ONVIF_URL  = url
+        _ONVIF_USER = user
+        _ONVIF_PASS = password
+    print(f"[PTZ] 설정 적용: {url}", flush=True)
+
+
+def is_configured() -> bool:
+    with _lock:
+        return _ONVIF_URL is not None
 
 
 def is_moving() -> bool:
@@ -92,6 +107,8 @@ def _post(body: str) -> str:
 # ── PTZ 명령 ─────────────────────────────────────────────────────────────────
 
 def move(pan: float, tilt: float) -> None:
+    if not is_configured():
+        return
     body = (
         f'<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
@@ -105,6 +122,8 @@ def move(pan: float, tilt: float) -> None:
 
 
 def stop() -> None:
+    if not is_configured():
+        return
     body = (
         f'<Stop xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
@@ -118,6 +137,8 @@ def stop() -> None:
 
 
 def absolute_move(pan: float, tilt: float) -> None:
+    if not is_configured():
+        return
     body = (
         f'<AbsoluteMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
@@ -131,6 +152,8 @@ def absolute_move(pan: float, tilt: float) -> None:
 
 
 def get_status() -> Optional[dict]:
+    if not is_configured():
+        return None
     body = (
         f'<GetStatus xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
@@ -188,8 +211,9 @@ def save_home() -> bool:
 def poll_loop() -> None:
     """백그라운드 스레드: 2초마다 현재 PTZ 위치 폴링."""
     while True:
-        status = get_status()
-        if status:
-            with _lock:
-                _current.update(status)
+        if is_configured():
+            status = get_status()
+            if status:
+                with _lock:
+                    _current.update(status)
         time.sleep(2)

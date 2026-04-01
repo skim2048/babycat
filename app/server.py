@@ -22,6 +22,7 @@ import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
+import camera
 import ptz
 from state import state
 
@@ -54,6 +55,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self._serve_clip_list()
         elif self.path.startswith("/clip/"):
             self._serve_clip_file()
+        elif self.path == "/camera":
+            self._serve_camera()
         else:
             self.send_error(404)
 
@@ -64,6 +67,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self._handle_prompt()
         elif self.path == "/ptz":
             self._handle_ptz()
+        elif self.path == "/camera":
+            self._handle_camera()
         else:
             self.send_error(404)
 
@@ -231,6 +236,30 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"ok": ok}).encode())
+
+    def _serve_camera(self):
+        config = camera.load()
+        if config:
+            result = {"configured": True, **config}
+        else:
+            result = {"configured": False}
+        body = json.dumps(result, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_camera(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        result = camera.apply(body)
+        resp = json.dumps(result, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(resp)))
+        self.end_headers()
+        self.wfile.write(resp)
 
     def _handle_clip_delete(self):
         length = int(self.headers.get("Content-Length", 0))
