@@ -1,15 +1,17 @@
+name: babycat-debug
+
 services:
 
   web:
     build:
-      context: .
+      context: ..
       dockerfile: docker/web/Dockerfile
     container_name: babycat-web
     restart: unless-stopped
     ports:
       - "5173:5173"    # Vite dev server
     volumes:
-      - ./web:/app     # live-mount for HMR
+      - .:/app         # live-mount for HMR (debugging/ 자체)
       - /app/node_modules  # anonymous volume — 컨테이너 내부 node_modules 보존
     networks:
       - babycat

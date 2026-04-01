@@ -70,7 +70,8 @@ RTSP 스트림을 입력으로 받아 VLM(Visual Language Model) 추론을 수�
 │   ├── ptz.py             # ONVIF PTZ 제어
 │   ├── hardware.py        # Jetson 하드웨어 모니터
 │   └── dashboard.html     # 레거시 대시보드 (web/ 전환 완료 시 삭제 예정)
-├── web/
+├── debugging/
+│   ├── docker-compose.yml # 디버그 웹 UI 전용 (cd debugging && docker compose up -d)
 │   ├── src/
 │   │   ├── components/    # Vue 컴포넌트 (SFC)
 │   │   ├── composables/   # Composition API (useSSE, useClips, usePtz, useCamera)
@@ -98,7 +99,7 @@ RTSP 스트림을 입력으로 받아 VLM(Visual Language Model) 추론을 수�
 | App | 8080 | GStreamer 파이프라인, VLM 추론, 이벤트 판정, FCM 발송, 내부 API (SSE/MJPEG/PTZ/Camera) |
 | MediaMTX | 8554/8888/9997 | RTSP/WebRTC 스트리밍 서버 (Branch A 패스스루 + 세그먼트 녹화). API(:9997)로 소스 동적 설정 |
 | API 서버 | 8000 | 기기 토큰 등록, 이벤트 이력 조회, 영상 클립 제공 (SQLite 내장) |
-| Web | 5173 | Vue 3 + Vite 프론트엔드 SPA (App :8080 API를 프록시로 호출) |
+| Web (debugging/) | 5173 | 디버그 웹 대시보드 — Vue 3 + Vite SPA (`cd debugging && docker compose up -d`로 별도 실행) |
 
 ### 4.2 파이프라인 아키텍처
 
