@@ -2,7 +2,7 @@
 ![Badge](https://img.shields.io/badge/Python-3776AB.svg?&logo=Python&logoColor=fff)
 ![Badge](https://img.shields.io/badge/FastAPI-009688.svg?&logo=FastAPI&logoColor=fff)
 ![Badge](https://img.shields.io/badge/Vue.js-4FC08D.svg?&logo=Vue.js&logoColor=fff)
-![](./banner.png)
+![](./assets/banner.png)
 
 # Babycat
 
