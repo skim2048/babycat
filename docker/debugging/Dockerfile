@@ -1,4 +1,4 @@
-# Babycat — Web Frontend Container (dev)
+# Babycat — Debugging Frontend Container (dev)
 # Vue 3 + Vite dev server
 
 FROM node:22-slim

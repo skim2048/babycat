@@ -9,6 +9,17 @@ logLevel: info
 api: yes
 apiAddress: :9997
 
+# API 접근 허용 (컨테이너 간 통신)
+authInternalUsers:
+  - user: any
+    pass: ""
+    ips: []
+    permissions:
+      - action: api
+      - action: publish
+      - action: read
+      - action: playback
+
 # RTSP server
 rtspAddress: :8554
 
