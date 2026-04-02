@@ -28,6 +28,7 @@ __screenshots__/
 
 # Runtime
 app/clip/
+app/camera.json
 
 # OS
 .DS_Store
