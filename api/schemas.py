@@ -4,6 +4,24 @@ from pydantic import BaseModel
 from typing import Optional
 
 
+# ── Auth ────────────────────────────────────────────────────────────────────
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class TokenOut(BaseModel):
+    token: str
+    expires_in: int
+    must_change_password: bool = False
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # ── Clip ─────────────────────────────────────────────────────────────────────
 
 class ClipOut(BaseModel):

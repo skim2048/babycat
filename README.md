@@ -50,7 +50,7 @@ IP Camera (RTSP)
 |---|---|---|
 | **App** | 8080 | GStreamer pipeline, VLM inference, event detection, FCM alerts, PTZ control |
 | **MediaMTX** | 8554/8888/9997 | RTSP/HLS streaming, segment recording, runtime source config via REST API |
-| **API Server** | 8000 | Clips/events/device tokens REST API (FastAPI + SQLite) |
+| **API Server** | 8000 | Authentication, clips/events/device tokens REST API (FastAPI + SQLite) |
 
 ---
 
@@ -74,7 +74,19 @@ docker compose up -d
 cd web && docker compose up -d
 ```
 
-On first launch, camera configuration is required. Enter the camera IP, ports, and credentials in the Camera panel of the web dashboard (`http://<host>:5173`). The settings are automatically applied to MediaMTX and the PTZ module, and persisted to `config/cam_profile.json` for automatic loading on restart.
+On first launch, open the web dashboard at `http://<host>:5173`. You will be redirected to the login page.
+
+- **Default credentials**: `admin` / `admin`
+- After login, change the password via the **비밀번호 변경** button in the dashboard header.
+
+Enter the camera IP, ports, and credentials in the Camera panel. The settings are automatically applied to MediaMTX and the PTZ module, and persisted to `config/cam_profile.json` for automatic loading on restart.
+
+### Authentication
+
+All API endpoints (both `app:8080` and `api:8000`) require a JWT Bearer token. Unauthenticated requests return `401`.
+
+- Login attempts are rate-limited: **10 consecutive failures → 30-minute lockout**
+- Tokens expire after 1 hour (configurable via `JWT_EXPIRY`)
 
 ---
 
@@ -91,6 +103,7 @@ babycat/
 │   └── hardware.py        # Jetson HW monitor
 ├── api/                   # API Server source
 │   ├── main.py            # FastAPI endpoints
+│   ├── auth.py            # JWT authentication + login rate limiting
 │   ├── database.py        # SQLite (WAL)
 │   └── schemas.py         # Pydantic schemas
 ├── web/                   # Web dashboard (Vue 3 + Vite)
@@ -98,7 +111,8 @@ babycat/
 │   └── src/               # Vue SFC + Composables
 ├── config/                # Runtime config (cam_profile.json, mediamtx.yml)
 ├── data/
-│   └── cam/{name}/        # Per-camera clip storage (*.mp4)
+│   ├── cam/{name}/        # Per-camera clip storage (*.mp4)
+│   └── db/                # SQLite database (users, events, devices)
 ├── docker/                # Dockerfiles
 ├── tests/                 # Tests
 ├── docs/                  # API reference
@@ -117,7 +131,8 @@ babycat/
 | Streaming | MediaMTX (RTSP/HLS/WebRTC) |
 | Notifications | FCM HTTP v1 API (OAuth 2.0) |
 | API Server | FastAPI + SQLite (WAL) |
-| Web Dashboard | Vue 3 + Vite |
+| Authentication | JWT (HMAC-SHA256, PBKDF2 password hashing) |
+| Web Dashboard | Vue 3 + Vite + Vue Router |
 | PTZ Control | ONVIF SOAP (WS-Security) |
 
 ---
@@ -140,18 +155,26 @@ babycat/
 
 ### API Server (:8000)
 
-| Method | Path | Description |
-|---|---|---|
-| GET | `/health` | Health check |
-| GET/DELETE | `/clips` | List / delete clips |
-| GET/POST/DELETE | `/events` | Event history CRUD |
-| GET/POST/DELETE | `/devices` | FCM device token management |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/login` | No | Login (returns JWT) |
+| POST | `/api/change-password` | Yes | Change password |
+| GET | `/health` | No | Health check |
+| GET/DELETE | `/clips` | Yes | List / delete clips |
+| GET/POST/DELETE | `/events` | Yes | Event history CRUD |
+| GET/POST/DELETE | `/devices` | Yes | FCM device token management |
 
 Full schema reference: [docs/api.md](docs/api.md)
 
 ---
 
 ## Environment Variables
+
+### Shared
+
+| Variable | Default | Description |
+|---|---|---|
+| `JWT_SECRET` | `babycat-default-secret` | JWT signing secret (must match between App and API) |
 
 ### App
 
@@ -171,6 +194,9 @@ Full schema reference: [docs/api.md](docs/api.md)
 |---|---|---|
 | `CAM_DIR` | `/data/cam` | Per-camera clip storage base path |
 | `DB_PATH` | `/data/db/babycat.db` | SQLite DB path |
+| `JWT_EXPIRY` | `3600` | Token expiry in seconds |
+| `DEFAULT_USER` | `admin` | Initial admin username |
+| `DEFAULT_PASS` | `admin` | Initial admin password |
 
 ---
 

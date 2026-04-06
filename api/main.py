@@ -23,6 +23,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
+from auth import JWT_EXPIRY, authenticate, change_password, init_users, require_auth
 from database import DB_PATH, get_db, init_db
 from schemas import (
     CameraListOut,
@@ -36,6 +37,9 @@ from schemas import (
     EventIn,
     EventListOut,
     EventOut,
+    ChangePasswordIn,
+    LoginIn,
+    TokenOut,
 )
 
 CAM_DIR = os.environ.get("CAM_DIR", "/data/cam")
@@ -45,10 +49,44 @@ MIN_CLIP_SIZE = 10240  # 10KB — ffmpeg 녹화 중 불완전 파일 제외
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # users 테이블 초기화 및 기본 계정 시딩
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        init_users(conn)
+    finally:
+        conn.close()
     yield
 
 
 app = FastAPI(title="Babycat API", version="1.0.0", lifespan=lifespan)
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+
+@app.post("/api/login", response_model=TokenOut)
+def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
+    result = authenticate(body.username, body.password, db)
+    if not result:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    return TokenOut(
+        token=result["token"],
+        expires_in=JWT_EXPIRY,
+        must_change_password=result["must_change_password"],
+    )
+
+
+@app.post("/api/change-password")
+def api_change_password(
+    body: ChangePasswordIn,
+    user: dict = Depends(require_auth),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    ok = change_password(user["sub"], body.current_password, body.new_password, db)
+    if not ok:
+        raise HTTPException(status_code=400, detail="current password is incorrect")
+    return {"ok": True}
 
 
 # ── Health ───────────────────────────────────────────────────────────────────
@@ -63,7 +101,7 @@ def health():
 
 
 @app.get("/cameras", response_model=CameraListOut)
-def list_cameras():
+def list_cameras(_=Depends(require_auth)):
     """클립 디렉토리가 존재하는 카메라 이름 목록을 반환한다."""
     base = Path(CAM_DIR)
     if not base.exists():
@@ -144,13 +182,14 @@ def list_clips(
     camera: str | None = Query(None),
     limit: int = Query(100, ge=1),
     offset: int = Query(0, ge=0),
+    _=Depends(require_auth),
 ):
     all_clips = _list_clips(q, camera)
     return ClipListOut(clips=all_clips[offset:offset + limit], total=len(all_clips))
 
 
 @app.get("/clips/{name}")
-def get_clip(name: str, request: Request, camera: str | None = Query(None)):
+def get_clip(name: str, request: Request, camera: str | None = Query(None), _=Depends(require_auth)):
     fpath = _resolve_clip(name, camera)
     file_size = fpath.stat().st_size
     range_header = request.headers.get("range")
@@ -191,7 +230,7 @@ def get_clip(name: str, request: Request, camera: str | None = Query(None)):
 
 
 @app.delete("/clips", response_model=DeletedOut)
-def delete_clips(body: ClipDeleteIn):
+def delete_clips(body: ClipDeleteIn, _=Depends(require_auth)):
     deleted = 0
     base = Path(CAM_DIR)
     for name in body.names:
@@ -215,7 +254,7 @@ def delete_clips(body: ClipDeleteIn):
 
 
 @app.delete("/clips/all", response_model=DeletedOut)
-def delete_all_clips(camera: str | None = Query(None)):
+def delete_all_clips(camera: str | None = Query(None), _=Depends(require_auth)):
     """전체 또는 특정 카메라의 클립을 모두 삭제한다."""
     base = Path(CAM_DIR)
     if not base.exists():
@@ -244,6 +283,7 @@ def list_events(
     limit: int = Query(50, ge=1),
     offset: int = Query(0, ge=0),
     db: sqlite3.Connection = Depends(get_db),
+    _=Depends(require_auth),
 ):
     total = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
     rows = db.execute(
@@ -256,7 +296,7 @@ def list_events(
 
 
 @app.post("/events", response_model=EventOut, status_code=201)
-def create_event(body: EventIn, db: sqlite3.Connection = Depends(get_db)):
+def create_event(body: EventIn, db: sqlite3.Connection = Depends(get_db), _=Depends(require_auth)):
     cur = db.execute(
         "INSERT INTO events (trigger, clip_name) VALUES (?, ?)",
         (body.trigger, body.clip_name),
@@ -269,7 +309,7 @@ def create_event(body: EventIn, db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.delete("/events", response_model=DeletedOut)
-def delete_events(db: sqlite3.Connection = Depends(get_db)):
+def delete_events(db: sqlite3.Connection = Depends(get_db), _=Depends(require_auth)):
     cur = db.execute("DELETE FROM events")
     return DeletedOut(deleted=cur.rowcount)
 
@@ -278,7 +318,7 @@ def delete_events(db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.get("/devices", response_model=DeviceListOut)
-def list_devices(db: sqlite3.Connection = Depends(get_db)):
+def list_devices(db: sqlite3.Connection = Depends(get_db), _=Depends(require_auth)):
     rows = db.execute(
         "SELECT id, fcm_token, label, registered_at FROM devices ORDER BY id"
     ).fetchall()
@@ -287,7 +327,7 @@ def list_devices(db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.post("/devices", response_model=DeviceOut)
-def register_device(body: DeviceIn, db: sqlite3.Connection = Depends(get_db)):
+def register_device(body: DeviceIn, db: sqlite3.Connection = Depends(get_db), _=Depends(require_auth)):
     existing = db.execute(
         "SELECT id FROM devices WHERE fcm_token = ?", (body.fcm_token,)
     ).fetchone()
@@ -315,7 +355,7 @@ def register_device(body: DeviceIn, db: sqlite3.Connection = Depends(get_db)):
 
 
 @app.delete("/devices/{device_id}", response_model=DeletedOut)
-def delete_device(device_id: int, db: sqlite3.Connection = Depends(get_db)):
+def delete_device(device_id: int, db: sqlite3.Connection = Depends(get_db), _=Depends(require_auth)):
     cur = db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
     if cur.rowcount == 0:
         raise HTTPException(404, "device not found")

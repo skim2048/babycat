@@ -6,7 +6,7 @@
 ![](./banner.png)
 
 > **목적**: 카메라 영상을 사용자가 정의한 조건에 따라 실시간으로 분석하는 엣지 AI 백엔드.  
-> **버전**: v2.0
+> **버전**: v3.0
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -31,6 +31,7 @@
 | v1.9 | debug_server.py 모듈 분리 리팩토링 (ptz.py, hardware.py, state.py, server.py, dashboard.html). 프론트엔드 Vue/Vite 전환 계획 수립 |
 | v2.0 | 카메라 자격증명 동적 관리. 하드코딩 제거 → 프론트엔드 입력 + 파일 영속화 + PTZ/MediaMTX 런타임 설정. MediaMTX REST API 연동 |
 | v2.1 | 프로젝트 구조 정리. 설정 → config/, 데이터 → data/cam/, ptz_home을 cam_profile.json에 병합, debugging/ → web/ 이름 변경 |
+| v3.0 | JWT 인증 시스템 도입. 로그인 페이지 (vue-router), 모든 API 엔드포인트 토큰 보호 (app:8080 + api:8000), 로그인 시도 제한 (10회 실패 → 30분 잠금), 비밀번호 변경 기능, 로그아웃. Dark theme 비활성화 (light 고정) |
 
 ---
 

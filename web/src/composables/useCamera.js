@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue'
+import { authFetch } from './useFetch.js'
 
 const config = reactive({
   name: '',
@@ -23,7 +24,7 @@ async function load() {
   if (loaded) return
   loaded = true
   try {
-    const res = await fetch('/camera')
+    const res = await authFetch('/camera')
     if (!res.ok) return
     const data = await res.json()
     if (data.configured) {
@@ -58,7 +59,7 @@ async function save() {
     if (config.onvif_port) {
       body.onvif_port = config.onvif_port
     }
-    const res = await fetch('/camera', {
+    const res = await authFetch('/camera', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

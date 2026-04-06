@@ -7,6 +7,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
+      '/api':       'http://api:8000',
       '/events':  'http://app:8080',
       '/prompt':  'http://app:8080',
       '/ptz':     'http://app:8080',

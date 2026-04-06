@@ -1,4 +1,5 @@
 import { reactive, readonly } from 'vue'
+import { useAuth } from './useAuth.js'
 
 const state = reactive({
   uptime: '-',
@@ -39,7 +40,9 @@ function connect() {
   let backoff = 1000
 
   function open() {
-    const es = new EventSource('/events')
+    const { getToken } = useAuth()
+    const token = getToken()
+    const es = new EventSource(`/events?token=${encodeURIComponent(token)}`)
 
     es.onopen = () => {
       backoff = 1000

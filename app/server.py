@@ -12,13 +12,17 @@ Babycat — App HTTP 서버
   DELETE /clips     클립 선택 삭제
 """
 
+import hashlib
+import hmac
 import json
 import logging
+import os
 import queue
 import re
 import threading
 import time
 import urllib.parse
+from base64 import urlsafe_b64decode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -29,6 +33,28 @@ from state import state
 log = logging.getLogger(__name__)
 
 MAX_BODY = 65536  # 64KB
+JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
+
+
+def _verify_jwt(token: str) -> bool:
+    """JWT(HMAC-SHA256) 서명 및 만료 검증."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return False
+        header, payload, sig = parts
+        expected = hmac.new(
+            JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256
+        ).digest()
+        padding = 4 - len(sig) % 4
+        actual = urlsafe_b64decode(sig + "=" * padding)
+        if not hmac.compare_digest(actual, expected):
+            return False
+        padding = 4 - len(payload) % 4
+        data = json.loads(urlsafe_b64decode(payload + "=" * padding))
+        return data.get("exp", 0) >= time.time()
+    except Exception:
+        return False
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -36,12 +62,33 @@ class AppHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _check_auth(self) -> bool:
+        """Authorization 헤더 또는 쿼리 파라미터의 토큰 검증. 실패 시 401 응답."""
+        # 1) Authorization: Bearer <token>
+        auth = self.headers.get("Authorization", "")
+        if auth.startswith("Bearer ") and _verify_jwt(auth[7:]):
+            return True
+        # 2) ?token=<token> (EventSource 등 헤더 설정 불가 클라이언트용)
+        parsed = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parsed.query)
+        token_list = qs.get("token", [])
+        if token_list and _verify_jwt(token_list[0]):
+            return True
+        self.send_response(401)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"detail": "unauthorized"}).encode())
+        return False
+
     # ── GET ───────────────────────────────────────────────────────────────────
 
     def do_GET(self):
         if self.path == "/":
             self._serve_health()
-        elif self.path == "/stream":
+            return
+        if not self._check_auth():
+            return
+        if self.path == "/stream":
             self._serve_mjpeg()
         elif self.path == "/events":
             self._serve_sse()
@@ -57,6 +104,8 @@ class AppHandler(BaseHTTPRequestHandler):
     # ── POST ──────────────────────────────────────────────────────────────────
 
     def do_POST(self):
+        if not self._check_auth():
+            return
         if self.path == "/prompt":
             self._handle_prompt()
         elif self.path == "/ptz":
@@ -69,6 +118,8 @@ class AppHandler(BaseHTTPRequestHandler):
     # ── DELETE ────────────────────────────────────────────────────────────────
 
     def do_DELETE(self):
+        if not self._check_auth():
+            return
         if self.path == "/clips":
             self._handle_clip_delete()
         else:

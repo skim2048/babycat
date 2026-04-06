@@ -1,4 +1,5 @@
 import { ref, watch } from 'vue'
+import { authFetch } from './useFetch.js'
 import { useSSE } from './useSSE.js'
 
 const clips = ref([])
@@ -8,7 +9,7 @@ let knownCount = -1
 
 async function fetchClips() {
   try {
-    const res = await fetch('/clips')
+    const res = await authFetch('/clips')
     if (!res.ok) return
     clips.value = await res.json()
     checked.value = {}
@@ -19,7 +20,7 @@ async function fetchClips() {
 
 async function deleteClips(names) {
   try {
-    const res = await fetch('/clips', {
+    const res = await authFetch('/clips', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ names }),

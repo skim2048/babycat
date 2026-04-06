@@ -5,7 +5,7 @@
 
 /* ── Theme Tokens ── */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   /* Background */
   --bg-page:              #f0f1f4;
@@ -83,67 +83,7 @@
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-page:              #0e1018;
-    --bg-surface:           #181a28;
-    --bg-surface-secondary: #1e2134;
-    --bg-surface-hover:     #262a40;
-    --bg-surface-active:    #2e3350;
-
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.40);
-
-    --border:        #282c3e;
-    --border-accent: #282c3e;
-    --border-input:  #363b54;
-    --border-subtle: #1e2134;
-
-    --text-1: #e0e2ec;
-    --text-2: #9498b0;
-    --text-3: #666880;
-    --text-4: #484a60;
-
-    --accent:        #6cb6ff;
-    --accent-bg:     rgba(108, 182, 255, 0.10);
-    --accent-shadow:  rgba(108, 182, 255, 0.20);
-
-    --success:        #3ddc84;
-    --success-bg:     rgba(61, 220, 132, 0.07);
-    --success-border: rgba(61, 220, 132, 0.22);
-    --success-hover:  rgba(61, 220, 132, 0.14);
-
-    --danger:         #ff6b6b;
-    --danger-bg:      rgba(255, 107, 107, 0.07);
-    --danger-border:  rgba(255, 107, 107, 0.22);
-    --danger-bg-soft: rgba(255, 107, 107, 0.04);
-
-    --warning:    #ffd866;
-    --warning-bg: rgba(255, 216, 102, 0.07);
-
-    --bar-bg:  #282c3e;
-    --bar-cpu: #6cb6ff;
-    --bar-ram: #ffc777;
-    --bar-gpu: #3ddc84;
-
-    --input-bg: #141622;
-
-    --scrollbar: #363b54;
-    --scrollbar-hover: #444a66;
-
-    --clip-bg:       #08080e;
-    --clip-bar:      #10111c;
-    --clip-text:     #9498b0;
-    --clip-text-hi:  #e0e2ec;
-    --clip-progress: #282c3e;
-    --clip-meta:     #585a70;
-
-    --overlay:          rgba(0, 0, 0, 0.50);
-    --play-icon-bg:     rgba(255, 255, 255, 0.88);
-    --play-icon-arrow:  #0e1018;
-  }
-}
+/* Dark theme disabled — always use light theme */
 
 /* ── Reset & Base ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
