@@ -2,8 +2,11 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { authFetch } from '../composables/useFetch.js'
+import { useTheme } from '../composables/useTheme.js'
+import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
+const { theme } = useTheme()
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -52,8 +55,9 @@ async function handleChange() {
 
 <template>
   <div class="cp-page">
+    <ThemeToggle class="theme-toggle-fixed" />
     <form class="cp-form" @submit.prevent="handleChange" novalidate>
-      <img src="/banner.png" alt="Babycat" class="cp-banner" />
+      <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="cp-banner" />
 
       <input
         v-model="currentPassword"
@@ -92,7 +96,7 @@ async function handleChange() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: var(--bg-surface);
   padding: 1.5rem;
 }
 
@@ -160,5 +164,12 @@ async function handleChange() {
   text-align: center;
   font-size: 0.8rem;
   color: var(--danger);
+}
+
+.theme-toggle-fixed {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
 }
 </style>

@@ -10,46 +10,46 @@ onMounted(load)
 <template>
   <div class="section">
     <div class="section-title">
-      Camera
+      카메라
       <span class="cam-badge" :class="connected ? 'on' : connecting ? 'pending' : 'off'">
-        {{ connected ? 'Connected' : connecting ? 'Connecting...' : 'Disconnected' }}
+        {{ connected ? '연결됨' : connecting ? '연결 중...' : '연결 해제' }}
       </span>
     </div>
     <div class="section-body">
       <div class="cam-form">
         <label class="cam-label">
-          <span class="cam-label-text">Name (alias)</span>
+          <span class="cam-label-text">이름 (별칭)</span>
           <input class="cam-input" v-model="config.name" placeholder="mycam" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">IP or Hostname</span>
+          <span class="cam-label-text">IP 또는 호스트명</span>
           <input class="cam-input" v-model="config.ip" placeholder="192.168.1.101" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">RTSP Port</span>
+          <span class="cam-label-text">RTSP 포트</span>
           <input class="cam-input" v-model.number="config.rtsp_port" type="number" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">Camera ID</span>
+          <span class="cam-label-text">카메라 ID</span>
           <input class="cam-input" v-model="config.username" placeholder="admin" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">Camera Password</span>
+          <span class="cam-label-text">카메라 비밀번호</span>
           <input class="cam-input" v-model="config.password" type="password" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">URL (path)</span>
+          <span class="cam-label-text">URL (경로)</span>
           <input class="cam-input" v-model="config.stream_path" placeholder="stream1" />
         </label>
         <label class="cam-label">
-          <span class="cam-label-text">ONVIF Port (optional)</span>
+          <span class="cam-label-text">ONVIF 포트 (선택)</span>
           <input class="cam-input" v-model.number="config.onvif_port" type="number"
                  placeholder="2020" />
         </label>
       </div>
-      <button v-if="!configured && !connecting" class="cam-apply-btn" @click="save">Connect</button>
-      <button v-else-if="connecting" class="cam-apply-btn cancel" @click="disconnect">Cancel</button>
-      <button v-else class="cam-apply-btn disconnect" @click="disconnect">Disconnect</button>
+      <button v-if="!configured && !connecting" class="cam-apply-btn" @click="save">연결</button>
+      <button v-else-if="connecting" class="cam-apply-btn cancel" @click="disconnect">취소</button>
+      <button v-else class="cam-apply-btn disconnect" @click="disconnect">연결 해제</button>
       <div class="cam-status" v-if="status">{{ status }}</div>
     </div>
   </div>

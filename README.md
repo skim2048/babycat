@@ -1,4 +1,9 @@
-![](./assets/banner.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark-theme.png">
+  <source media="(prefers-color-scheme: light)" srcset="./assets/banner-light-theme.png">
+  <img src="./assets/banner-light-theme.png" alt="babycat banner">
+</picture>
+
 <p align="center">
   <img src="https://img.shields.io/badge/Docker-2496ED.svg?&logo=Docker&logoColor=fff" alt="Docker">
   <img src="https://img.shields.io/badge/FastAPI-009688.svg?&logo=FastAPI&logoColor=fff" alt="FastAPI">
@@ -16,6 +21,7 @@ An edge AI backend that analyzes RTSP camera streams in real time using a VLM (V
 - **Edge-native** — Runs entirely on NVIDIA Jetson, no cloud inference server required
 - **General-purpose detection** — Define detection conditions in natural language via browser UI (VLM prompt + trigger keywords)
 - **Zero hardcoding** — Camera credentials are entered from the frontend and persisted to file
+- **Dark theme** — Light/dark theme toggle with `localStorage` persistence; all pages supported
 
 ---
 

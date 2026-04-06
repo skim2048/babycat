@@ -2,9 +2,12 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
+import { useTheme } from '../composables/useTheme.js'
+import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
 const { login } = useAuth()
+const { theme } = useTheme()
 
 const username = ref('')
 const password = ref('')
@@ -31,8 +34,9 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
+    <ThemeToggle class="theme-toggle-fixed" />
     <form class="login-form" @submit.prevent="handleLogin" novalidate>
-      <img src="/banner.png" alt="Babycat" class="login-banner" />
+      <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="login-banner" />
 
       <input
         v-model="username"
@@ -76,7 +80,7 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: var(--bg-surface);
   padding: 1.5rem;
 }
 
@@ -174,5 +178,12 @@ async function handleLogin() {
   text-align: center;
   font-size: 0.8rem;
   color: var(--danger);
+}
+
+.theme-toggle-fixed {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
 }
 </style>

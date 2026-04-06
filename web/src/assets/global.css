@@ -83,7 +83,79 @@
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 }
 
-/* Dark theme disabled — always use light theme */
+/* ── Dark Theme ── */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Background */
+  --bg-page:              #111118;
+  --bg-surface:           #1a1a24;
+  --bg-surface-secondary: #16161e;
+  --bg-surface-hover:     #22222e;
+  --bg-surface-active:    #2a2a38;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+  /* Border */
+  --border:        #2a2a36;
+  --border-accent: #32323e;
+  --border-input:  #3a3a48;
+  --border-subtle: #222230;
+
+  /* Text */
+  --text-1: #e4e4ec;
+  --text-2: #a8a8b8;
+  --text-3: #6e6e80;
+  --text-4: #4a4a5c;
+
+  /* Accent */
+  --accent:        #5b9ee6;
+  --accent-bg:     #1a2a40;
+  --accent-shadow: rgba(91, 158, 230, 0.2);
+
+  /* Status */
+  --success:        #34c06c;
+  --success-bg:     #0e2818;
+  --success-border: #1a4028;
+  --success-hover:  #143420;
+
+  --danger:         #e05252;
+  --danger-bg:      #2c1414;
+  --danger-border:  #4a2020;
+  --danger-bg-soft: #241818;
+
+  --warning:    #d4a830;
+  --warning-bg: #2a2210;
+
+  /* Bars */
+  --bar-bg:  #2a2a36;
+  --bar-cpu: #5b9ee6;
+  --bar-ram: #d4a830;
+  --bar-gpu: #34c06c;
+
+  /* Input */
+  --input-bg: #14141c;
+
+  /* Scrollbar */
+  --scrollbar:       #3a3a48;
+  --scrollbar-hover: #4a4a5c;
+
+  /* Clip player */
+  --clip-bg:       #0c0c10;
+  --clip-bar:      #14141c;
+  --clip-text:     #808090;
+  --clip-text-hi:  #e4e4ec;
+  --clip-progress: #2a2a36;
+  --clip-meta:     #5a5a6c;
+
+  /* Misc */
+  --overlay:         rgba(0, 0, 0, 0.55);
+  --play-icon-bg:    rgba(255, 255, 255, 0.88);
+  --play-icon-arrow: #1a1c24;
+}
 
 /* ── Reset & Base ── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }

@@ -129,15 +129,15 @@ onBeforeUnmount(destroyHls)
 
 <template>
   <div class="video-box">
-    <span class="video-label">Live Stream</span>
+    <span class="video-label">실시간 스트림</span>
     <div class="video-wrap">
       <video ref="videoRef" muted playsinline />
       <div v-if="loading" class="video-overlay">
         <div class="spinner" />
-        <span class="overlay-text">Connecting...</span>
+        <span class="overlay-text">연결 중...</span>
       </div>
       <div v-else-if="timedOut" class="video-overlay">
-        <span class="overlay-text timeout">Connection timed out</span>
+        <span class="overlay-text timeout">연결 시간 초과</span>
       </div>
     </div>
   </div>

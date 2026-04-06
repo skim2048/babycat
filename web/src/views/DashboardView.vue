@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router'
 import CameraPanel from '../components/CameraPanel.vue'
 import LiveStream from '../components/LiveStream.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 
@@ -19,6 +20,7 @@ function handleLogout() {
   <div class="header">
     <span class="header-title">Babycat</span>
     <div class="header-actions">
+      <ThemeToggle />
       <button class="header-btn" @click="router.push({ name: 'change-password' })">비밀번호 변경</button>
       <button class="header-btn danger" @click="handleLogout">로그아웃</button>
     </div>
@@ -27,7 +29,7 @@ function handleLogout() {
     <div class="video-area">
       <LiveStream v-if="configured || connecting" />
       <div v-else class="empty-state">
-        <p>No camera configured. Set up a camera to begin.</p>
+        <p>카메라가 설정되지 않았습니다. 카메라를 설정하세요.</p>
       </div>
     </div>
     <div class="dash">
