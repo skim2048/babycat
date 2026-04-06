@@ -7,18 +7,27 @@ const searchQuery = ref('')
 let knownCount = -1
 
 async function fetchClips() {
-  const res = await fetch('/clips')
-  clips.value = await res.json()
-  checked.value = {}
+  try {
+    const res = await fetch('/clips')
+    if (!res.ok) return
+    clips.value = await res.json()
+    checked.value = {}
+  } catch {
+    // 네트워크 오류 — 무시 (다음 SSE 갱신 시 재시도)
+  }
 }
 
 async function deleteClips(names) {
-  await fetch('/clips', {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ names }),
-  })
-  await fetchClips()
+  try {
+    const res = await fetch('/clips', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names }),
+    })
+    if (res.ok) await fetchClips()
+  } catch {
+    // 네트워크 오류
+  }
 }
 
 async function deleteAll() {

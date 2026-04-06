@@ -22,9 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Python dependencies for the application
 RUN pip install --no-cache-dir \
     pillow \
-    numpy \
-    google-auth \
-    requests
+    numpy
 
 WORKDIR /app
 COPY app/ .

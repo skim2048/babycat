@@ -1,13 +1,13 @@
-# Debugging Web UI
+# Web Dashboard
 
-디버그용 웹 대시보드 (Vue 3 + Vite).
+웹 대시보드 (Vue 3 + Vite).
 
 ## 실행 방법
 
 **반드시 이 디렉토리에서 실행해야 합니다.**
 
 ```bash
-cd debugging
+cd web
 docker compose up -d
 ```
 
@@ -16,6 +16,6 @@ docker compose up -d
 ## 종료
 
 ```bash
-cd debugging
+cd web
 docker compose down
 ```

@@ -13,28 +13,22 @@ Babycat — App HTTP 서버
 """
 
 import json
-import os
+import logging
 import queue
 import re
 import threading
 import time
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import camera
 import ptz
 from state import state
 
+log = logging.getLogger(__name__)
 
-_DASHBOARD_HTML: str = ""
-
-
-def _load_dashboard() -> None:
-    global _DASHBOARD_HTML
-    html_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
-    with open(html_path, encoding="utf-8") as f:
-        _DASHBOARD_HTML = f.read()
+MAX_BODY = 65536  # 64KB
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -46,7 +40,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/":
-            self._serve_html()
+            self._serve_health()
         elif self.path == "/stream":
             self._serve_mjpeg()
         elif self.path == "/events":
@@ -80,12 +74,39 @@ class AppHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    # ── 유틸리티 ──────────────────────────────────────────────────────────────
+
+    def _read_json_body(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            return {}
+        if length <= 0 or length > MAX_BODY:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw) if raw else {}
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def _send_file_chunk(self, fpath: Path, offset: int, length: int,
+                         chunk_size: int = 65536) -> None:
+        with open(fpath, "rb") as f:
+            f.seek(offset)
+            remaining = length
+            while remaining > 0:
+                chunk = f.read(min(chunk_size, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
+
     # ── 핸들러 구현 ──────────────────────────────────────────────────────────
 
-    def _serve_html(self):
-        body = _DASHBOARD_HTML.encode("utf-8")
+    def _serve_health(self):
+        body = json.dumps({"status": "ok"}).encode()
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -146,7 +167,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if "/" in name or "\\" in name or ".." in name:
             self.send_error(400)
             return
-        clip_dir = state._clip_dir
+        clip_dir = state.get_clip_dir()
         if not clip_dir:
             self.send_error(404)
             return
@@ -174,53 +195,55 @@ class AppHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(length))
             self.send_header("Accept-Ranges", "bytes")
             self.end_headers()
-            with open(fpath, "rb") as f:
-                f.seek(start)
-                self.wfile.write(f.read(length))
+            self._send_file_chunk(fpath, start, length)
         else:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Content-Length", str(file_size))
             self.send_header("Accept-Ranges", "bytes")
             self.end_headers()
-            with open(fpath, "rb") as f:
-                self.wfile.write(f.read())
+            self._send_file_chunk(fpath, 0, file_size)
 
     def _handle_prompt(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body   = json.loads(self.rfile.read(length) or b"{}")
+        body = self._read_json_body()
         prompt = body.get("prompt", "").strip()
         triggers_raw = body.get("triggers", "").strip()
         if prompt:
             state.set_prompt(prompt)
-            print(f"[prompt] 프롬프트 변경: {prompt[:80]}", flush=True)
+            log.info("Prompt changed: %s", prompt[:80])
         keywords = [k.strip().lower() for k in triggers_raw.split(",") if k.strip()]
         state.set_triggers(keywords)
         if keywords:
-            print(f"[prompt] 트리거 키워드: {keywords}", flush=True)
+            log.info("Trigger keywords: %s", keywords)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"ok": bool(prompt)}).encode())
 
     def _handle_ptz(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body   = json.loads(self.rfile.read(length) or b"{}")
+        body = self._read_json_body()
         action = body.get("action")
         ok     = True
 
         if action == "move":
+            try:
+                pan = float(body.get("pan", 0))
+                tilt = float(body.get("tilt", 0))
+            except (ValueError, TypeError):
+                self.send_error(400, "invalid pan/tilt values")
+                return
             ptz.set_moving(True)
             threading.Thread(
-                target=ptz.move,
-                args=(float(body.get("pan", 0)), float(body.get("tilt", 0))),
-                daemon=True,
+                target=ptz.move, args=(pan, tilt), daemon=True,
             ).start()
         elif action == "stop":
             ptz.set_moving(False)
             threading.Thread(target=ptz.stop, daemon=True).start()
         elif action == "save":
-            ok = ptz.save_home()
+            home = ptz.save_home()
+            if home:
+                camera.save({"ptz_home": home})
+            ok = home is not None
         elif action == "goto":
             saved = ptz.get_saved()
             if saved["pan"] is not None:
@@ -251,9 +274,12 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _handle_camera(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
+        body = self._read_json_body()
         result = camera.apply(body)
+        # 카메라 전환 시 클립 저장 디렉토리를 새 카메라 경로로 갱신
+        if result.get("ok") and result.get("clip_dir"):
+            state.set_clip_dir(result["clip_dir"])
+            log.info("Clip directory switched to: %s", result["clip_dir"])
         resp = json.dumps(result, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -262,10 +288,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(resp)
 
     def _handle_clip_delete(self):
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length) or b"{}")
+        body = self._read_json_body()
         names = body.get("names", [])
-        clip_dir = state._clip_dir
+        clip_dir = state.get_clip_dir()
         deleted = 0
         if clip_dir:
             for name in names:
@@ -275,7 +300,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 if fpath.exists() and fpath.is_file():
                     fpath.unlink()
                     deleted += 1
-        print(f"[clip] 삭제: {deleted}개", flush=True)
+        log.info("Clips deleted: %d", deleted)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -284,30 +309,14 @@ class AppHandler(BaseHTTPRequestHandler):
 
 # ── 서버 시작 ────────────────────────────────────────────────────────────────
 
-class _ThreadedHTTPServer(HTTPServer):
-    daemon_threads = True
-
-    def process_request(self, request, client_address):
-        t = threading.Thread(target=self._handle, args=(request, client_address))
-        t.daemon = True
-        t.start()
-
-    def _handle(self, request, client_address):
-        try:
-            self.finish_request(request, client_address)
-        except Exception:
-            self.handle_error(request, client_address)
-        finally:
-            self.shutdown_request(request)
-
-
 def start_server(port: int = 8080):
     """별도 데몬 스레드에서 App HTTP 서버 시작."""
-    _load_dashboard()
-    ptz.load_home()
+    config = camera.load()
+    ptz.load_home(config.get("ptz_home") if config else None)
 
     threading.Thread(target=ptz.poll_loop, daemon=True).start()
 
-    server = _ThreadedHTTPServer(("0.0.0.0", port), AppHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), AppHandler)
+    server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(f"[server] App HTTP 서버: http://0.0.0.0:{port}", flush=True)
+    log.info("App HTTP server: http://0.0.0.0:%d", port)

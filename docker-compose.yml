@@ -54,6 +54,8 @@ services:
       - recordings:/recordings                                      # shared with mediamtx (read clips)
       #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
       - ./app:/app                                                  # live-mount source for development
+      - ./config:/config                                              # camera.json, ptz_home.txt
+      - ./data/cam:/data/cam                                          # 카메라별 클립 저장
       # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
@@ -73,10 +75,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - CLIP_DIR=/data/clips
+      - CAM_DIR=/data/cam
       - DB_PATH=/data/db/babycat.db
     volumes:
-      - ./app/clip:/data/clips               # 클립 공유 (App이 쓰고 API가 읽기/삭제)
+      - ./data/cam:/data/cam                  # 카메라별 클립 공유 ({cam_name}/*.mp4)
       - api_data:/data/db                    # SQLite 데이터베이스
     depends_on:
       - app

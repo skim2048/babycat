@@ -13,6 +13,7 @@ export default defineConfig({
       '/clips':   'http://app:8080',
       '/clip':    'http://app:8080',
       '/camera':  'http://app:8080',
+      '/cameras': 'http://app:8080',
     },
   },
 })

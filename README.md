@@ -70,11 +70,11 @@ IP Camera (RTSP)
 # Start the main stack
 docker compose up -d
 
-# Debug web dashboard (optional)
-cd debugging && docker compose up -d
+# Web dashboard (optional)
+cd web && docker compose up -d
 ```
 
-On first launch, camera configuration is required. Enter the camera IP, ports, and credentials in the Camera panel of the debug web UI (`http://<host>:5173`). The settings are automatically applied to MediaMTX and the PTZ module, and persisted to file for automatic loading on restart.
+On first launch, camera configuration is required. Enter the camera IP, ports, and credentials in the Camera panel of the web dashboard (`http://<host>:5173`). The settings are automatically applied to MediaMTX and the PTZ module, and persisted to `config/cam_profile.json` for automatic loading on restart.
 
 ---
 
@@ -93,10 +93,12 @@ babycat/
 │   ├── main.py            # FastAPI endpoints
 │   ├── database.py        # SQLite (WAL)
 │   └── schemas.py         # Pydantic schemas
-├── debugging/             # Debug web UI (Vue 3 + Vite)
-│   ├── docker-compose.yml # Standalone (cd debugging && docker compose up -d)
+├── web/                   # Web dashboard (Vue 3 + Vite)
+│   ├── docker-compose.yml # Standalone (cd web && docker compose up -d)
 │   └── src/               # Vue SFC + Composables
-├── config/                # mediamtx.yml
+├── config/                # Runtime config (cam_profile.json, mediamtx.yml)
+├── data/
+│   └── cam/{name}/        # Per-camera clip storage (*.mp4)
 ├── docker/                # Dockerfiles
 ├── tests/                 # Tests
 ├── docs/                  # API reference
@@ -115,7 +117,7 @@ babycat/
 | Streaming | MediaMTX (RTSP/HLS/WebRTC) |
 | Notifications | FCM HTTP v1 API (OAuth 2.0) |
 | API Server | FastAPI + SQLite (WAL) |
-| Debug UI | Vue 3 + Vite |
+| Web Dashboard | Vue 3 + Vite |
 | PTZ Control | ONVIF SOAP (WS-Security) |
 
 ---
@@ -167,7 +169,7 @@ Full schema reference: [docs/api.md](docs/api.md)
 
 | Variable | Default | Description |
 |---|---|---|
-| `CLIP_DIR` | `/data/clips` | Clip storage path |
+| `CAM_DIR` | `/data/cam` | Per-camera clip storage base path |
 | `DB_PATH` | `/data/db/babycat.db` | SQLite DB path |
 
 ---

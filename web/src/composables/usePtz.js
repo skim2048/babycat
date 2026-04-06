@@ -3,12 +3,18 @@ import { ref } from 'vue'
 const PTZ_SPEED = 0.5
 const status = ref('대기')
 
-function post(body) {
-  return fetch('/ptz', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+async function post(body) {
+  try {
+    const res = await fetch('/ptz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
 }
 
 function startMove(pan, tilt) {
@@ -33,16 +39,14 @@ function forceStop() {
 
 async function saveHome() {
   status.value = '저장 중...'
-  const res = await post({ action: 'save' })
-  const data = await res.json()
-  status.value = data.ok ? '저장 완료' : '저장 실패 (위치 미확인)'
+  const data = await post({ action: 'save' })
+  status.value = data?.ok ? '저장 완료' : '저장 실패 (위치 미확인)'
 }
 
 async function gotoHome() {
   status.value = '이동 중...'
-  const res = await post({ action: 'goto' })
-  const data = await res.json()
-  status.value = data.ok ? '이동 완료' : '저장된 위치 없음'
+  const data = await post({ action: 'goto' })
+  status.value = data?.ok ? '이동 완료' : '저장된 위치 없음'
 }
 
 export function usePtz() {

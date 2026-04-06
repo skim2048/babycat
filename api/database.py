@@ -48,5 +48,9 @@ def get_db():
     conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+.pkl_memoize_py3/
 
 # Node
 node_modules
@@ -27,8 +28,8 @@ cypress/screenshots/
 __screenshots__/
 
 # Runtime
-app/clip/
-app/camera.json
+data/
+config/cam_profile.json
 
 # OS
 .DS_Store

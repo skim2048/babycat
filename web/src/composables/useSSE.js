@@ -30,18 +30,37 @@ const state = reactive({
 })
 
 let started = false
+const MAX_BACKOFF = 30000
 
 function connect() {
   if (started) return
   started = true
 
-  const es = new EventSource('/events')
-  es.onmessage = (e) => {
-    Object.assign(state, JSON.parse(e.data))
+  let backoff = 1000
+
+  function open() {
+    const es = new EventSource('/events')
+
+    es.onopen = () => {
+      backoff = 1000
+    }
+
+    es.onmessage = (e) => {
+      try {
+        Object.assign(state, JSON.parse(e.data))
+      } catch {
+        // malformed JSON — 무시
+      }
+    }
+
+    es.onerror = () => {
+      es.close()
+      setTimeout(open, backoff)
+      backoff = Math.min(backoff * 2, MAX_BACKOFF)
+    }
   }
-  es.onerror = () => {
-    // EventSource auto-reconnects
-  }
+
+  open()
 }
 
 export function useSSE() {

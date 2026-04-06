@@ -8,6 +8,7 @@ SOAP + WS-Security(UsernameToken) 인증.
 import base64
 import datetime
 import hashlib
+import logging
 import os
 import re
 import threading
@@ -15,10 +16,10 @@ import time
 import urllib.request
 from typing import Optional
 
+log = logging.getLogger(__name__)
 
 _PTZ_PROFILE = "profile_1"
 _PTZ_SPEED   = 0.5
-_PTZ_HOME_FILE = "/app/ptz_home.txt"
 
 _lock    = threading.Lock()
 _current: dict = {"pan": None, "tilt": None}
@@ -36,7 +37,7 @@ def configure(url: str, user: str, password: str) -> None:
         _ONVIF_URL  = url
         _ONVIF_USER = user
         _ONVIF_PASS = password
-    print(f"[PTZ] 설정 적용: {url}", flush=True)
+    log.info("PTZ configured: %s", url)
 
 
 def is_configured() -> bool:
@@ -68,17 +69,20 @@ def get_saved() -> dict:
 # ── ONVIF SOAP ───────────────────────────────────────────────────────────────
 
 def _auth_header() -> str:
+    with _lock:
+        user = _ONVIF_USER
+        passwd = _ONVIF_PASS
     nonce_raw = os.urandom(20)
     nonce_b64 = base64.b64encode(nonce_raw).decode()
-    created   = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    created   = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     digest    = base64.b64encode(
-        hashlib.sha1(nonce_raw + created.encode() + _ONVIF_PASS.encode()).digest()
+        hashlib.sha1(nonce_raw + created.encode() + passwd.encode()).digest()
     ).decode()
     return (
         '<wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"'
         ' xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">'
         "<wsse:UsernameToken>"
-        f"<wsse:Username>{_ONVIF_USER}</wsse:Username>"
+        f"<wsse:Username>{user}</wsse:Username>"
         f'<wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest}</wsse:Password>'
         f'<wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">{nonce_b64}</wsse:Nonce>'
         f"<wsu:Created>{created}</wsu:Created>"
@@ -87,6 +91,8 @@ def _auth_header() -> str:
 
 
 def _post(body: str) -> str:
+    with _lock:
+        url = _ONVIF_URL
     soap = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">'
@@ -95,7 +101,7 @@ def _post(body: str) -> str:
         "</s:Envelope>"
     )
     req = urllib.request.Request(
-        _ONVIF_URL,
+        url,
         data=soap.encode(),
         headers={"Content-Type": "application/soap+xml; charset=utf-8"},
         method="POST",
@@ -118,7 +124,7 @@ def move(pan: float, tilt: float) -> None:
     try:
         _post(body)
     except Exception as e:
-        print(f"[PTZ] move 실패: {e}", flush=True)
+        log.error("move failed: %s", e)
 
 
 def stop() -> None:
@@ -133,7 +139,7 @@ def stop() -> None:
     try:
         _post(body)
     except Exception as e:
-        print(f"[PTZ] stop 실패: {e}", flush=True)
+        log.error("stop failed: %s", e)
 
 
 def absolute_move(pan: float, tilt: float) -> None:
@@ -148,7 +154,7 @@ def absolute_move(pan: float, tilt: float) -> None:
     try:
         _post(body)
     except Exception as e:
-        print(f"[PTZ] absolute move 실패: {e}", flush=True)
+        log.error("absolute move failed: %s", e)
 
 
 def get_status() -> Optional[dict]:
@@ -166,44 +172,38 @@ def get_status() -> Optional[dict]:
             return {"pan": round(float(m.group(1)), 3),
                     "tilt": round(float(m.group(2)), 3)}
     except Exception as e:
-        print(f"[PTZ] GetStatus 실패: {e}", flush=True)
+        log.error("GetStatus failed: %s", e)
     return None
 
 
 # ── 홈 위치 저장/로드 ────────────────────────────────────────────────────────
 
-def load_home() -> None:
+def load_home(data: Optional[dict]) -> None:
+    """프로파일에서 읽은 ptz_home dict를 반영한다."""
     global _saved
+    if not data:
+        return
     try:
-        with open(_PTZ_HOME_FILE) as f:
-            data = dict(line.strip().split("=") for line in f if "=" in line)
         with _lock:
             _saved = {
                 "pan":  round(float(data["pan"]),  3),
                 "tilt": round(float(data["tilt"]), 3),
             }
-        print(f"[PTZ] 저장 위치 로드: {_saved}", flush=True)
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        print(f"[PTZ] 저장 위치 로드 실패: {e}", flush=True)
+        log.info("Home position loaded: %s", _saved)
+    except (KeyError, ValueError) as e:
+        log.error("Home position load failed: %s", e)
 
 
-def save_home() -> bool:
+def save_home() -> Optional[dict]:
+    """현재 위치를 홈으로 저장. 호출자가 반환값을 프로파일에 영속화해야 한다."""
     with _lock:
         cur = dict(_current)
     if cur["pan"] is None:
-        return False
-    try:
-        with open(_PTZ_HOME_FILE, "w") as f:
-            f.write(f"pan={cur['pan']}\ntilt={cur['tilt']}\n")
-        with _lock:
-            _saved.update(cur)
-        print(f"[PTZ] 위치 저장: pan={cur['pan']}, tilt={cur['tilt']}", flush=True)
-        return True
-    except Exception as e:
-        print(f"[PTZ] 위치 저장 실패: {e}", flush=True)
-        return False
+        return None
+    with _lock:
+        _saved.update(cur)
+    log.info("Home position saved: pan=%s, tilt=%s", cur["pan"], cur["tilt"])
+    return {"pan": cur["pan"], "tilt": cur["tilt"]}
 
 
 # ── 폴링 루프 ────────────────────────────────────────────────────────────────

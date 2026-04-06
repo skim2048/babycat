@@ -20,6 +20,10 @@ onMounted(load)
     <div class="section-body">
       <div class="cam-form">
         <label class="cam-label">
+          <span class="cam-label-text">Name</span>
+          <input class="cam-input" v-model="config.name" placeholder="mycam" />
+        </label>
+        <label class="cam-label">
           <span class="cam-label-text">IP</span>
           <input class="cam-input" v-model="config.ip" placeholder="192.168.1.101" />
         </label>

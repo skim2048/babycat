@@ -4,8 +4,10 @@ Jetson Orin NX 하드웨어 모니터
 /proc, /sys에서 CPU·RAM·GPU 사용률과 온도를 읽는다.
 """
 
+import logging
 from typing import Optional
 
+log = logging.getLogger(__name__)
 
 GPU_LOAD_PATH    = "/sys/devices/platform/bus@0/17000000.gpu/load"
 CPU_THERMAL_PATH = "/sys/devices/virtual/thermal/thermal_zone0/temp"
@@ -41,7 +43,8 @@ class HardwareMonitor:
                     self._cpu_percent = (1 - d_idle / d_total) * 100
             self._prev_cpu = (total, idle)
             return self._cpu_percent
-        except Exception:
+        except Exception as e:
+            log.debug("CPU percent read failed: %s", e)
             return 0.0
 
     def ram_usage(self) -> tuple[int, int]:
@@ -56,7 +59,8 @@ class HardwareMonitor:
             total = info.get("MemTotal:", 0)
             avail = info.get("MemAvailable:", 0)
             return ((total - avail) // 1024, total // 1024)
-        except Exception:
+        except Exception as e:
+            log.debug("RAM usage read failed: %s", e)
             return (0, 0)
 
     def gpu_load(self) -> float:

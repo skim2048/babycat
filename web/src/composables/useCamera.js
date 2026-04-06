@@ -1,0 +1,101 @@
+import { ref, reactive } from 'vue'
+
+const config = reactive({
+  name: '',
+  ip: '',
+  rtsp_port: 554,
+  username: '',
+  password: '',
+  stream_path: 'stream1',
+  onvif_port: null,
+})
+
+// configured: camera.json에 설정이 저장된 상태 (영속)
+// connecting: 스트림 연결 시도 중 (transient)
+// connected:  스트림이 실제 재생 중 (transient, LiveStream이 설정)
+const configured = ref(false)
+const connecting = ref(false)
+const connected = ref(false)
+const status = ref('')
+let loaded = false
+
+async function load() {
+  if (loaded) return
+  loaded = true
+  try {
+    const res = await fetch('/camera')
+    if (!res.ok) return
+    const data = await res.json()
+    if (data.configured) {
+      config.name = data.name || ''
+      config.ip = data.ip || ''
+      config.rtsp_port = data.rtsp_port || 554
+      config.username = data.username || ''
+      config.password = data.password || ''
+      config.stream_path = data.stream_path || 'stream1'
+      config.onvif_port = data.onvif_port || null
+      configured.value = true
+      connecting.value = true
+    }
+  } catch {
+    status.value = 'Failed to load config'
+  }
+}
+
+async function save() {
+  connecting.value = true
+  connected.value = false
+  status.value = ''
+  try {
+    const body = {
+      name: config.name,
+      ip: config.ip,
+      rtsp_port: config.rtsp_port,
+      username: config.username,
+      password: config.password,
+      stream_path: config.stream_path,
+    }
+    if (config.onvif_port) {
+      body.onvif_port = config.onvif_port
+    }
+    const res = await fetch('/camera', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      configured.value = true
+    } else {
+      connecting.value = false
+      status.value = `Error: ${data.error || 'unknown'}`
+    }
+  } catch {
+    connecting.value = false
+    status.value = 'Connection failed'
+  }
+}
+
+function setConnected() {
+  connecting.value = false
+  connected.value = true
+}
+
+function setDisconnected() {
+  connecting.value = false
+  connected.value = false
+}
+
+function disconnect() {
+  configured.value = false
+  connecting.value = false
+  connected.value = false
+  status.value = ''
+}
+
+export function useCamera() {
+  return {
+    config, configured, connecting, connected, status,
+    load, save, disconnect, setConnected, setDisconnected,
+  }
+}
