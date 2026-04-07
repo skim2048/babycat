@@ -121,7 +121,7 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 0.25rem;
+  padding: 0 0.5rem;
 }
 .login-remember {
   display: flex;
