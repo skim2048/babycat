@@ -2,12 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from './composables/useAuth.js'
 
 import LoginView from './views/LoginView.vue'
-import ChangePasswordView from './views/ChangePasswordView.vue'
 import DashboardView from './views/DashboardView.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView },
-  { path: '/change-password', name: 'change-password', component: ChangePasswordView },
   { path: '/', name: 'dashboard', component: DashboardView },
 ]
 

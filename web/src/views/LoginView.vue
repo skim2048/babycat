@@ -55,16 +55,6 @@ async function handleLogin() {
         required
       />
 
-      <div class="login-options">
-        <label class="login-remember">
-          <input type="checkbox" />
-          <span>로그인 정보 저장</span>
-        </label>
-        <a class="login-find" @click.prevent="error = '아직 지원되지 않습니다.'">아이디 | 비밀번호 찾기</a>
-      </div>
-
-      <hr class="login-divider" />
-
       <button type="submit" class="login-btn" :disabled="loading">
         {{ loading ? '로그인 중...' : '로그인' }}
       </button>
@@ -115,43 +105,6 @@ async function handleLogin() {
 .login-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-
-.login-options {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0.25rem;
-}
-.login-remember {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--text-2);
-  cursor: pointer;
-  user-select: none;
-}
-.login-find {
-  font-size: 0.75rem;
-  color: var(--text-3);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-.login-find:hover {
-  color: var(--text-1);
-}
-.login-remember input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-.login-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 0.25rem 0;
 }
 
 .login-btn {

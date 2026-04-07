@@ -1,7 +1,6 @@
 import { ref, computed } from 'vue'
 
 const token = ref(localStorage.getItem('token') || '')
-const mustChangePassword = ref(false)
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!token.value)
@@ -23,12 +22,10 @@ export function useAuth() {
     const data = await res.json()
     token.value = data.token
     localStorage.setItem('token', data.token)
-    mustChangePassword.value = data.must_change_password
   }
 
   function logout() {
     token.value = ''
-    mustChangePassword.value = false
     localStorage.removeItem('token')
   }
 
@@ -36,16 +33,10 @@ export function useAuth() {
     return token.value
   }
 
-  function clearMustChangePassword() {
-    mustChangePassword.value = false
-  }
-
   return {
     isAuthenticated,
-    mustChangePassword,
     login,
     logout,
     getToken,
-    clearMustChangePassword,
   }
 }
