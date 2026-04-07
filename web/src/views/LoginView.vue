@@ -95,7 +95,7 @@ async function handleLogin() {
   display: block;
   width: 100%;
   height: auto;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
 }
 
 .login-input {

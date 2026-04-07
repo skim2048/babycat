@@ -171,7 +171,7 @@ body {
 /* ── Layout ── */
 .header {
   background: var(--bg-surface);
-  padding: 8px 24px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
   display: flex; justify-content: space-between; align-items: center;
@@ -199,7 +199,7 @@ body {
   border-radius: var(--radius); box-shadow: var(--shadow-md);
 }
 .video-label {
-  font-size: 10px; color: var(--text-3); font-weight: 700;
+  font-size: 13px; color: var(--text-3); font-weight: 700;
   text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;
   flex-shrink: 0;
 }
@@ -223,7 +223,7 @@ body {
   overflow: visible;
 }
 .section-title {
-  font-size: 10px; color: var(--text-3); font-weight: 700;
+  font-size: 13px; color: var(--text-3); font-weight: 700;
   text-transform: uppercase; letter-spacing: 1.5px;
   padding: 10px 14px; cursor: pointer; user-select: none;
   display: flex; justify-content: space-between; align-items: center;
