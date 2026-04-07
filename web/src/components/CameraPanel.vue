@@ -1,83 +1,61 @@
 <script setup>
-import { onMounted } from 'vue'
 import { useCamera } from '../composables/useCamera.js'
 
-const { config, configured, connecting, connected, status, load, save, disconnect } = useCamera()
+const emit = defineEmits(['close'])
+const { config, status, save } = useCamera()
 
-onMounted(load)
+async function handleSave() {
+  const ok = await save()
+  if (ok) emit('close')
+}
+
+function handleCancel() {
+  emit('close')
+}
 </script>
 
 <template>
-  <div class="section">
-    <div class="section-title">
-      카메라
-      <span class="cam-badge" :class="connected ? 'on' : connecting ? 'pending' : 'off'">
-        {{ connected ? '연결됨' : connecting ? '연결 중...' : '연결 해제' }}
-      </span>
+  <div class="cam-panel">
+    <div class="cam-form">
+      <label class="cam-label">
+        <span class="cam-label-text">이름 (별칭)</span>
+        <input class="cam-input" v-model="config.name" placeholder="mycam" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">카메라 ID</span>
+        <input class="cam-input" v-model="config.username" placeholder="admin" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">카메라 비밀번호</span>
+        <input class="cam-input" v-model="config.password" type="password" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">IP 또는 호스트명</span>
+        <input class="cam-input" v-model="config.ip" placeholder="192.168.1.101" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">RTSP 포트 번호</span>
+        <input class="cam-input" v-model.number="config.rtsp_port" type="number" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">ONVIF 포트 번호 (선택)</span>
+        <input class="cam-input" v-model.number="config.onvif_port" type="number"
+               placeholder="2020" />
+      </label>
+      <label class="cam-label">
+        <span class="cam-label-text">URL (경로)</span>
+        <input class="cam-input" v-model="config.stream_path" placeholder="stream1" />
+      </label>
     </div>
-    <div class="section-body">
-      <div class="cam-form">
-        <label class="cam-label">
-          <span class="cam-label-text">이름 (별칭)</span>
-          <input class="cam-input" v-model="config.name" placeholder="mycam" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">IP 또는 호스트명</span>
-          <input class="cam-input" v-model="config.ip" placeholder="192.168.1.101" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">RTSP 포트</span>
-          <input class="cam-input" v-model.number="config.rtsp_port" type="number" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">카메라 ID</span>
-          <input class="cam-input" v-model="config.username" placeholder="admin" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">카메라 비밀번호</span>
-          <input class="cam-input" v-model="config.password" type="password" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">URL (경로)</span>
-          <input class="cam-input" v-model="config.stream_path" placeholder="stream1" />
-        </label>
-        <label class="cam-label">
-          <span class="cam-label-text">ONVIF 포트 (선택)</span>
-          <input class="cam-input" v-model.number="config.onvif_port" type="number"
-                 placeholder="2020" />
-        </label>
-      </div>
-      <button v-if="!configured && !connecting" class="cam-apply-btn" @click="save">연결</button>
-      <button v-else-if="connecting" class="cam-apply-btn cancel" @click="disconnect">취소</button>
-      <button v-else class="cam-apply-btn disconnect" @click="disconnect">연결 해제</button>
-      <div class="cam-status" v-if="status">{{ status }}</div>
+    <div class="cam-actions">
+      <button class="cam-btn save" @click="handleSave">저장</button>
+      <button class="cam-btn cancel" @click="handleCancel">취소</button>
     </div>
+    <div class="cam-status" v-if="status">{{ status }}</div>
   </div>
 </template>
 
 <style scoped>
-.cam-badge {
-  font-size: 9px;
-  padding: 2px 7px;
-  border-radius: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  margin-left: auto;
-  text-transform: none;
-}
-.cam-badge.on {
-  background: var(--success-bg);
-  color: var(--success);
-  border: 1px solid var(--success-border);
-}
-.cam-badge.off {
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-.cam-badge.pending {
-  background: var(--warning-bg);
-  color: var(--warning);
-}
 .cam-form {
   display: flex;
   flex-direction: column;
@@ -89,7 +67,7 @@ onMounted(load)
   gap: 3px;
 }
 .cam-label-text {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-3);
   text-transform: uppercase;
@@ -99,7 +77,7 @@ onMounted(load)
   width: 100%;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 13px;
   padding: 7px 10px;
   border: 1px solid var(--border-input);
   border-radius: var(--radius);
@@ -123,40 +101,38 @@ onMounted(load)
 .cam-input[type="number"] {
   -moz-appearance: textfield;
 }
-.cam-apply-btn {
+.cam-actions {
+  display: flex;
+  gap: 8px;
   margin-top: 10px;
-  width: 100%;
+}
+.cam-btn {
+  flex: 1;
   padding: 8px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  border: 1px solid var(--accent);
-  background: var(--accent-bg);
-  color: var(--accent);
   border-radius: var(--radius);
   cursor: pointer;
   transition: background 0.15s, box-shadow 0.15s;
 }
-.cam-apply-btn:hover {
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-.cam-apply-btn:active {
+.cam-btn:active {
   transform: translateY(1px);
 }
-.cam-apply-btn.cancel {
-  border-color: var(--warning);
-  background: var(--warning-bg);
-  color: var(--warning);
+.cam-btn.save {
+  border: 1px solid var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
-.cam-apply-btn.cancel:hover {
-  box-shadow: 0 0 0 3px rgba(160, 122, 0, 0.2);
+.cam-btn.save:hover {
+  box-shadow: 0 0 0 3px var(--accent-shadow);
 }
-.cam-apply-btn.disconnect {
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-  color: var(--danger);
+.cam-btn.cancel {
+  border: 1px solid var(--border-input);
+  background: var(--bg-surface);
+  color: var(--text-2);
 }
-.cam-apply-btn.disconnect:hover {
-  box-shadow: 0 0 0 3px rgba(208, 56, 56, 0.2);
+.cam-btn.cancel:hover {
+  background: var(--bg-surface-hover);
 }
 .cam-status {
   font-size: 11px;

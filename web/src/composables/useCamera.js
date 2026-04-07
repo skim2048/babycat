@@ -9,6 +9,7 @@ const config = reactive({
   password: '',
   stream_path: 'stream1',
   onvif_port: null,
+  stream_protocol: 'hls',
 })
 
 // configured: camera.json에 설정이 저장된 상태 (영속)
@@ -35,8 +36,8 @@ async function load() {
       config.password = data.password || ''
       config.stream_path = data.stream_path || 'stream1'
       config.onvif_port = data.onvif_port || null
+      config.stream_protocol = data.stream_protocol || 'hls'
       configured.value = true
-      connecting.value = true
     }
   } catch {
     status.value = 'Failed to load config'
@@ -44,8 +45,6 @@ async function load() {
 }
 
 async function save() {
-  connecting.value = true
-  connected.value = false
   status.value = ''
   try {
     const body = {
@@ -59,6 +58,7 @@ async function save() {
     if (config.onvif_port) {
       body.onvif_port = config.onvif_port
     }
+    body.stream_protocol = config.stream_protocol
     const res = await authFetch('/camera', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -67,14 +67,14 @@ async function save() {
     const data = await res.json()
     if (data.ok) {
       configured.value = true
+      return true
     } else {
-      connecting.value = false
       status.value = `Error: ${data.error || 'unknown'}`
     }
   } catch {
-    connecting.value = false
-    status.value = 'Connection failed'
+    status.value = '저장 실패'
   }
+  return false
 }
 
 function setConnected() {
@@ -88,6 +88,11 @@ function setDisconnected() {
 }
 
 function disconnect() {
+  connecting.value = false
+  connected.value = false
+}
+
+function deleteProfile() {
   configured.value = false
   connecting.value = false
   connected.value = false
@@ -97,6 +102,6 @@ function disconnect() {
 export function useCamera() {
   return {
     config, configured, connecting, connected, status,
-    load, save, disconnect, setConnected, setDisconnected,
+    load, save, disconnect, deleteProfile, setConnected, setDisconnected,
   }
 }

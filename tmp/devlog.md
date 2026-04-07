@@ -6,7 +6,7 @@
 ![](./banner.png)
 
 > **목적**: 카메라 영상을 사용자가 정의한 조건에 따라 실시간으로 분석하는 엣지 AI 백엔드.  
-> **버전**: v3.0
+> **버전**: v3.2
 
 | 버전 | 변경 내용 |
 |---|---|
@@ -33,6 +33,7 @@
 | v2.1 | 프로젝트 구조 정리. 설정 → config/, 데이터 → data/cam/, ptz_home을 cam_profile.json에 병합, debugging/ → web/ 이름 변경 |
 | v3.0 | JWT 인증 시스템 도입. 로그인 페이지 (vue-router), 모든 API 엔드포인트 토큰 보호 (app:8080 + api:8000), 로그인 시도 제한 (10회 실패 → 30분 잠금), 비밀번호 변경 기능, 로그아웃. Dark theme 비활성화 (light 고정) |
 | v3.1 | 다크 테마 구현. ThemeToggle 컴포넌트 + useTheme 컴포저블 (localStorage 영속화). 전체 CSS 변수 기반 다크 팔레트 추가 (global.css). 로그인·비밀번호 변경·대시보드 전 페이지에 테마 토글 배치. 배너 이미지 라이트/다크 분리 (README.md `<picture>` 태그 적용). UI 텍스트 한국어 번역 (CameraPanel, LiveStream, DashboardView) |
+| v3.2 | 대시보드 UI 대폭 개편. (1) 실시간 스트림 HLS/WebRTC 듀얼 지원 — WHEP 프로토콜로 MediaMTX WebRTC 연동, 슬라이딩 토글로 프로토콜 전환, cam_profile.json에 stream_protocol 필드 영속화. MediaMTX SRT 비활성화 및 webrtcLocalUDPAddress/webrtcAdditionalHosts 설정 (v1.16.3 호환). (2) 카메라 프로필 설정을 대시보드 사이드바에서 메뉴 하위 모달 오버레이로 이동 — 프로필 저장/수정 전용으로 분리, 연결 상태 배지 및 연결/해제 버튼 제거. 필드 순서 재배열 (이름→ID→비밀번호→IP→RTSP포트→ONVIF포트→경로). (3) 연결/해제를 비디오 오버레이로 이동 — 대기중: 중앙 ▶ 아이콘 클릭, 재생중: 호버 시 우상단 ■ 정지 아이콘, 시간초과: 재연결 버튼. 자동 연결 완전 제거 (사용자 명시적 연결만 허용). (4) 비밀번호 변경도 모달 오버레이로 전환 (ChangePasswordPanel 컴포넌트). (5) 전체화면 버튼 (우하단), 스트림 정보 패널 (좌하단 ⓘ 토글) — 해상도, FPS, 비트레이트, 코덱 공통 표시 + WebRTC 전용 지연시간/패킷 손실 |
 
 ---
 

@@ -23,10 +23,14 @@ authInternalUsers:
 # RTSP server
 rtspAddress: :8554
 
+# SRT 미사용 — 포트 8890 충돌 방지
+srt: no
+
 # WebRTC server
 webrtcAddress: :8889
-webrtcICEHostNAT1To1IPs:
+webrtcAdditionalHosts:
   - 172.27.1.205
+webrtcLocalUDPAddress: :8890
 
 paths:
   live:

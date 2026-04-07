@@ -1,16 +1,63 @@
 <script setup>
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import CameraPanel from '../components/CameraPanel.vue'
+import ChangePasswordPanel from '../components/ChangePasswordPanel.vue'
 import LiveStream from '../components/LiveStream.vue'
-import ThemeToggle from '../components/ThemeToggle.vue'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useTheme } from '../composables/useTheme.js'
 
 const router = useRouter()
-const { configured, connecting } = useCamera()
+const { configured, connecting, load: loadCamera } = useCamera()
 const { logout } = useAuth()
+const { theme, setTheme } = useTheme()
+
+function toggleTheme() {
+  setTheme(theme.value === 'light' ? 'dark' : 'light')
+}
+
+const menuOpen = ref(false)
+const menuRef = ref(null)
+const menuBtnRef = ref(null)
+const cameraModalOpen = ref(false)
+const passwordModalOpen = ref(false)
+
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value
+}
+
+function closeMenu(e) {
+  if (menuRef.value && !menuRef.value.contains(e.target) && !menuBtnRef.value.contains(e.target)) {
+    menuOpen.value = false
+  }
+}
+
+function openCameraModal() {
+  menuOpen.value = false
+  cameraModalOpen.value = true
+}
+
+function openPasswordModal() {
+  menuOpen.value = false
+  passwordModalOpen.value = true
+}
+
+function closeModal(e) {
+  if (e && e.target === e.currentTarget) {
+    cameraModalOpen.value = false
+    passwordModalOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeMenu)
+  loadCamera()
+})
+onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 
 function handleLogout() {
+  menuOpen.value = false
   logout()
   router.push({ name: 'login' })
 }
@@ -18,49 +65,142 @@ function handleLogout() {
 
 <template>
   <div class="header">
-    <span class="header-title">Babycat</span>
+    <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="header-logo" />
     <div class="header-actions">
-      <ThemeToggle />
-      <button class="header-btn" @click="router.push({ name: 'change-password' })">비밀번호 변경</button>
-      <button class="header-btn danger" @click="handleLogout">로그아웃</button>
+      <div class="menu-wrapper">
+        <button ref="menuBtnRef" class="menu-btn" @click="toggleMenu" aria-label="메뉴">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <Transition name="dropdown">
+          <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
+            <button class="dropdown-item" @click="openCameraModal">카메라 프로필 설정</button>
+            <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
+            <button class="dropdown-item" @click="openPasswordModal">비밀번호 변경</button>
+            <button class="dropdown-item danger" @click="handleLogout">로그아웃</button>
+          </div>
+        </Transition>
+      </div>
     </div>
   </div>
   <div class="main">
     <div class="video-area">
       <LiveStream v-if="configured || connecting" />
       <div v-else class="empty-state">
-        <p>카메라가 설정되지 않았습니다. 카메라를 설정하세요.</p>
+        <p>카메라가 설정되지 않았습니다. 메뉴에서 카메라 프로필 설정을 완료하세요.</p>
       </div>
     </div>
-    <div class="dash">
-      <CameraPanel />
-    </div>
   </div>
+
+  <!-- Camera Profile Modal -->
+  <!-- Camera Profile Modal -->
+  <Transition name="modal">
+    <div v-if="cameraModalOpen" class="modal-backdrop" @click="closeModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span class="modal-title">카메라 프로필 설정</span>
+          <button class="modal-close" @click="cameraModalOpen = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <CameraPanel @close="cameraModalOpen = false" />
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Change Password Modal -->
+  <Transition name="modal">
+    <div v-if="passwordModalOpen" class="modal-backdrop" @click="closeModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span class="modal-title">비밀번호 변경</span>
+          <button class="modal-close" @click="passwordModalOpen = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <ChangePasswordPanel @close="passwordModalOpen = false" />
+        </div>
+      </div>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
+.header-logo {
+  height: 32px;
+  display: block;
+}
+
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
 }
-.header-btn {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.3rem 0.75rem;
-  border: 1px solid var(--border-input);
+
+.menu-wrapper {
+  position: relative;
+}
+.menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
   border-radius: var(--radius);
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--text-2);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.header-btn:hover {
+.menu-btn:hover {
   background: var(--bg-surface-hover);
 }
-.header-btn.danger:hover {
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 140px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 4px 0;
+  z-index: 100;
+}
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.85rem;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.dropdown-item:hover {
+  background: var(--bg-surface-hover);
+}
+.dropdown-item.danger:hover {
   background: var(--danger-bg);
   color: var(--danger);
-  border-color: var(--danger-border);
+}
+
+
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .empty-state {
@@ -70,5 +210,65 @@ function handleLogout() {
   justify-content: center;
   color: var(--text-4);
   font-size: 14px;
+}
+
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.modal-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--text-3);
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius);
+  transition: background 0.12s, color 0.12s;
+}
+.modal-close:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-1);
+}
+.modal-body {
+  padding: 16px;
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.2s;
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
 }
 </style>
