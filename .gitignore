@@ -47,3 +47,6 @@ config/cam_profile.json
 # Claude
 CLAUDE.md
 TMP.md
+
+# Etc.
+tmp/
