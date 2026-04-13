@@ -1,6 +1,7 @@
-import { ref, watch } from 'vue'
+import { ref, watch, effectScope } from 'vue'
 import { authFetch } from './useFetch.js'
 import { useSSE } from './useSSE.js'
+import { useAuth } from './useAuth.js'
 
 const clips = ref([])
 const checked = ref({})
@@ -49,16 +50,20 @@ async function deleteSelected() {
   await deleteClips(names)
 }
 
-let initialized = false
-
-export function useClips() {
-  if (!initialized) {
-    initialized = true
+// 컴포넌트 생명주기와 분리된 글로벌 effectScope에 워처 등록.
+// 인증된 상태에서만 1회 등록하여 로그인 페이지에서 401 루프를 방지한다.
+const globalScope = effectScope(true)
+let watcherStarted = false
+function ensureWatcher() {
+  if (watcherStarted) return
+  const { isAuthenticated } = useAuth()
+  if (!isAuthenticated.value) return
+  watcherStarted = true
+  globalScope.run(() => {
+    const { state: sseState } = useSSE()
     fetchClips()
-
-    const { state } = useSSE()
     watch(
-      () => state.clip_count,
+      () => sseState.clip_count,
       (count) => {
         if (count !== knownCount) {
           knownCount = count
@@ -66,8 +71,11 @@ export function useClips() {
         }
       },
     )
-  }
+  })
+}
 
+export function useClips() {
+  ensureWatcher()
   return {
     clips,
     checked,

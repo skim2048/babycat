@@ -7,7 +7,6 @@ const { config, status, save } = useCamera()
 
 // 로컬 복사본 — 취소 시 원본에 영향 없음
 const local = reactive({
-  name: '',
   ip: '',
   rtsp_port: 554,
   username: '',
@@ -22,7 +21,6 @@ const passwordLoaded = ref(false)
 
 onMounted(() => {
   Object.assign(local, {
-    name: config.name,
     ip: config.ip,
     rtsp_port: config.rtsp_port,
     username: config.username,
@@ -64,10 +62,6 @@ function handleCancel() {
 <template>
   <div class="cam-panel">
     <div class="cam-form">
-      <label class="cam-label">
-        <span class="cam-label-text">이름 (별칭)</span>
-        <input class="cam-input" v-model="local.name" placeholder="mycam" />
-      </label>
       <label class="cam-label">
         <span class="cam-label-text">카메라 ID</span>
         <input class="cam-input" v-model="local.username" placeholder="admin" />

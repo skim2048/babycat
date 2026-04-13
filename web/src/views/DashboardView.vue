@@ -3,6 +3,8 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import CameraPanel from '../components/CameraPanel.vue'
 import ChangePasswordPanel from '../components/ChangePasswordPanel.vue'
+import PromptPanel from '../components/PromptPanel.vue'
+import ClipsPanel from '../components/ClipsPanel.vue'
 import LiveStream from '../components/LiveStream.vue'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -22,6 +24,8 @@ const menuRef = ref(null)
 const menuBtnRef = ref(null)
 const cameraModalOpen = ref(false)
 const passwordModalOpen = ref(false)
+const promptModalOpen = ref(false)
+const clipsModalOpen = ref(false)
 
 function toggleMenu() {
   menuOpen.value = !menuOpen.value
@@ -43,11 +47,28 @@ function openPasswordModal() {
   passwordModalOpen.value = true
 }
 
+function openPromptModal() {
+  menuOpen.value = false
+  promptModalOpen.value = true
+}
+
+function openClipsModal() {
+  menuOpen.value = false
+  clipsModalOpen.value = true
+}
+
+let backdropMouseDown = false
+function onBackdropMouseDown(e) {
+  backdropMouseDown = e.target === e.currentTarget
+}
 function closeModal(e) {
-  if (e && e.target === e.currentTarget) {
+  if (backdropMouseDown && e && e.target === e.currentTarget) {
     cameraModalOpen.value = false
     passwordModalOpen.value = false
+    promptModalOpen.value = false
+    clipsModalOpen.value = false
   }
+  backdropMouseDown = false
 }
 
 onMounted(() => {
@@ -78,6 +99,8 @@ function handleLogout() {
         <Transition name="dropdown">
           <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
             <button class="dropdown-item" @click="openCameraModal">카메라 프로필 설정</button>
+            <button class="dropdown-item" @click="openPromptModal">프롬프트 설정</button>
+            <button class="dropdown-item" @click="openClipsModal">녹화 클립</button>
             <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
             <button class="dropdown-item" @click="openPasswordModal">비밀번호 변경</button>
             <button class="dropdown-item danger" @click="handleLogout">로그아웃</button>
@@ -96,9 +119,8 @@ function handleLogout() {
   </div>
 
   <!-- Camera Profile Modal -->
-  <!-- Camera Profile Modal -->
   <Transition name="modal">
-    <div v-if="cameraModalOpen" class="modal-backdrop" @click="closeModal">
+    <div v-if="cameraModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
           <span class="modal-title">카메라 프로필 설정</span>
@@ -113,7 +135,7 @@ function handleLogout() {
 
   <!-- Change Password Modal -->
   <Transition name="modal">
-    <div v-if="passwordModalOpen" class="modal-backdrop" @click="closeModal">
+    <div v-if="passwordModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
           <span class="modal-title">비밀번호 변경</span>
@@ -121,6 +143,36 @@ function handleLogout() {
         </div>
         <div class="modal-body">
           <ChangePasswordPanel @close="passwordModalOpen = false" />
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Clips Modal -->
+  <Transition name="modal">
+    <div v-if="clipsModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
+      <div class="modal-content clips-modal">
+        <div class="modal-header">
+          <span class="modal-title">녹화 클립</span>
+          <button class="modal-close" @click="clipsModalOpen = false">&times;</button>
+        </div>
+        <div class="modal-body clips-modal-body">
+          <ClipsPanel />
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Prompt Settings Modal -->
+  <Transition name="modal">
+    <div v-if="promptModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <span class="modal-title">프롬프트 설정</span>
+          <button class="modal-close" @click="promptModalOpen = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <PromptPanel @close="promptModalOpen = false" />
         </div>
       </div>
     </div>
@@ -261,6 +313,20 @@ function handleLogout() {
 }
 .modal-body {
   padding: 16px;
+}
+
+.clips-modal {
+  width: 80vw;
+  max-width: 80vw;
+  height: 80vh;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.clips-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .modal-enter-active,

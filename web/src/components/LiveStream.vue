@@ -1,18 +1,34 @@
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import Hls from 'hls.js'
 import { useCamera } from '../composables/useCamera.js'
+import { useSSE } from '../composables/useSSE.js'
+import SystemOverlay from './SystemOverlay.vue'
+import PtzOverlay from './PtzOverlay.vue'
+import InferenceOverlay from './InferenceOverlay.vue'
 
-const { config, configured, connecting, connected, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
+const { state: sseState } = useSSE()
+
+const { config, configured, connecting, connected, reconnectKey, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
+
+// 카메라 프로필 저장 성공 시 자동 재연결 (타임아웃 상태에서도 복구)
+watch(reconnectKey, () => {
+  if (!configured.value) return
+  stopCountdown()
+  destroyAll()
+  handleConnect()
+})
+
+const hasOnvif = computed(() => !!config.onvif_port)
 
 const videoRef = ref(null)
 const videoWrapRef = ref(null)
 const loading = ref(false)
 const timedOut = ref(false)
 const stopped = ref(true)
-const hovered = ref(false)
 const fullscreen = ref(false)
-const statsOpen = ref(true)
+const activePanel = ref(null) // 'sys' | 'stats' | 'ptz' | null
+const inferOpen = ref(false)
 const stats = reactive({
   resolution: '',
   fps: '',
@@ -43,8 +59,11 @@ let hls = null
 let stallTimer = null
 let timeoutTimer = null
 let retryTimer = null
+let countdownTimer = null
 let pc = null
 let sessionId = 0
+let connectDeadline = 0
+const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
 
@@ -62,11 +81,42 @@ function toggleProtocol() {
 function handleConnect() {
   stopped.value = false
   connecting.value = true
+  connectDeadline = Date.now() + CONNECT_TIMEOUT
+  startCountdown()
   restartStream()
+}
+
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer)
+  const tick = () => {
+    const ms = Math.max(0, connectDeadline - Date.now())
+    remainingSec.value = Math.ceil(ms / 1000)
+    if (ms <= 0) {
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
+      if (loading.value) {
+        loading.value = false
+        timedOut.value = true
+        destroyHls()
+        destroyWebRTC()
+        stopStats()
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+        if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
+        setDisconnected()
+      }
+    }
+  }
+  tick()
+  countdownTimer = setInterval(tick, 250)
+}
+
+function stopCountdown() {
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
+  remainingSec.value = 0
 }
 
 function handleDisconnect() {
   stopped.value = true
+  stopCountdown()
   destroyAll()
   disconnect()
 }
@@ -125,15 +175,6 @@ function initHls() {
   const video = videoRef.value
   if (!video) return
 
-  timeoutTimer = setTimeout(() => {
-    if (mySession !== sessionId) return
-    if (loading.value) {
-      loading.value = false
-      timedOut.value = true
-      setDisconnected()
-    }
-  }, CONNECT_TIMEOUT)
-
   if (Hls.isSupported()) {
     hls = new Hls({
       liveSyncDurationCount: 1,
@@ -147,9 +188,9 @@ function initHls() {
       video.play().catch(() => {})
     })
     hls.on(Hls.Events.ERROR, (_, data) => {
-      if (data.fatal && mySession === sessionId) {
+      if (data.fatal && mySession === sessionId && Date.now() < connectDeadline) {
         retryTimer = setTimeout(() => {
-          if (mySession === sessionId) initHls()
+          if (mySession === sessionId && Date.now() < connectDeadline) initHls()
         }, 3000)
       }
     })
@@ -202,16 +243,6 @@ async function initWebRTC() {
   const video = videoRef.value
   if (!video) return
 
-  timeoutTimer = setTimeout(() => {
-    if (mySession !== sessionId) return
-    if (loading.value) {
-      loading.value = false
-      timedOut.value = true
-      setDisconnected()
-      console.warn('[WebRTC] connection timed out')
-    }
-  }, CONNECT_TIMEOUT)
-
   try {
     pc = new RTCPeerConnection({ iceServers: [] })
 
@@ -233,9 +264,9 @@ async function initWebRTC() {
       console.log('[WebRTC] connectionState:', state)
       if (state === 'connected') {
         onPlaying()
-      } else if (state === 'failed' || state === 'disconnected') {
+      } else if ((state === 'failed' || state === 'disconnected') && Date.now() < connectDeadline) {
         retryTimer = setTimeout(() => {
-          if (mySession === sessionId) initWebRTC()
+          if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
         }, 3000)
       }
     }
@@ -271,9 +302,11 @@ async function initWebRTC() {
   } catch (e) {
     console.error('[WebRTC] init failed:', e)
     if (mySession !== sessionId) return
-    retryTimer = setTimeout(() => {
-      if (mySession === sessionId) initWebRTC()
-    }, 3000)
+    if (Date.now() < connectDeadline) {
+      retryTimer = setTimeout(() => {
+        if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
+      }, 3000)
+    }
   }
 }
 
@@ -294,8 +327,9 @@ function onPlaying() {
   loading.value = false
   timedOut.value = false
   setConnected()
+  stopCountdown()
   if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
-  if (statsOpen.value) startStats()
+  if (activePanel.value === 'stats') startStats()
 }
 
 function startStallDetection(mySession) {
@@ -424,12 +458,14 @@ function collectHlsStats() {
   stats.packetLoss = ''
 }
 
-function toggleStats() {
-  statsOpen.value = !statsOpen.value
-  if (statsOpen.value && isPlaying.value) {
-    startStats()
-  } else if (!statsOpen.value) {
-    stopStats()
+function togglePanel(name) {
+  if (activePanel.value === name) {
+    activePanel.value = null
+    if (name === 'stats') stopStats()
+  } else {
+    if (activePanel.value === 'stats') stopStats()
+    activePanel.value = name
+    if (name === 'stats' && isPlaying.value) startStats()
   }
 }
 
@@ -453,8 +489,7 @@ onBeforeUnmount(() => {
         <span class="protocol-label" :class="{ active: isWebRTC }">WebRTC</span>
       </div>
     </div>
-    <div class="video-wrap" ref="videoWrapRef"
-         @mouseenter="hovered = true" @mouseleave="hovered = false">
+    <div class="video-wrap" ref="videoWrapRef">
       <video ref="videoRef" muted playsinline />
 
       <!-- 연결 대기중: 재생 아이콘 클릭으로 연결 -->
@@ -471,78 +506,130 @@ onBeforeUnmount(() => {
       <!-- 연결 중 -->
       <div v-else-if="loading" class="video-overlay">
         <div class="spinner" />
-        <span class="overlay-text">연결 중...</span>
+        <span class="overlay-text">연결 중... {{ remainingSec }}초</span>
       </div>
 
       <!-- 연결 시간 초과 -->
       <div v-else-if="timedOut" class="video-overlay">
-        <span class="overlay-text timeout">연결 시간 초과</span>
+        <span class="overlay-text timeout">네트워크 상태 또는 카메라 프로필을 확인하세요.</span>
         <button class="retry-btn" @click="handleConnect">재연결</button>
       </div>
 
-      <!-- 재생 중: 호버 시 정지 아이콘 -->
-      <Transition name="fade">
-        <div v-if="isPlaying && hovered" class="disconnect-overlay" @click="handleDisconnect">
-          <div class="stop-icon">
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <rect x="8" y="8" width="12" height="12" rx="2" fill="rgba(255,255,255,0.85)"/>
-            </svg>
-          </div>
-        </div>
-      </Transition>
 
-      <!-- 스트림 정보 토글 (좌하단) -->
-      <button class="info-btn" @click.stop="toggleStats">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="7" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>
-          <line x1="8" y1="7" x2="8" y2="12" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" stroke-linecap="round"/>
-          <circle cx="8" cy="4.5" r="0.75" fill="rgba(255,255,255,0.7)"/>
-        </svg>
-      </button>
+      <!-- 좌하단: 추론 결과 -->
+      <div class="infer-area">
+        <InferenceOverlay :open="inferOpen && isPlaying" />
+        <button class="toolbar-btn infer-btn" :class="{ 'infer-triggered': sseState.event_triggered }" @click.stop="inferOpen = !inferOpen" title="추론 결과">
+          <!-- 평상시: 꺼진 전구 -->
+          <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 14 L10.5 14" />
+            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
+          </svg>
+          <!-- 이벤트 발생: 켜진 전구 -->
+          <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
+            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
+            <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
+            <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
+            <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
+            <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+            <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+          </svg>
+        </button>
+      </div>
 
-      <!-- 스트림 정보 패널 -->
-      <Transition name="fade">
-        <div v-if="statsOpen && isPlaying" class="stats-panel">
-          <div class="stats-row" v-if="stats.resolution">
-            <span class="stats-key">해상도</span>
-            <span class="stats-val">{{ stats.resolution }}</span>
-          </div>
-          <div class="stats-row" v-if="stats.fps">
-            <span class="stats-key">FPS</span>
-            <span class="stats-val">{{ stats.fps }}</span>
-          </div>
-          <div class="stats-row" v-if="stats.bitrate">
-            <span class="stats-key">비트레이트</span>
-            <span class="stats-val">{{ stats.bitrate }}</span>
-          </div>
-          <div class="stats-row" v-if="stats.codec">
-            <span class="stats-key">코덱</span>
-            <span class="stats-val">{{ stats.codec }}</span>
-          </div>
-          <div class="stats-row" v-if="stats.rtt">
-            <span class="stats-key">지연시간</span>
-            <span class="stats-val">{{ stats.rtt }}</span>
-          </div>
-          <div class="stats-row" v-if="stats.packetLoss">
-            <span class="stats-key">패킷 손실</span>
-            <span class="stats-val">{{ stats.packetLoss }}</span>
-          </div>
-        </div>
-      </Transition>
+      <!-- 우하단 패널 영역 -->
+      <div class="toolbar-panels">
+        <SystemOverlay :open="activePanel === 'sys'" />
 
-      <!-- 최대화/최소화 버튼 (우하단) -->
-      <button class="fullscreen-btn" @click="toggleFullscreen">
-        <!-- 최대화 아이콘 -->
-        <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="11,1 17,1 17,7" />
-          <polyline points="7,17 1,17 1,11" />
-        </svg>
-        <!-- 최소화 아이콘 -->
-        <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="17,7 11,7 11,1" />
-          <polyline points="1,11 7,11 7,17" />
-        </svg>
-      </button>
+        <Transition name="fade">
+          <div v-if="activePanel === 'stats' && isPlaying" class="stats-panel">
+            <div class="stats-row" v-if="stats.resolution">
+              <span class="stats-key">해상도</span>
+              <span class="stats-val">{{ stats.resolution }}</span>
+            </div>
+            <div class="stats-row" v-if="stats.fps">
+              <span class="stats-key">FPS</span>
+              <span class="stats-val">{{ stats.fps }}</span>
+            </div>
+            <div class="stats-row" v-if="stats.bitrate">
+              <span class="stats-key">비트레이트</span>
+              <span class="stats-val">{{ stats.bitrate }}</span>
+            </div>
+            <div class="stats-row" v-if="stats.codec">
+              <span class="stats-key">코덱</span>
+              <span class="stats-val">{{ stats.codec }}</span>
+            </div>
+            <div class="stats-row" v-if="stats.rtt">
+              <span class="stats-key">지연시간</span>
+              <span class="stats-val">{{ stats.rtt }}</span>
+            </div>
+            <div class="stats-row" v-if="stats.packetLoss">
+              <span class="stats-key">패킷 손실</span>
+              <span class="stats-val">{{ stats.packetLoss }}</span>
+            </div>
+          </div>
+        </Transition>
+
+        <PtzOverlay v-if="hasOnvif" :open="activePanel === 'ptz' && isPlaying" />
+      </div>
+
+      <!-- 우하단 툴바 -->
+      <div class="video-toolbar">
+        <!-- 시스템 모니터 (파형 시그널 아이콘) -->
+        <button class="toolbar-btn" @click.stop="togglePanel('sys')" title="시스템 모니터">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <polyline points="1,8 3,8 5,3 7,13 9,5 11,11 13,7 15,8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </button>
+
+        <!-- 송수신 정보 (교차 화살표 아이콘) -->
+        <button class="toolbar-btn" @click.stop="togglePanel('stats')" title="송수신 정보">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="1" x2="5" y2="15" />
+            <polyline points="2,4 5,1 8,4" />
+            <line x1="11" y1="15" x2="11" y2="1" />
+            <polyline points="8,12 11,15 14,12" />
+          </svg>
+        </button>
+
+        <!-- PTZ 조작 -->
+        <button v-if="hasOnvif" class="toolbar-btn" @click.stop="togglePanel('ptz')" title="PTZ 조작">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <circle cx="8" cy="8" r="3" fill="none"/>
+            <line x1="8" y1="1" x2="8" y2="4" />
+            <line x1="8" y1="12" x2="8" y2="15" />
+            <line x1="1" y1="8" x2="4" y2="8" />
+            <line x1="12" y1="8" x2="15" y2="8" />
+          </svg>
+        </button>
+
+        <!-- 연결 해제 -->
+        <button
+          class="toolbar-btn"
+          :class="isPlaying ? 'toolbar-btn-danger' : 'toolbar-btn-disabled'"
+          :disabled="!isPlaying"
+          @click="handleDisconnect"
+          title="연결 해제"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
+        </button>
+
+        <!-- 확대/축소 -->
+        <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? '축소' : '확대'">
+          <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="11,1 17,1 17,7" />
+            <polyline points="7,17 1,17 1,11" />
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="17,7 11,7 11,1" />
+            <polyline points="1,11 7,11 7,17" />
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -668,6 +755,14 @@ onBeforeUnmount(() => {
 .overlay-text.timeout {
   color: var(--danger);
 }
+.overlay-subtext {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  max-width: 360px;
+  line-height: 1.5;
+  padding: 0 16px;
+}
 
 .retry-btn {
   font-size: 12px;
@@ -684,52 +779,80 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* 재생 중 호버 시 우상단 정지 아이콘 */
-.disconnect-overlay {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  cursor: pointer;
-}
-.stop-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, transform 0.15s;
-}
-.stop-icon:hover {
-  background: rgba(208, 56, 56, 0.7);
-  transform: scale(1.1);
-}
-
-/* 스트림 정보 */
-.info-btn {
+/* 좌하단: 추론 결과 */
+.infer-area {
   position: absolute;
   bottom: 8px;
   left: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  z-index: 5;
+}
+.infer-btn {
+  align-self: flex-start;
+}
+.infer-triggered {
+  background: rgba(255, 220, 50, 0.25);
+}
+
+/* 우하단 툴바 */
+.video-toolbar {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 5;
+}
+.toolbar-btn {
   width: 32px;
   height: 32px;
   border: none;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s;
-  z-index: 5;
+  transition: background 0.15s, color 0.15s;
 }
-.info-btn:hover {
+.toolbar-btn:hover {
   background: rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 1);
 }
-.stats-panel {
+.toolbar-btn-danger {
+  color: rgba(255, 255, 255, 0.7);
+}
+.toolbar-btn-danger:hover {
+  background: rgba(208, 56, 56, 0.7);
+  color: rgba(255, 255, 255, 0.95);
+}
+.toolbar-btn-disabled {
+  color: rgba(255, 255, 255, 0.2);
+  cursor: default;
+  pointer-events: none;
+}
+
+/* 패널 영역 (툴바 위) */
+.toolbar-panels {
   position: absolute;
   bottom: 46px;
-  left: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 5;
+  pointer-events: none;
+}
+.toolbar-panels > * {
+  pointer-events: auto;
+}
+
+.stats-panel {
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
   border-radius: 6px;
@@ -737,7 +860,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  z-index: 5;
   pointer-events: none;
 }
 .stats-row {
@@ -757,27 +879,6 @@ onBeforeUnmount(() => {
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
-}
-
-/* 최대화/최소화 버튼 */
-.fullscreen-btn {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s;
-  z-index: 5;
-}
-.fullscreen-btn:hover {
-  background: rgba(0, 0, 0, 0.75);
 }
 
 .fade-enter-active,

@@ -2,7 +2,6 @@ import { ref, reactive } from 'vue'
 import { authFetch } from './useFetch.js'
 
 const config = reactive({
-  name: '',
   ip: '',
   rtsp_port: 554,
   username: '',
@@ -19,6 +18,7 @@ const configured = ref(false)
 const connecting = ref(false)
 const connected = ref(false)
 const status = ref('')
+const reconnectKey = ref(0)  // 프로필 저장 성공 시 증가 → LiveStream이 자동 재연결
 let loaded = false
 
 async function load() {
@@ -29,7 +29,6 @@ async function load() {
     if (!res.ok) return
     const data = await res.json()
     if (data.configured) {
-      config.name = data.name || ''
       config.ip = data.ip || ''
       config.rtsp_port = data.rtsp_port || 554
       config.username = data.username || ''
@@ -48,7 +47,6 @@ async function save() {
   status.value = ''
   try {
     const body = {
-      name: config.name,
       ip: config.ip,
       rtsp_port: config.rtsp_port,
       username: config.username,
@@ -67,6 +65,7 @@ async function save() {
     const data = await res.json()
     if (data.ok) {
       configured.value = true
+      reconnectKey.value += 1
       return true
     } else {
       status.value = `Error: ${data.error || 'unknown'}`
@@ -101,7 +100,7 @@ function deleteProfile() {
 
 export function useCamera() {
   return {
-    config, configured, connecting, connected, status,
+    config, configured, connecting, connected, status, reconnectKey,
     load, save, disconnect, deleteProfile, setConnected, setDisconnected,
   }
 }
