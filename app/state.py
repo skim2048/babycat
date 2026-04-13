@@ -5,6 +5,7 @@ GStreamer 콜백 / 추론 워커에서 업데이트, HTTP 서버에서 읽기.
 """
 
 import io
+import json
 import queue
 import threading
 import time
@@ -42,7 +43,6 @@ class AppState:
         self.trigger_keywords: list[str] = []
         self.event_triggered: bool = False
         self._clip_dir: str = ""
-        self._cam_base_dir: str = ""
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
 
@@ -60,47 +60,15 @@ class AppState:
     def get_clip_dir(self) -> str:
         return self._clip_dir
 
-    def set_cam_base_dir(self, path: str):
-        """모든 카메라 클립의 베이스 디렉토리 설정 ({base}/{camera_name}/ 구조)."""
-        self._cam_base_dir = path
-
-    def get_cam_base_dir(self) -> str:
-        return self._cam_base_dir
-
-    def list_all_clips(self) -> list[dict]:
-        """
-        모든 카메라 디렉토리의 클립을 조회한다 (API 서버용).
-
-        반환 형식: [{"name": "clip.mp4", "size": 12345, "camera": "mycam"}, ...]
-        카메라별 디렉토리는 {_cam_base_dir}/{camera_name}/ 구조이며,
-        현재 활성 카메라뿐 아니라 과거 카메라의 클립도 모두 포함한다.
-        """
-        if not self._cam_base_dir:
-            return []
-        base = Path(self._cam_base_dir)
-        if not base.exists():
-            return []
-
-        result = []
-        for cam_dir in base.iterdir():
-            if not cam_dir.is_dir():
-                continue
-            cam_name = cam_dir.name
-            for f in cam_dir.glob("*.mp4"):
-                st = f.stat()
-                if st.st_size >= 10240:
-                    result.append({
-                        "name": f.name,
-                        "size": st.st_size,
-                        "camera": cam_name,
-                        "_mtime": st.st_mtime,
-                    })
-        result.sort(key=lambda x: x["_mtime"], reverse=True)
-        return [{"name": r["name"], "size": r["size"], "camera": r["camera"]}
-                for r in result]
+    def invalidate_clip_cache(self):
+        self._clip_cache = []
+        self._clip_cache_time = 0.0
 
     def list_clips(self) -> list[dict]:
-        """클립 디렉토리의 mp4 파일 목록 반환 (최신순, 5초 TTL 캐시)."""
+        """
+        클립 디렉토리({DATA_DIR}/{YYYY}/{MM}/)의 모든 mp4 파일 목록 반환.
+        메타데이터 포함, 최신순, 5초 TTL 캐시.
+        """
         now = time.time()
         if self._clip_cache and now - self._clip_cache_time < 5.0:
             return self._clip_cache
@@ -112,12 +80,29 @@ class AppState:
             return []
 
         result = []
-        for f in d.glob("*.mp4"):
+        for f in d.rglob("*.mp4"):
             st = f.stat()
-            if st.st_size >= 10240:
-                result.append({"name": f.name, "size": st.st_size, "_mtime": st.st_mtime})
+            if st.st_size < 10240:
+                continue
+            entry = {
+                "name": f.name,
+                "size": st.st_size,
+                "mtime": int(st.st_mtime),
+                "_mtime": st.st_mtime,
+            }
+            meta_path = f.with_suffix(".json")
+            if meta_path.exists():
+                try:
+                    with open(meta_path, encoding="utf-8") as mf:
+                        meta = json.load(mf)
+                    entry["timestamp"] = meta.get("timestamp", int(st.st_mtime))
+                    entry["keywords"] = meta.get("keywords", [])
+                    entry["vlm_text"] = meta.get("vlm_text", "")
+                except Exception:
+                    pass
+            result.append(entry)
         result.sort(key=lambda x: x["_mtime"], reverse=True)
-        self._clip_cache = [{"name": r["name"], "size": r["size"]} for r in result]
+        self._clip_cache = [{k: v for k, v in r.items() if k != "_mtime"} for r in result]
         self._clip_cache_time = now
         return self._clip_cache
 

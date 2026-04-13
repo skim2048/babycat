@@ -1,26 +1,14 @@
 """
 카메라 설정 관리 모듈
 
-Data Management (클립 저장 아키텍처):
-    각 카메라는 사용자가 지정한 고유 이름(name)으로 식별된다.
-    MAC 주소나 하드웨어 ID는 사용하지 않는다.
-    이름이 다르면 무조건 다른 카메라로 취급하고, 동일한 물리 장비라도
-    새 이름을 부여하면 새 카메라로 간주한다.
-
-    클립은 카메라별 디렉토리에 격리 저장된다:
-        {CAM_BASE_DIR}/{camera_name}/*.mp4
-        예: /data/cam/mycam/20260401_143025_baby.mp4
-
-    카메라를 교체(새 이름으로 등록)하면 새 디렉토리가 생성되고,
-    이전 카메라의 디렉토리와 클립은 그대로 보존된다.
-    이전 카메라의 클립은 API를 통해 언제든 조회/다운로드 가능하다.
-    자동 삭제는 절대 수행하지 않는다.
+babycat은 단일 카메라 전제로 동작한다.
+클립은 연/월 디렉토리(DATA_DIR/{YYYY}/{MM}/)에 저장되며,
+카메라 프로필 변경과 무관하게 모든 클립은 동일한 저장소에 누적된다.
 """
 
 import json
 import logging
 import os
-import re
 import threading
 import time
 import urllib.parse
@@ -35,24 +23,12 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
 MEDIAMTX_API = "http://babycat-mediamtx:9997"
 MEDIAMTX_PATH_NAME = "live"
 
-# 카메라별 클립 저장 베이스 디렉토리.
-# 각 카메라의 클립은 {CAM_BASE_DIR}/{camera_name}/ 하위에 저장된다.
-CAM_BASE_DIR = os.getenv("CAM_BASE_DIR", "/data/cam")
+# 클립 저장 베이스 디렉토리. 실제 파일은 {DATA_DIR}/{YYYY}/{MM}/ 하위에 저장된다.
+DATA_DIR = os.getenv("DATA_DIR", "/data")
 
 camera_ready = threading.Event()
 
-_REQUIRED_FIELDS = ("name", "ip", "username", "password")
-_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
-
-
-def _validate_name(name: str) -> bool:
-    """카메라 이름 검증. 1-32자, [a-zA-Z0-9_-]만 허용 (파일시스템 안전)."""
-    return bool(_NAME_RE.match(name))
-
-
-def get_clip_dir(config: dict) -> str:
-    """카메라 설정에서 클립 저장 디렉토리 경로를 반환."""
-    return os.path.join(CAM_BASE_DIR, config["name"])
+_REQUIRED_FIELDS = ("ip", "username", "password")
 
 
 def load() -> Optional[dict]:
@@ -67,24 +43,16 @@ def save(config: dict) -> None:
     """저장 시 기존 파일의 필드를 보존한 뒤 덮어쓴다 (ptz_home 등)."""
     existing = load() or {}
     existing.update(config)
+    existing.pop("name", None)  # 레거시 필드 제거
     with open(CONFIG_PATH, "w") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
 
 
 def apply(config: dict) -> dict:
-    """
-    카메라 설정 적용.
-
-    name 필드가 클립 저장 디렉토리의 경계가 된다.
-    성공 시 {"ok": True, "clip_dir": "/data/cam/{name}"} 반환.
-    호출자는 clip_dir을 사용하여 state의 클립 디렉토리를 갱신해야 한다.
-    """
+    """카메라 설정 적용. 성공 시 {"ok": True} 반환."""
     for field in _REQUIRED_FIELDS:
         if not config.get(field, "").strip():
             return {"ok": False, "error": f"'{field}' is required"}
-
-    if not _validate_name(config["name"]):
-        return {"ok": False, "error": "name must be 1-32 chars of [a-zA-Z0-9_-]"}
 
     config.setdefault("onvif_port", 2020)
     config.setdefault("rtsp_port", 554)
@@ -102,9 +70,8 @@ def apply(config: dict) -> dict:
     if not ok:
         return {"ok": False, "error": "MediaMTX API connection failed"}
 
-    clip_dir = get_clip_dir(config)
     camera_ready.set()
-    return {"ok": True, "clip_dir": clip_dir}
+    return {"ok": True}
 
 
 def startup_apply() -> None:

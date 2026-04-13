@@ -57,7 +57,7 @@ services:
       #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
       - ./app:/app                                                  # live-mount source for development
       - ./config:/config                                              # camera.json, ptz_home.txt
-      - ./data/cam:/data/cam                                          # 카메라별 클립 저장
+      - ./data:/data                                                  # 클립 저장 ({YYYY}/{MM}/*.mp4)
       # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
@@ -77,14 +77,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - CAM_DIR=/data/cam
+      - CAM_DIR=/data
       - DB_PATH=/data/db/babycat.db
       - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
       - DEFAULT_USER=${DEFAULT_USER:-admin}
       - DEFAULT_PASS=${DEFAULT_PASS:-admin}
     volumes:
-      - ./data/cam:/data/cam                  # 카메라별 클립 공유 ({cam_name}/*.mp4)
-      - ./data/db:/data/db                    # SQLite 데이터베이스
+      - ./data:/data                          # 클립 저장 ({YYYY}/{MM}/*.mp4) + SQLite
     depends_on:
       - app
     networks:

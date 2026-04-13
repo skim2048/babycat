@@ -86,9 +86,11 @@ _trigger_last_save: float = 0.0
 _trigger_lock = threading.Lock()
 
 
-def save_trigger_clip(matched_keywords: list[str], event_time: float) -> None:
+def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
+                      event_time: float) -> None:
     """
     트리거 키워드 이벤트 발생 시 ffmpeg로 RTSP 스트림에서 TRIGGER_CLIP_DUR초 직접 녹화.
+    경로: {DATA_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4 + 동명의 .json
     TRIGGER_COOLDOWN 이내 재호출은 무시.
     """
     global _trigger_last_save
@@ -97,15 +99,21 @@ def save_trigger_clip(matched_keywords: list[str], event_time: float) -> None:
             return
         _trigger_last_save = event_time
 
-    ts = time.strftime("%Y%m%d_%H%M%S", time.localtime(event_time))
-    tag = "_".join(matched_keywords[:3])
     clip_dir = debug_state.get_clip_dir()
     if not clip_dir:
         log.warning("No clip directory set — skipping trigger clip")
         return
-    dest_dir = Path(clip_dir)
+
+    lt = time.localtime(event_time)
+    ts = time.strftime("%Y%m%d_%H%M%S", lt)
+    ms = int((event_time - int(event_time)) * 1000)
+    base = f"{ts}_{ms:03d}"
+
+    import json as _json
+    dest_dir = Path(clip_dir) / time.strftime("%Y", lt) / time.strftime("%m", lt)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    out_path = dest_dir / f"{ts}_{tag}.mp4"
+    out_path = dest_dir / f"{base}.mp4"
+    meta_path = dest_dir / f"{base}.json"
 
     cmd = [
         "ffmpeg", "-y",
@@ -122,8 +130,24 @@ def save_trigger_clip(matched_keywords: list[str], event_time: float) -> None:
         log.info("trigger-clip recording done: %s", out_path.name)
     except subprocess.TimeoutExpired:
         log.warning("trigger-clip recording timeout: %s", out_path.name)
+        return
     except Exception as e:
         log.error("trigger-clip recording error: %s", e)
+        return
+
+    # 메타데이터 저장
+    try:
+        meta = {
+            "timestamp": int(event_time),
+            "keywords": matched_keywords,
+            "vlm_text": vlm_text,
+        }
+        with open(meta_path, "w", encoding="utf-8") as f:
+            _json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error("metadata save error: %s", e)
+
+    debug_state.invalidate_clip_cache()
 
 
 # ── VLM 추론 ──────────────────────────────────────────────────────────────────
@@ -199,7 +223,7 @@ def inference_worker(model: NanoLLM, ring: RingBuffer,
 
         if event_triggered:
             threading.Thread(
-                target=save_trigger_clip, args=(matched, time.time()), daemon=True
+                target=save_trigger_clip, args=(matched, raw, time.time()), daemon=True
             ).start()
 
 
@@ -251,6 +275,8 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
         finally:
             buf.unmap(map_info)
 
+        global _last_frame_time
+        _last_frame_time = time.time()
         ring.push(img)
         debug_state.update_frame(img, w, h)
 
@@ -262,6 +288,75 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
         return Gst.FlowReturn.OK
 
     return on_new_sample
+
+
+# ── 파이프라인 관리 ──────────────────────────────────────────────────────────
+
+_pipeline = None
+_pipeline_lock = threading.Lock()
+_pipeline_started_at: float = 0.0
+_last_frame_time: float = 0.0
+
+# 워치독 파라미터
+WATCHDOG_GRACE    = 15.0   # PLAYING 이후 이 시간 안에 프레임이 없어도 유예 (초기 RTSP 확립)
+WATCHDOG_TIMEOUT  = 15.0   # 마지막 프레임 후 이 시간 동안 프레임 없으면 재시작
+WATCHDOG_INTERVAL = 5.0    # 점검 주기
+
+
+def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
+    """GStreamer 파이프라인을 (재)시작한다. 기존 파이프라인이 있으면 정지 후 교체."""
+    global _pipeline, _pipeline_started_at, _last_frame_time
+    with _pipeline_lock:
+        if _pipeline is not None:
+            _pipeline.set_state(Gst.State.NULL)
+            log.info("Pipeline stopped (restart)")
+            _pipeline = None
+
+        pipeline_str = build_pipeline_str(MEDIAMTX_URL, TARGET_FPS)
+        log.info("Pipeline: %s", pipeline_str)
+
+        _pipeline = Gst.parse_launch(pipeline_str)
+        sink = _pipeline.get_by_name('sink')
+        sink.connect('new-sample', make_frame_callback(ring, infer_q))
+
+        _pipeline.set_state(Gst.State.PLAYING)
+        now = time.time()
+        _pipeline_started_at = now
+        _last_frame_time = now
+        log.info("Pipeline PLAYING")
+
+
+def restart_pipeline() -> None:
+    """외부(서버 핸들러 등)에서 파이프라인 재시작을 요청할 때 사용."""
+    refs = getattr(restart_pipeline, '_refs', None)
+    if refs:
+        start_pipeline(refs['ring'], refs['infer_q'])
+
+
+def watchdog_worker() -> None:
+    """
+    파이프라인 PLAYING 이후 프레임이 일정 시간 동안 들어오지 않으면 자동 재시작.
+    (rtspsrc가 MediaMTX 준비 전에 붙어 멈추는 상황을 복구한다.)
+    """
+    log.info("Pipeline watchdog started (grace=%.0fs, timeout=%.0fs)",
+             WATCHDOG_GRACE, WATCHDOG_TIMEOUT)
+    while True:
+        time.sleep(WATCHDOG_INTERVAL)
+        with _pipeline_lock:
+            active = _pipeline is not None
+            started = _pipeline_started_at
+            last = _last_frame_time
+        if not active:
+            continue
+        now = time.time()
+        if now - started < WATCHDOG_GRACE:
+            continue
+        if now - last > WATCHDOG_TIMEOUT:
+            log.warning(
+                "Watchdog: no frames for %.0fs — restarting pipeline",
+                now - last,
+            )
+            restart_pipeline()
 
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
@@ -290,9 +385,12 @@ def main() -> None:
     ring    = RingBuffer(maxlen=RING_SIZE)
     infer_q = queue.Queue(maxsize=1)
 
-    # 초기 프롬프트 및 베이스 디렉토리 설정
+    # restart_pipeline에서 접근할 수 있도록 참조 저장
+    restart_pipeline._refs = {'ring': ring, 'infer_q': infer_q}
+
+    # 초기 프롬프트 및 클립 디렉토리 설정 (연/월 디렉토리 하위에 저장)
     debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
-    debug_state.set_cam_base_dir(camera.CAM_BASE_DIR)
+    debug_state.set_clip_dir(camera.DATA_DIR)
 
     # 디버그 대시보드에 참조 전달
     debug_state.set_refs(ring, RING_SIZE, {
@@ -308,26 +406,8 @@ def main() -> None:
     log.info("Waiting for camera config (max 60s)...")
     if camera.camera_ready.wait(timeout=60):
         log.info("Camera config applied")
-        # 카메라 설정에서 클립 디렉토리 결정
-        config = camera.load()
-        if config and config.get("name"):
-            debug_state.set_clip_dir(camera.get_clip_dir(config))
-        else:
-            # name 없는 레거시 설정 — 임시 디렉토리 사용
-            legacy_dir = os.path.join(camera.CAM_BASE_DIR, "_legacy")
-            debug_state.set_clip_dir(legacy_dir)
-            log.warning("Camera config has no name — clips will be saved to %s", legacy_dir)
     else:
-        log.info("Camera not configured — set via frontend")
-
-    # 레거시 클립 디렉토리 경고
-    for legacy in [Path("/app/clip"), Path("/app/cam")]:
-        if legacy.exists() and any(legacy.rglob("*.mp4")):
-            log.warning(
-                "Legacy clips found in %s. "
-                "Move them to %s/_legacy/ to access via API.",
-                legacy, camera.CAM_BASE_DIR,
-            )
+        log.info("Camera not configured — pipeline will start when camera is set")
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(
@@ -337,17 +417,15 @@ def main() -> None:
     )
     worker.start()
 
-    # GStreamer 파이프라인 초기화
+    # 프레임 워치독 스레드 시작 (rtspsrc 멈춤 시 자동 재시작)
+    threading.Thread(target=watchdog_worker, daemon=True).start()
+
+    # GStreamer 파이프라인 초기화 (카메라 설정이 있을 때만 시작)
     Gst.init(None)
-    pipeline_str = build_pipeline_str(MEDIAMTX_URL, TARGET_FPS)
-    log.info("Pipeline: %s", pipeline_str)
-
-    pipeline = Gst.parse_launch(pipeline_str)
-    sink = pipeline.get_by_name('sink')
-    sink.connect('new-sample', make_frame_callback(ring, infer_q))
-
-    pipeline.set_state(Gst.State.PLAYING)
-    log.info("Pipeline PLAYING")
+    if camera.camera_ready.is_set():
+        start_pipeline(ring, infer_q)
+    else:
+        log.info("Pipeline deferred — waiting for camera config")
 
     loop = GLib.MainLoop()
     try:
@@ -355,7 +433,9 @@ def main() -> None:
     except KeyboardInterrupt:
         log.info("Shutdown signal received")
     finally:
-        pipeline.set_state(Gst.State.NULL)
+        with _pipeline_lock:
+            if _pipeline is not None:
+                _pipeline.set_state(Gst.State.NULL)
         log.info("Pipeline stopped")
 
 

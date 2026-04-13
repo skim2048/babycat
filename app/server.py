@@ -83,20 +83,21 @@ class AppHandler(BaseHTTPRequestHandler):
     # ── GET ───────────────────────────────────────────────────────────────────
 
     def do_GET(self):
-        if self.path == "/":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/":
             self._serve_health()
             return
         if not self._check_auth():
             return
-        if self.path == "/stream":
+        if path == "/stream":
             self._serve_mjpeg()
-        elif self.path == "/events":
+        elif path == "/events":
             self._serve_sse()
-        elif self.path == "/clips":
+        elif path == "/clips":
             self._serve_clip_list()
-        elif self.path.startswith("/clip/"):
+        elif path.startswith("/clip/"):
             self._serve_clip_file()
-        elif self.path == "/camera":
+        elif path == "/camera":
             self._serve_camera()
         else:
             self.send_error(404)
@@ -106,11 +107,12 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._check_auth():
             return
-        if self.path == "/prompt":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/prompt":
             self._handle_prompt()
-        elif self.path == "/ptz":
+        elif path == "/ptz":
             self._handle_ptz()
-        elif self.path == "/camera":
+        elif path == "/camera":
             self._handle_camera()
         else:
             self.send_error(404)
@@ -120,7 +122,8 @@ class AppHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not self._check_auth():
             return
-        if self.path == "/clips":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/clips":
             self._handle_clip_delete()
         else:
             self.send_error(404)
@@ -222,8 +225,20 @@ class AppHandler(BaseHTTPRequestHandler):
         if not clip_dir:
             self.send_error(404)
             return
-        fpath = Path(clip_dir) / name
-        if not fpath.exists() or not fpath.is_file():
+        # 파일명이 {YYYYMMDD}_... 형식이므로 연/월 디렉토리를 추론
+        fpath = None
+        if len(name) >= 8 and name[:8].isdigit():
+            yyyy, mm = name[:4], name[4:6]
+            candidate = Path(clip_dir) / yyyy / mm / name
+            if candidate.exists() and candidate.is_file():
+                fpath = candidate
+        # 폴백: 전체 재귀 검색
+        if fpath is None:
+            for p in Path(clip_dir).rglob(name):
+                if p.is_file():
+                    fpath = p
+                    break
+        if fpath is None:
             self.send_error(404)
             return
 
@@ -327,10 +342,10 @@ class AppHandler(BaseHTTPRequestHandler):
     def _handle_camera(self):
         body = self._read_json_body()
         result = camera.apply(body)
-        # 카메라 전환 시 클립 저장 디렉토리를 새 카메라 경로로 갱신
-        if result.get("ok") and result.get("clip_dir"):
-            state.set_clip_dir(result["clip_dir"])
-            log.info("Clip directory switched to: %s", result["clip_dir"])
+        # 카메라 설정 변경 시 파이프라인 재시작
+        if result.get("ok"):
+            from main import restart_pipeline
+            threading.Thread(target=restart_pipeline, daemon=True).start()
         resp = json.dumps(result, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -344,13 +359,28 @@ class AppHandler(BaseHTTPRequestHandler):
         clip_dir = state.get_clip_dir()
         deleted = 0
         if clip_dir:
+            base = Path(clip_dir)
             for name in names:
                 if "/" in name or "\\" in name or ".." in name:
                     continue
-                fpath = Path(clip_dir) / name
-                if fpath.exists() and fpath.is_file():
+                fpath = None
+                if len(name) >= 8 and name[:8].isdigit():
+                    candidate = base / name[:4] / name[4:6] / name
+                    if candidate.exists() and candidate.is_file():
+                        fpath = candidate
+                if fpath is None:
+                    for p in base.rglob(name):
+                        if p.is_file():
+                            fpath = p
+                            break
+                if fpath is not None:
                     fpath.unlink()
                     deleted += 1
+                    meta_path = fpath.with_suffix(".json")
+                    if meta_path.exists():
+                        meta_path.unlink()
+        if deleted > 0:
+            state.invalidate_clip_cache()
         log.info("Clips deleted: %d", deleted)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
