@@ -25,13 +25,6 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 
 ## Architecture
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/architecture-dark-theme.svg">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/architecture-light-theme.svg">
-  <img src="./assets/architecture-light-theme.svg" alt="architecture">
-</picture>
-
-&nbsp;
 | Container | Ports | Responsibility |
 |---|---|---|
 | **App** | 8080 | GStreamer pipeline (with watchdog), VLM inference, trigger detection → ffmpeg clip recording, FCM notifications, PTZ control |
