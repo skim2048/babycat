@@ -5,8 +5,8 @@ services:
   web:
     image: babycat-web
     build:
-      context: ..
-      dockerfile: docker/web/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: babycat-web
     restart: unless-stopped
     ports:

@@ -89,7 +89,7 @@ babycat/
 ├── data/
 │   ├── {YYYY}/{MM}/       # Trigger clips (*.mp4 with sidecar *.json metadata)
 │   └── db/                # SQLite database (users, events, devices)
-├── docker/                # Dockerfiles (app, api, web)
+├── docker/                # Dockerfiles for the main stack (app, api)
 ├── tests/                 # bench_vlm, test_api, test_e2e, test_appsink, test_vlm_pipeline
 ├── docs/                  # API reference + architecture diagram
 └── docker-compose.yml     # Main stack (app + mediamtx + api)

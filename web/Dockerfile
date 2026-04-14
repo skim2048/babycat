@@ -4,9 +4,9 @@
 FROM node:22-slim
 
 WORKDIR /app
-COPY web/package.json web/package-lock.json* ./
+COPY package.json package-lock.json* ./
 RUN npm install
-COPY web/ .
+COPY . .
 
 EXPOSE 5173
 CMD ["npm", "run", "dev"]
