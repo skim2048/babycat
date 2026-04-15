@@ -21,6 +21,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
 from auth import JWT_EXPIRY, authenticate, change_password, init_users, require_auth
@@ -60,6 +61,27 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Babycat API", version="1.0.0", lifespan=lifespan)
+
+# CORS — 로컬 개발 및 사설망 origin 허용.
+# localhost/127.0.0.1, 사설 IP 대역(10.*, 172.16-31.*, 192.168.*), Capacitor origin을 regex로 매칭.
+# 운영/외부 도메인은 환경변수 CORS_EXTRA_ORIGINS=https://a.com,https://b.com 로 추가.
+_extra = [o.strip() for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",") if o.strip()]
+_origin_regex = (
+    r"^(https?://(localhost|127\.0\.0\.1|"
+    r"10(\.\d{1,3}){3}|"
+    r"172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|"
+    r"192\.168(\.\d{1,3}){2})"
+    r"(:\d+)?|capacitor://localhost)$"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_extra,
+    allow_origin_regex=_origin_regex,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
