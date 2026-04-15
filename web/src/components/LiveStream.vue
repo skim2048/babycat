@@ -516,9 +516,11 @@ onBeforeUnmount(() => {
       </div>
 
 
-      <!-- 좌하단: 추론 결과 -->
+      <!-- 하단 중앙: 추론 결과 패널 -->
+      <InferenceOverlay :open="inferOpen && isPlaying" />
+
+      <!-- 좌하단: 추론 결과 토글 버튼 -->
       <div class="infer-area">
-        <InferenceOverlay :open="inferOpen && isPlaying" />
         <button class="toolbar-btn infer-btn" :class="{ 'infer-triggered': sseState.event_triggered }" @click.stop="inferOpen = !inferOpen" title="추론 결과">
           <!-- 평상시: 꺼진 전구 -->
           <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

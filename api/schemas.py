@@ -9,17 +9,62 @@ from typing import Optional
 class LoginIn(BaseModel):
     username: str
     password: str
+    remember_me: bool = False
 
 
 class TokenOut(BaseModel):
     token: str
     expires_in: int
     must_change_password: bool = False
+    refresh_token: Optional[str] = None
+    refresh_expires_in: Optional[int] = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+class RefreshOut(BaseModel):
+    token: str
+    expires_in: int
+
+
+class LogoutIn(BaseModel):
+    refresh_token: Optional[str] = None
 
 
 class ChangePasswordIn(BaseModel):
     current_password: str
     new_password: str
+
+
+# ── Camera Profile ──────────────────────────────────────────────────────────
+
+class CameraProfileIn(BaseModel):
+    ip: str
+    username: str
+    password: str
+    rtsp_port: Optional[int] = None
+    onvif_port: Optional[int] = None
+    stream_path: Optional[str] = None
+    stream_protocol: Optional[str] = None
+
+
+class CameraProfileOut(BaseModel):
+    configured: bool
+    ip: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    rtsp_port: Optional[int] = None
+    onvif_port: Optional[int] = None
+    stream_path: Optional[str] = None
+    stream_protocol: Optional[str] = None
+    ptz_home: Optional[str] = None
+
+
+class ApplyResultOut(BaseModel):
+    ok: bool
+    error: Optional[str] = None
 
 
 # ── Clip ─────────────────────────────────────────────────────────────────────

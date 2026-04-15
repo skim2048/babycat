@@ -24,10 +24,23 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
-from auth import JWT_EXPIRY, authenticate, change_password, init_users, require_auth
+from auth import (
+    JWT_EXPIRY,
+    REFRESH_EXPIRY,
+    authenticate,
+    change_password,
+    consume_refresh_token,
+    create_token,
+    init_users,
+    require_auth,
+    revoke_refresh_token,
+)
 from database import DB_PATH, get_db, init_db
 from schemas import (
+    ApplyResultOut,
     CameraListOut,
+    CameraProfileIn,
+    CameraProfileOut,
     ClipDeleteIn,
     ClipListOut,
     ClipOut,
@@ -40,8 +53,16 @@ from schemas import (
     EventOut,
     ChangePasswordIn,
     LoginIn,
+    LogoutIn,
+    RefreshIn,
+    RefreshOut,
     TokenOut,
 )
+import json
+import urllib.error
+import urllib.request
+
+APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://babycat-app:8080")
 
 CAM_DIR = os.environ.get("CAM_DIR", "/data/cam")
 MIN_CLIP_SIZE = 10240  # 10KB — ffmpeg 녹화 중 불완전 파일 제외
@@ -89,14 +110,32 @@ app.add_middleware(
 
 @app.post("/api/login", response_model=TokenOut)
 def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
-    result = authenticate(body.username, body.password, db)
+    result = authenticate(body.username, body.password, db, remember_me=body.remember_me)
     if not result:
         raise HTTPException(status_code=401, detail="invalid credentials")
     return TokenOut(
         token=result["token"],
         expires_in=JWT_EXPIRY,
         must_change_password=result["must_change_password"],
+        refresh_token=result["refresh_token"],
+        refresh_expires_in=REFRESH_EXPIRY if result["refresh_token"] else None,
     )
+
+
+@app.post("/api/refresh", response_model=RefreshOut)
+def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
+    username = consume_refresh_token(body.refresh_token, db)
+    if not username:
+        raise HTTPException(status_code=401, detail="invalid or expired refresh token")
+    return RefreshOut(token=create_token(username), expires_in=JWT_EXPIRY)
+
+
+@app.post("/api/logout")
+def logout(body: LogoutIn, db: sqlite3.Connection = Depends(get_db)):
+    """refresh token을 폐기. access token 검증 불필요 (이미 분실 가능성)."""
+    if body.refresh_token:
+        revoke_refresh_token(body.refresh_token, db)
+    return {"ok": True}
 
 
 @app.post("/api/change-password")
@@ -117,6 +156,48 @@ def api_change_password(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ── Camera Profile (babycat-app 으로 프록시) ─────────────────────────────────
+
+
+def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | None = None, timeout: int = 10):
+    """babycat-app 내부 디버그 서버로 프록시. (status, json) 반환."""
+    url = f"{APP_INTERNAL_URL}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    if auth_header:
+        req.add_header("Authorization", auth_header)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            text = r.read().decode()
+            return r.status, (json.loads(text) if text else None)
+    except urllib.error.HTTPError as e:
+        text = e.read().decode()
+        return e.code, (json.loads(text) if text else None)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"upstream error: {e}")
+
+
+@app.get("/camera", response_model=CameraProfileOut)
+def get_camera(request: Request, _=Depends(require_auth)):
+    """현재 카메라 프로필 조회. configured=False면 미설정 상태."""
+    auth = request.headers.get("Authorization")
+    _, data = _proxy_app("GET", "/camera", auth)
+    return CameraProfileOut(**(data or {"configured": False}))
+
+
+@app.post("/camera", response_model=ApplyResultOut)
+def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
+    """카메라 프로필 적용. babycat-app 측에서 저장 + 파이프라인 재시작."""
+    auth = request.headers.get("Authorization")
+    payload = body.model_dump(exclude_none=True)
+    status, data = _proxy_app("POST", "/camera", auth, payload)
+    if status >= 500:
+        raise HTTPException(status_code=502, detail="upstream error")
+    return ApplyResultOut(**(data or {"ok": False, "error": "no response"}))
 
 
 # ── Cameras ──────────────────────────────────────────────────────────────────

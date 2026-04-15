@@ -15,6 +15,7 @@ from database import get_db
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
 JWT_EXPIRY = int(os.environ.get("JWT_EXPIRY", "3600"))  # 1시간 기본
+REFRESH_EXPIRY = int(os.environ.get("REFRESH_EXPIRY", str(60 * 60 * 24 * 30)))  # 30일 기본
 
 DEFAULT_USER = os.environ.get("DEFAULT_USER", "admin")
 DEFAULT_PASS = os.environ.get("DEFAULT_PASS", "admin")
@@ -38,6 +39,16 @@ CREATE TABLE IF NOT EXISTS users (
     password_changed INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash  TEXT    NOT NULL UNIQUE,
+    username    TEXT    NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    revoked     INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_username ON refresh_tokens(username);
 """
 
 
@@ -175,10 +186,12 @@ def clear_failure(username: str) -> None:
 # ── 로그인 처리 ─────────────────────────────────────────────────────────────
 
 
-def authenticate(username: str, password: str, db: sqlite3.Connection) -> dict | None:
+def authenticate(
+    username: str, password: str, db: sqlite3.Connection, remember_me: bool = False
+) -> dict | None:
     """
     인증 처리.
-    성공 시 {"token": str, "must_change_password": bool} 반환.
+    성공 시 {"token", "must_change_password", "refresh_token"?} 반환.
     잠금 상태면 HTTPException(429) 발생.
     실패 시 None.
     """
@@ -203,11 +216,68 @@ def authenticate(username: str, password: str, db: sqlite3.Connection) -> dict |
         return None
 
     clear_failure(username)
-    token = create_token(username)
-    return {
-        "token": token,
+    result = {
+        "token": create_token(username),
         "must_change_password": not row["password_changed"],
+        "refresh_token": None,
     }
+    if remember_me:
+        result["refresh_token"] = issue_refresh_token(username, db)
+    return result
+
+
+# ── Refresh Token ───────────────────────────────────────────────────────────
+
+
+def _hash_refresh(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def issue_refresh_token(username: str, db: sqlite3.Connection) -> str:
+    """새 refresh token 발급. 평문 토큰 반환, DB에는 해시만 저장."""
+    token = secrets.token_urlsafe(32)
+    expires_at = int(time.time()) + REFRESH_EXPIRY
+    db.execute(
+        "INSERT INTO refresh_tokens (token_hash, username, expires_at) VALUES (?, ?, ?)",
+        (_hash_refresh(token), username, expires_at),
+    )
+    db.commit()
+    return token
+
+
+def consume_refresh_token(token: str, db: sqlite3.Connection) -> str | None:
+    """refresh token 검증. 유효하면 username 반환, 아니면 None."""
+    row = db.execute(
+        "SELECT username, expires_at, revoked FROM refresh_tokens WHERE token_hash = ?",
+        (_hash_refresh(token),),
+    ).fetchone()
+    if not row:
+        return None
+    if row["revoked"]:
+        return None
+    if row["expires_at"] < int(time.time()):
+        return None
+    return row["username"]
+
+
+def revoke_refresh_token(token: str, db: sqlite3.Connection) -> bool:
+    """refresh token 폐기. 폐기되었거나 존재하면 True, 없으면 False."""
+    cur = db.execute(
+        "UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0",
+        (_hash_refresh(token),),
+    )
+    db.commit()
+    return cur.rowcount > 0
+
+
+def revoke_all_refresh_tokens(username: str, db: sqlite3.Connection) -> int:
+    """특정 사용자의 모든 refresh token 폐기 (예: 비밀번호 변경 시)."""
+    cur = db.execute(
+        "UPDATE refresh_tokens SET revoked = 1 WHERE username = ? AND revoked = 0",
+        (username,),
+    )
+    db.commit()
+    return cur.rowcount
 
 
 # ── 비밀번호 변경 ──────────────────────────────────────────────────────────
@@ -232,4 +302,6 @@ def change_password(
         (new_hash, new_salt, username),
     )
     db.commit()
+    # 비밀번호 변경 시 기존 refresh token 모두 폐기 (보안)
+    revoke_all_refresh_tokens(username, db)
     return True
