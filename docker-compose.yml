@@ -52,7 +52,7 @@ services:
       - /dev/nvhost-ctrl-gpu                                        # GPU 제어
       - /dev/nvhost-gpu                                             # GPU 채널
     volumes:
-      - /home/skim/data/models:/data/models                        # NanoLLM model cache (MLC compiled)
+      - ./data/models:/data/models                                 # NanoLLM model cache (MLC compiled). 프로젝트 외부 경로 금지 (이식성).
       - recordings:/recordings                                      # shared with mediamtx (read clips)
       #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
       - ./app:/app                                                  # live-mount source for development
