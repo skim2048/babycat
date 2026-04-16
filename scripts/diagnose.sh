@@ -8,6 +8,11 @@
 
 set +e
 
+# 모든 출력을 stdout과 결과 파일에 동시 저장 (파일에는 ANSI 색상 제거).
+# 결과 파일 경로는 BABYCAT_DIAG_OUT 환경변수로 덮어쓸 수 있다.
+RESULT="${BABYCAT_DIAG_OUT:-diagnose.result.txt}"
+exec > >(tee >(sed -uE 's/\x1b\[[0-9;]*m//g' > "$RESULT")) 2>&1
+
 H()    { printf "\n\033[1;36m=== %s ===\033[0m\n" "$1"; }
 OK()   { printf "  \033[32m✓\033[0m %s\n" "$1"; }
 WARN() { printf "  \033[33m!\033[0m %s\n" "$1"; }
@@ -99,4 +104,5 @@ H "12. ./config 디렉토리"
 ls -la ./config 2>&1 | sed 's/^/  /'
 
 printf "\n\033[1;36m=== 진단 완료 ===\033[0m\n"
-echo "위 출력을 그대로 복사해 보내 주세요."
+echo "결과 파일: $RESULT (ANSI 색상 제거된 plain 버전)"
+echo "위 출력 또는 결과 파일 내용을 보내 주세요."
