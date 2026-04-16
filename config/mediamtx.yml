@@ -28,8 +28,9 @@ srt: no
 
 # WebRTC server
 webrtcAddress: :8889
-webrtcAdditionalHosts:
-  - 172.27.1.205
+# webrtcAdditionalHosts: ICE candidate로 광고할 추가 호스트 IP/이름.
+# 컨테이너에서 호스트 NIC를 직접 볼 수 없으므로 docker-compose가 환경변수
+# MTX_WEBRTCADDITIONALHOSTS=${HOST_IP}로 주입한다 (.env 의 HOST_IP).
 webrtcLocalUDPAddress: :8890
 
 paths:

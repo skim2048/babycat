@@ -4,6 +4,10 @@ services:
     image: bluenviron/mediamtx:latest
     container_name: babycat-mediamtx
     restart: unless-stopped
+    environment:
+      # WebRTC ICE candidate로 광고할 호스트 IP (.env 의 HOST_IP).
+      # 컨테이너에서 호스트 NIC를 못 보므로 외부 주입. 콤마로 여러 개 가능.
+      - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-}
     ports:
       - "8554:8554"   # RTSP
       - "8888:8888"   # HLS

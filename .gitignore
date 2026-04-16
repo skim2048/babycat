@@ -51,3 +51,6 @@ TMP.md
 # Etc.
 tmp/
 diagnose.result.txt
+
+# Local environment overrides (HOST_IP, JWT_SECRET 등). .env.example만 트래킹.
+.env

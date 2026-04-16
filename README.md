@@ -42,10 +42,14 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 ## Getting Started
 
 ```bash
-# Main stack
+# 1) 호스트 IP 등록 (WebRTC ICE candidate에 광고됨). zerotier 또는 LAN IP.
+cp .env.example .env
+$EDITOR .env   # HOST_IP=<젯슨 IP> 채우기
+
+# 2) Main stack
 docker compose up -d
 
-# Web dashboard (optional)
+# 3) Web dashboard (optional)
 cd web && docker compose up -d
 ```
 
