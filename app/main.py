@@ -375,7 +375,28 @@ def main() -> None:
     log.info("  N_FRAMES     : %s", N_FRAMES)
     log.info("  RING_SIZE    : %s", RING_SIZE)
 
-    # VLM 모델 로드
+    # 디버그 상태 초기 세팅 (모델 로드 전에 디버그 서버가 정상 동작해야 함)
+    debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
+    debug_state.set_clip_dir(camera.DATA_DIR)
+
+    # 디버그 웹서버 즉시 시작 — 모델 로딩 중에도 web에서 카메라 프로필 저장 가능해야 함.
+    # 모델 캐시가 비어 있으면 NanoLLM.from_pretrained가 수십 분 걸릴 수 있다.
+    start_server(8080)
+
+    # 저장된 카메라 설정이 있으면 백그라운드로 적용 (MediaMTX 재시도 포함)
+    threading.Thread(target=camera.startup_apply, daemon=True).start()
+
+    # VLM 모델 로드 (시간 소요. 모델 로드 중 사용자가 web에서 카메라 프로필을
+    # 저장하면 camera.apply가 정상 동작하지만, restart_pipeline은 _refs가 아직
+    # 없으므로 no-op이 되며, 모델 로드 후 camera.camera_ready가 set되어 있으면
+    # 아래에서 start_pipeline이 한 번 호출된다.)
+    #
+    # MLC quantize()가 huggingface 스냅샷을 /data/models/mlc/dist/models/{MODEL}로
+    # symlink 만드는데 부모 디렉토리가 없으면 FileNotFoundError로 컨테이너가 죽는다
+    # (NanoLLM 내부에서 mkdir 안 함). 새 젯슨에서 git clone → docker compose up 한
+    # 번에 동작하려면 여기서 미리 만들어 둬야 한다.
+    Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
+
     log.info("Loading VLM model: %s", MODEL_ID)
     t0 = time.time()
     model = NanoLLM.from_pretrained(MODEL_ID, api="mlc", quantization="q4f16_ft")
@@ -388,26 +409,20 @@ def main() -> None:
     # restart_pipeline에서 접근할 수 있도록 참조 저장
     restart_pipeline._refs = {'ring': ring, 'infer_q': infer_q}
 
-    # 초기 프롬프트 및 클립 디렉토리 설정 (연/월 디렉토리 하위에 저장)
-    debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
-    debug_state.set_clip_dir(camera.DATA_DIR)
-
-    # 디버그 대시보드에 참조 전달
+    # 디버그 대시보드에 ring 참조 전달 (SSE 핸들러가 ring buffer 사용량을 노출)
     debug_state.set_refs(ring, RING_SIZE, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
     })
 
-    # 디버그 웹서버 시작 (파이프라인보다 먼저 — RTSP 미연결 시에도 대시보드 접근 가능)
-    start_server(8080)
-
-    # 저장된 카메라 설정 적용 (MediaMTX 재시도 포함)
-    threading.Thread(target=camera.startup_apply, daemon=True).start()
-    log.info("Waiting for camera config (max 60s)...")
-    if camera.camera_ready.wait(timeout=60):
-        log.info("Camera config applied")
-    else:
-        log.info("Camera not configured — pipeline will start when camera is set")
+    # 카메라 설정이 아직 없으면 web 입력을 대기 (start_server가 떠 있으므로
+    # 사용자는 모델 로딩 직후에도 카메라 프로필을 저장할 수 있다)
+    if not camera.camera_ready.is_set():
+        log.info("Waiting for camera config (max 60s)...")
+        if camera.camera_ready.wait(timeout=60):
+            log.info("Camera config applied")
+        else:
+            log.info("Camera not configured — pipeline will start when camera is set")
 
     # 추론 워커 스레드 시작
     worker = threading.Thread(
