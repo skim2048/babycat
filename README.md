@@ -28,7 +28,7 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 | Container | Ports | Responsibility |
 |---|---|---|
 | **App** | 8080 | GStreamer pipeline (with watchdog), VLM inference, trigger detection → ffmpeg clip recording, FCM notifications, PTZ control |
-| **MediaMTX** | 8554 / 8888 / 8889 / 8890 | RTSP / HLS / WebRTC streaming plus segment recording (fMP4, 10 s, 2 h retention). Source is configured at runtime by App via the internal API on :9997 |
+| **MediaMTX** | 8554 / 8888 / 8889 / 8890 | RTSP / HLS / WebRTC streaming. Source is configured at runtime by App via the internal API on :9997 |
 | **API Server** | 8000 | Authentication and clips / events / device-token REST API (FastAPI + SQLite WAL) |
 
 ## Requirements
@@ -134,7 +134,6 @@ babycat/
 | POST | `/api/login` | No | Login (returns JWT) |
 | POST | `/api/change-password` | Yes | Change password |
 | GET | `/health` | No | Health check |
-| GET | `/cameras` | Yes | List cameras |
 | GET | `/clips` | Yes | List clips |
 | GET | `/clips/{name}` | Yes | Download clip (Range supported) |
 | DELETE | `/clips` | Yes | Delete selected clips |
@@ -166,8 +165,6 @@ Full schema reference: [docs/api.md](docs/api.md)
 | `TRIGGER_CLIP_DUR` | `5` | Trigger clip duration (seconds) |
 | `CONFIG_PATH` | `/config/cam_profile.json` | Camera profile file path |
 | `DATA_DIR` | `/data` | Base dir for trigger clips (`{YYYY}/{MM}/` created underneath) |
-| `RECORDINGS_DIR` | `/recordings/live` | MediaMTX segment recording path (shared volume) |
-| `EVENTS_DIR` | `/recordings/events` | Path for segments preserved on event detection |
 | `FCM_CREDENTIALS` | — | Path to FCM service-account JSON |
 | `FCM_TOKEN` | — | Target device FCM token |
 

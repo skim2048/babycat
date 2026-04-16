@@ -91,16 +91,9 @@ function disconnect() {
   connected.value = false
 }
 
-function deleteProfile() {
-  configured.value = false
-  connecting.value = false
-  connected.value = false
-  status.value = ''
-}
-
 export function useCamera() {
   return {
     config, configured, connecting, connected, status, reconnectKey,
-    load, save, disconnect, deleteProfile, setConnected, setDisconnected,
+    load, save, disconnect, setConnected, setDisconnected,
   }
 }

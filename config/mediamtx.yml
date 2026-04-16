@@ -36,11 +36,4 @@ paths:
   live:
     # Source is configured at runtime via API from the app container
     # (카메라 자격증명은 프론트엔드에서 입력 → App이 API로 설정)
-
-    # Segment recording for event clip storage (OI-06)
-    # Segments are stored on shared volume; App preserves relevant segments on event detection
-    record: yes
-    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
-    recordFormat: fmp4
-    recordSegmentDuration: 10s
-    recordDeleteAfter: 2h
+    # 이벤트 클립은 app 컨테이너가 ffmpeg로 RTSP에서 직접 재녹화한다 (mediamtx 세그먼트 미사용).
