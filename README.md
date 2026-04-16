@@ -42,15 +42,21 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 ## Getting Started
 
 ```bash
-# 1) 호스트 IP 등록 (WebRTC ICE candidate에 광고됨). zerotier 또는 LAN IP.
+# 1) 호스트 GStreamer plugins (JetPack flash-only 환경에 필수)
+#    이 패키지가 없으면 컨테이너의 plugins-bad가 호스트 마운트로 가려져
+#    h264parse 등이 사라지고 babycat-app이 GStreamer 파이프라인 init에서 죽음.
+sudo apt update
+sudo apt install -y gstreamer1.0-plugins-bad gstreamer1.0-plugins-good
+
+# 2) 호스트 IP 등록 (WebRTC ICE candidate에 광고됨). zerotier 또는 LAN IP.
 cp .env.example .env
 $EDITOR .env   # HOST_IP=<젯슨 IP> 채우기
 
-# 2) Main stack
-docker compose up -d
+# 3) Main stack
+docker compose up -d --build
 
-# 3) Web dashboard (optional)
-cd web && docker compose up -d
+# 4) Web dashboard (optional)
+cd web && docker compose up -d --build
 ```
 
 On first launch, open `http://<host>:5173` in a browser. You are redirected to the login page.
