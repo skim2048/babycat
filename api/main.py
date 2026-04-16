@@ -2,14 +2,13 @@
 Babycat API Server — clips, events, devices.
 
 Clip Storage Architecture:
-    클립은 카메라 이름별 디렉토리 계층으로 관리된다:
-        {CAM_DIR}/{camera_name}/*.mp4
+    단일 카메라 전제. app 컨테이너의 save_trigger_clip이 ffmpeg로 RTSP에서 직접
+    재녹화하여 다음 경로에 저장한다:
+        {CAM_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4
 
-    각 카메라 이름은 사용자가 지정하며, 고유해야 한다.
-    새 카메라가 설정되면 해당 이름의 디렉토리에 클립이 저장된다.
-    이 API는 현재 카메라뿐 아니라 과거 카메라의 클립에도
-    통합적으로 접근할 수 있는 인터페이스를 제공한다.
-    'camera' 쿼리 파라미터로 특정 카메라의 클립만 필터링할 수 있다.
+    이 API는 동일 볼륨을 읽어 클립 목록·재생·삭제를 제공한다. 조회는 rglob으로
+    연/월 트리를 재귀 스캔한다. 파일 해석은 파일명에서 YYYYMMDD를 추출해
+    {CAM_DIR}/YYYY/MM/{name} 경로를 직접 시도하고, 매칭이 없으면 rglob 폴백.
 """
 
 import os
@@ -38,7 +37,6 @@ from auth import (
 from database import DB_PATH, get_db, init_db
 from schemas import (
     ApplyResultOut,
-    CameraListOut,
     CameraProfileIn,
     CameraProfileOut,
     ClipDeleteIn,
@@ -64,7 +62,7 @@ import urllib.request
 
 APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://babycat-app:8080")
 
-CAM_DIR = os.environ.get("CAM_DIR", "/data/cam")
+CAM_DIR = os.environ.get("CAM_DIR", "/data")
 MIN_CLIP_SIZE = 10240  # 10KB — ffmpeg 녹화 중 불완전 파일 제외
 
 
@@ -200,100 +198,83 @@ def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth))
     return ApplyResultOut(**(data or {"ok": False, "error": "no response"}))
 
 
-# ── Cameras ──────────────────────────────────────────────────────────────────
-
-
-@app.get("/cameras", response_model=CameraListOut)
-def list_cameras(_=Depends(require_auth)):
-    """클립 디렉토리가 존재하는 카메라 이름 목록을 반환한다."""
-    base = Path(CAM_DIR)
-    if not base.exists():
-        return CameraListOut(cameras=[])
-    cameras = sorted(d.name for d in base.iterdir() if d.is_dir())
-    return CameraListOut(cameras=cameras)
-
-
 # ── Clips ────────────────────────────────────────────────────────────────────
 
 
-def _list_clips(q: str | None = None, camera: str | None = None) -> list[ClipOut]:
-    """
-    모든 카메라 디렉토리(또는 특정 카메라)에서 클립을 조회한다.
+def _read_clip_meta(mp4_path: Path) -> dict:
+    """동명의 .json 메타데이터(트리거 이벤트 정보)를 읽어 반환. 없으면 빈 dict."""
+    meta_path = mp4_path.with_suffix(".json")
+    if not meta_path.exists():
+        return {}
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
 
-    Args:
-        q: 파일명 검색 필터 (부분 일치).
-        camera: 특정 카메라 이름 필터. None이면 전체 카메라 대상.
+
+def _list_clips(q: str | None = None) -> list[ClipOut]:
+    """{CAM_DIR}/{YYYY}/{MM}/*.mp4 트리를 재귀 스캔하여 클립 목록을 반환한다.
+
+    동명의 .json 메타데이터가 있으면 timestamp/keywords/vlm_text 필드를 채운다.
     """
     base = Path(CAM_DIR)
     if not base.exists():
         return []
 
-    if camera:
-        dirs = [base / camera]
-    else:
-        dirs = [d for d in base.iterdir() if d.is_dir()]
-
     entries = []
-    for cam_dir in dirs:
-        if not cam_dir.is_dir():
-            continue
-        cam_name = cam_dir.name
-        for f in cam_dir.glob("*.mp4"):
-            st = f.stat()
-            if st.st_size >= MIN_CLIP_SIZE:
-                entries.append((f.name, st.st_size, st.st_mtime, cam_name))
+    for f in base.rglob("*.mp4"):
+        st = f.stat()
+        if st.st_size >= MIN_CLIP_SIZE:
+            entries.append((f, st.st_size, st.st_mtime))
 
     entries.sort(key=lambda e: e[2], reverse=True)
     clips = []
-    for name, size, mtime, cam_name in entries:
-        if q and q.lower() not in name.lower():
+    for fpath, size, mtime in entries:
+        if q and q.lower() not in fpath.name.lower():
             continue
+        meta = _read_clip_meta(fpath)
         clips.append(ClipOut(
-            name=name,
+            name=fpath.name,
             size=size,
-            camera=cam_name,
             created_at=datetime.fromtimestamp(mtime, tz=timezone.utc)
                        .strftime("%Y-%m-%dT%H:%M:%SZ"),
+            timestamp=meta.get("timestamp", int(mtime)),
+            keywords=meta.get("keywords", []),
+            vlm_text=meta.get("vlm_text"),
         ))
     return clips
 
 
-def _resolve_clip(name: str, camera: str | None = None) -> Path:
-    """
-    클립 파일 경로를 확인한다.
-    camera가 지정되면 해당 디렉토리만, 아니면 전체 카메라 디렉토리를 탐색한다.
-    """
+def _resolve_clip(name: str) -> Path:
+    """파일명에서 YYYYMMDD 추출 → {CAM_DIR}/YYYY/MM/{name}. 폴백은 rglob."""
     if "/" in name or "\\" in name or ".." in name:
         raise HTTPException(400, "invalid clip name")
     base = Path(CAM_DIR)
-    if camera:
-        fpath = base / camera / name
-        if fpath.exists() and fpath.is_file():
-            return fpath
-    else:
-        for cam_dir in base.iterdir():
-            if cam_dir.is_dir():
-                fpath = cam_dir / name
-                if fpath.exists() and fpath.is_file():
-                    return fpath
+    if len(name) >= 8 and name[:8].isdigit():
+        candidate = base / name[:4] / name[4:6] / name
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    for p in base.rglob(name):
+        if p.is_file():
+            return p
     raise HTTPException(404, "clip not found")
 
 
 @app.get("/clips", response_model=ClipListOut)
 def list_clips(
     q: str | None = Query(None),
-    camera: str | None = Query(None),
     limit: int = Query(100, ge=1),
     offset: int = Query(0, ge=0),
     _=Depends(require_auth),
 ):
-    all_clips = _list_clips(q, camera)
+    all_clips = _list_clips(q)
     return ClipListOut(clips=all_clips[offset:offset + limit], total=len(all_clips))
 
 
 @app.get("/clips/{name}")
-def get_clip(name: str, request: Request, camera: str | None = Query(None), _=Depends(require_auth)):
-    fpath = _resolve_clip(name, camera)
+def get_clip(name: str, request: Request, _=Depends(require_auth)):
+    fpath = _resolve_clip(name)
     file_size = fpath.stat().st_size
     range_header = request.headers.get("range")
 
@@ -334,47 +315,47 @@ def get_clip(name: str, request: Request, camera: str | None = Query(None), _=De
 
 @app.delete("/clips", response_model=DeletedOut)
 def delete_clips(body: ClipDeleteIn, _=Depends(require_auth)):
+    """이름 목록에 매칭되는 클립을 삭제. _resolve_clip과 동일한 경로 추론을 사용한다."""
     deleted = 0
     base = Path(CAM_DIR)
     for name in body.names:
         if "/" in name or "\\" in name or ".." in name:
             continue
-        if body.camera:
-            fpath = base / body.camera / name
-            if fpath.exists() and fpath.is_file():
-                fpath.unlink()
-                deleted += 1
-        else:
-            # camera 미지정 시 전체 디렉토리 탐색
-            for cam_dir in base.iterdir():
-                if cam_dir.is_dir():
-                    fpath = cam_dir / name
-                    if fpath.exists() and fpath.is_file():
-                        fpath.unlink()
-                        deleted += 1
-                        break
+        fpath: Path | None = None
+        if len(name) >= 8 and name[:8].isdigit():
+            candidate = base / name[:4] / name[4:6] / name
+            if candidate.exists() and candidate.is_file():
+                fpath = candidate
+        if fpath is None:
+            for p in base.rglob(name):
+                if p.is_file():
+                    fpath = p
+                    break
+        if fpath is not None:
+            fpath.unlink()
+            meta_path = fpath.with_suffix(".json")
+            if meta_path.exists():
+                meta_path.unlink()
+            deleted += 1
     return DeletedOut(deleted=deleted)
 
 
 @app.delete("/clips/all", response_model=DeletedOut)
-def delete_all_clips(camera: str | None = Query(None), _=Depends(require_auth)):
-    """전체 또는 특정 카메라의 클립을 모두 삭제한다."""
+def delete_all_clips(_=Depends(require_auth)):
+    """{CAM_DIR} 트리의 모든 mp4 클립과 동명의 메타데이터(.json)를 삭제."""
     base = Path(CAM_DIR)
     if not base.exists():
         return DeletedOut(deleted=0)
 
-    if camera:
-        dirs = [base / camera]
-    else:
-        dirs = [d for d in base.iterdir() if d.is_dir()]
-
     deleted = 0
-    for cam_dir in dirs:
-        if not cam_dir.is_dir():
+    for f in base.rglob("*.mp4"):
+        if not f.is_file():
             continue
-        for f in cam_dir.glob("*.mp4"):
-            f.unlink()
-            deleted += 1
+        f.unlink()
+        meta_path = f.with_suffix(".json")
+        if meta_path.exists():
+            meta_path.unlink()
+        deleted += 1
     return DeletedOut(deleted=deleted)
 
 

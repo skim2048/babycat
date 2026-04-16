@@ -73,7 +73,9 @@ class ClipOut(BaseModel):
     name: str
     size: int
     created_at: str
-    camera: str
+    timestamp: Optional[int] = None
+    keywords: list[str] = []
+    vlm_text: Optional[str] = None
 
 
 class ClipListOut(BaseModel):
@@ -83,12 +85,6 @@ class ClipListOut(BaseModel):
 
 class ClipDeleteIn(BaseModel):
     names: list[str]
-    camera: str | None = None
-
-
-class CameraListOut(BaseModel):
-    """클립이 존재하는 카메라 이름 목록."""
-    cameras: list[str]
 
 
 class DeletedOut(BaseModel):

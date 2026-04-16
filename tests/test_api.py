@@ -9,28 +9,52 @@ import tempfile
 
 import pytest
 
-# DB를 임시 파일로 지정 (import 전에 설정해야 함)
+# DB와 클립 디렉토리를 임시 경로로 지정 (api/main import 전에 설정해야 함)
 _tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 os.environ["DB_PATH"] = _tmp_db.name
 _tmp_db.close()
 
-# 클립 디렉토리도 임시로
 _tmp_clip_dir = tempfile.mkdtemp()
-os.environ["CLIP_DIR"] = _tmp_clip_dir
-
-from fastapi.testclient import TestClient  # noqa: E402
+os.environ["CAM_DIR"] = _tmp_clip_dir
 
 # api/ 디렉토리를 import 경로에 추가
 import sys  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
 
+from fastapi.testclient import TestClient  # noqa: E402
+
+from auth import DEFAULT_USER, create_token, init_users  # noqa: E402
 from database import init_db  # noqa: E402
 from main import app  # noqa: E402
 
-# 테스트 시작 전 테이블 생성
-init_db()
+import sqlite3 as _sqlite3  # noqa: E402
 
-client = TestClient(app)
+# 테스트 시작 전 테이블 + 기본 사용자 초기화 (lifespan은 TestClient context 진입 시에만
+# 실행되므로 모듈 단위에서 직접 호출한다)
+init_db()
+_seed_conn = _sqlite3.connect(os.environ["DB_PATH"])
+_seed_conn.row_factory = _sqlite3.Row
+try:
+    init_users(_seed_conn)
+finally:
+    _seed_conn.close()
+
+# 모든 요청에 토큰을 자동 주입 (lifespan 안 돌리고도 유효한 토큰을 직접 발급)
+_token = create_token(DEFAULT_USER)
+client = TestClient(app, headers={"Authorization": f"Bearer {_token}"})
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+def _clip_path(name: str) -> str:
+    """파일명에서 YYYYMMDD를 추출해 _tmp/YYYY/MM/{name} 경로를 만든다.
+    YYYYMMDD가 아니면 base 직하에 둔다 (rglob 폴백 검증용)."""
+    if len(name) >= 8 and name[:8].isdigit():
+        sub = os.path.join(_tmp_clip_dir, name[:4], name[4:6])
+    else:
+        sub = _tmp_clip_dir
+    os.makedirs(sub, exist_ok=True)
+    return os.path.join(sub, name)
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -39,8 +63,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def _clean_db():
     """각 테스트 전 DB 데이터 초기화."""
-    import sqlite3
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("DELETE FROM events")
     conn.execute("DELETE FROM devices")
     conn.commit()
@@ -48,26 +71,33 @@ def _clean_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clean_clips():
+    """각 테스트 전 임시 클립 디렉토리 비우기."""
+    for root, _, files in os.walk(_tmp_clip_dir, topdown=False):
+        for f in files:
+            os.unlink(os.path.join(root, f))
+    yield
+
+
 @pytest.fixture
 def clip_file():
-    """테스트용 클립 파일 생성 (20KB)."""
-    path = os.path.join(_tmp_clip_dir, "test_clip.mp4")
+    """20KB 정상 클립 (연/월 트리에 저장)."""
+    name = "20260416_101234_567.mp4"
+    path = _clip_path(name)
     with open(path, "wb") as f:
         f.write(b"\x00" * 20480)
-    yield "test_clip.mp4"
-    if os.path.exists(path):
-        os.unlink(path)
+    return name
 
 
 @pytest.fixture
 def small_clip():
     """10KB 미만 불완전 클립 (필터링 대상)."""
-    path = os.path.join(_tmp_clip_dir, "incomplete.mp4")
+    name = "20260416_101300_000.mp4"
+    path = _clip_path(name)
     with open(path, "wb") as f:
         f.write(b"\x00" * 5000)
-    yield "incomplete.mp4"
-    if os.path.exists(path):
-        os.unlink(path)
+    return name
 
 
 # ── Health ───────────────────────────────────────────────────────────────────
@@ -94,7 +124,7 @@ def test_list_clips_with_file(clip_file):
     r = client.get("/clips")
     data = r.json()
     assert data["total"] == 1
-    assert data["clips"][0]["name"] == "test_clip.mp4"
+    assert data["clips"][0]["name"] == clip_file
     assert data["clips"][0]["size"] == 20480
 
 
@@ -102,12 +132,12 @@ def test_list_clips_filters_small(clip_file, small_clip):
     r = client.get("/clips")
     data = r.json()
     names = [c["name"] for c in data["clips"]]
-    assert "test_clip.mp4" in names
-    assert "incomplete.mp4" not in names
+    assert clip_file in names
+    assert small_clip not in names
 
 
 def test_list_clips_search(clip_file):
-    r = client.get("/clips?q=test")
+    r = client.get(f"/clips?q={clip_file[:8]}")
     assert r.json()["total"] == 1
     r = client.get("/clips?q=nonexistent")
     assert r.json()["total"] == 0
@@ -121,13 +151,13 @@ def test_list_clips_pagination(clip_file):
 
 
 def test_get_clip(clip_file):
-    r = client.get("/clips/test_clip.mp4")
+    r = client.get(f"/clips/{clip_file}")
     assert r.status_code == 200
     assert r.headers["content-type"] == "video/mp4"
 
 
 def test_get_clip_range(clip_file):
-    r = client.get("/clips/test_clip.mp4", headers={"Range": "bytes=0-99"})
+    r = client.get(f"/clips/{clip_file}", headers={"Range": "bytes=0-99"})
     assert r.status_code == 206
     assert len(r.content) == 100
     assert "content-range" in r.headers
@@ -149,7 +179,7 @@ def test_get_clip_path_traversal():
 
 
 def test_delete_clips(clip_file):
-    r = client.request("DELETE", "/clips", json={"names": ["test_clip.mp4"]})
+    r = client.request("DELETE", "/clips", json={"names": [clip_file]})
     assert r.status_code == 200
     assert r.json()["deleted"] == 1
     # 파일이 실제로 삭제되었는지 확인
