@@ -12,7 +12,8 @@ async function fetchClips() {
   try {
     const res = await authFetch('/clips')
     if (!res.ok) return
-    clips.value = await res.json()
+    const data = await res.json()
+    clips.value = data.clips || []
     checked.value = {}
   } catch {
     // 네트워크 오류 — 무시 (다음 SSE 갱신 시 재시도)
@@ -30,12 +31,6 @@ async function deleteClips(names) {
   } catch {
     // 네트워크 오류
   }
-}
-
-async function deleteAll() {
-  const names = clips.value.map((c) => c.name)
-  if (names.length === 0) return
-  await deleteClips(names)
 }
 
 function toggleCheck(name, val) {
@@ -80,9 +75,7 @@ export function useClips() {
     clips,
     checked,
     searchQuery,
-    fetchClips,
     deleteClips,
-    deleteAll,
     deleteSelected,
     toggleCheck,
   }

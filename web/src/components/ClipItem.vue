@@ -17,7 +17,7 @@ const isFullscreen = ref(false)
 const expanded = ref(false)
 
 const clipSrc = computed(() =>
-  `/clip/${encodeURIComponent(props.clip.name)}?s=${props.clip.size}&token=${encodeURIComponent(getToken())}`,
+  `/clips/${encodeURIComponent(props.clip.name)}?s=${props.clip.size}&token=${encodeURIComponent(getToken())}`,
 )
 
 const timeLabel = computed(() => {

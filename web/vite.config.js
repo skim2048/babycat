@@ -10,14 +10,12 @@ export default defineConfig({
     // 사설망(Jetson IP)에서 접속하는 구성이므로 모든 호스트 허용.
     allowedHosts: true,
     proxy: {
-      '/api':       'http://api:8000',
-      '/events':  'http://app:8080',
+      '/api':     'http://api:8000',
+      '/clips':   'http://api:8000',   // 클립 목록/다운로드/삭제는 api 단일화 (Phase 4)
+      '/events':  'http://app:8080',   // SSE — query token 인증
       '/prompt':  'http://app:8080',
       '/ptz':     'http://app:8080',
-      '/clips':   'http://app:8080',
-      '/clip':    'http://app:8080',
       '/camera':  'http://app:8080',
-      '/cameras': 'http://app:8080',
     },
   },
 })

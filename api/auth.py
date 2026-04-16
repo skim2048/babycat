@@ -136,11 +136,18 @@ def verify_token(token: str) -> dict:
 
 
 def require_auth(request: Request) -> dict:
-    """FastAPI Depends 용 — Authorization: Bearer <token> 검증."""
+    """FastAPI Depends 용. Authorization: Bearer <token> 또는 ?token=<token> 검증.
+
+    query token fallback은 헤더를 못 보내는 클라이언트 (EventSource, <video src>) 용.
+    """
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    token: str | None = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    else:
+        token = request.query_params.get("token")
+    if not token:
         raise HTTPException(status_code=401, detail="missing token")
-    token = auth_header[7:]
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(status_code=401, detail="invalid or expired token")
