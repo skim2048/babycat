@@ -481,7 +481,7 @@ onBeforeUnmount(() => {
   <div class="video-box">
     <div class="video-header">
       <span class="video-label">실시간 스트림</span>
-      <div class="protocol-toggle" @click="toggleProtocol">
+      <div class="protocol-toggle" :class="{ disabled: !isPlaying }" @click="isPlaying && toggleProtocol()">
         <span class="protocol-label" :class="{ active: !isWebRTC }">HLS</span>
         <div class="toggle-track" :class="{ on: isWebRTC }">
           <div class="toggle-thumb" />
@@ -519,28 +519,7 @@ onBeforeUnmount(() => {
       <!-- 하단 중앙: 추론 결과 패널 -->
       <InferenceOverlay :open="inferOpen && isPlaying" />
 
-      <!-- 좌하단: 추론 결과 토글 버튼 -->
-      <div class="infer-area">
-        <button class="toolbar-btn infer-btn" :class="{ 'infer-triggered': sseState.event_triggered }" @click.stop="inferOpen = !inferOpen" title="추론 결과">
-          <!-- 평상시: 꺼진 전구 -->
-          <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5.5 14 L10.5 14" />
-            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
-          </svg>
-          <!-- 이벤트 발생: 켜진 전구 -->
-          <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
-            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
-            <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
-            <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
-            <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
-            <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-            <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- 우하단 패널 영역 -->
+      <!-- 우하단 패널 영역 (통합 바 위쪽에 anchor) -->
       <div class="toolbar-panels">
         <SystemOverlay :open="activePanel === 'sys'" />
 
@@ -576,8 +555,8 @@ onBeforeUnmount(() => {
         <PtzOverlay v-if="hasOnvif" :open="activePanel === 'ptz' && isPlaying" />
       </div>
 
-      <!-- 우하단 툴바 -->
-      <div class="video-toolbar">
+      <!-- 통합 하단 바 (우측 정렬, 항상 표시) -->
+      <div class="video-bar">
         <!-- 시스템 모니터 (파형 시그널 아이콘) -->
         <button class="toolbar-btn" @click.stop="togglePanel('sys')" title="시스템 모니터">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -586,7 +565,13 @@ onBeforeUnmount(() => {
         </button>
 
         <!-- 송수신 정보 (교차 화살표 아이콘) -->
-        <button class="toolbar-btn" @click.stop="togglePanel('stats')" title="송수신 정보">
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn-disabled': !isPlaying }"
+          :disabled="!isPlaying"
+          @click.stop="togglePanel('stats')"
+          title="송수신 정보"
+        >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="1" x2="5" y2="15" />
             <polyline points="2,4 5,1 8,4" />
@@ -595,8 +580,29 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
+        <!-- 연결 해제 -->
+        <button
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn-disabled': !isPlaying }"
+          :disabled="!isPlaying"
+          @click="handleDisconnect"
+          title="연결 해제"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
+        </button>
+
         <!-- PTZ 조작 -->
-        <button v-if="hasOnvif" class="toolbar-btn" @click.stop="togglePanel('ptz')" title="PTZ 조작">
+        <button
+          v-if="hasOnvif"
+          class="toolbar-btn"
+          :class="{ 'toolbar-btn-disabled': !isPlaying }"
+          :disabled="!isPlaying"
+          @click.stop="togglePanel('ptz')"
+          title="PTZ 조작"
+        >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
             <circle cx="8" cy="8" r="3" fill="none"/>
             <line x1="8" y1="1" x2="8" y2="4" />
@@ -606,17 +612,28 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <!-- 연결 해제 -->
+        <!-- 추론 결과 토글 -->
         <button
-          class="toolbar-btn"
-          :class="isPlaying ? 'toolbar-btn-danger' : 'toolbar-btn-disabled'"
+          class="toolbar-btn infer-btn"
+          :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
           :disabled="!isPlaying"
-          @click="handleDisconnect"
-          title="연결 해제"
+          @click.stop="inferOpen = !inferOpen"
+          title="추론 결과"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="3" y1="3" x2="13" y2="13" />
-            <line x1="13" y1="3" x2="3" y2="13" />
+          <!-- 평상시: 꺼진 전구 -->
+          <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 14 L10.5 14" />
+            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
+          </svg>
+          <!-- 이벤트 발생: 켜진 전구 -->
+          <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
+            <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
+            <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
+            <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
+            <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
+            <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+            <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
           </svg>
         </button>
 
@@ -654,6 +671,12 @@ onBeforeUnmount(() => {
   gap: 6px;
   cursor: pointer;
   user-select: none;
+  transition: opacity 0.15s;
+}
+.protocol-toggle.disabled {
+  cursor: default;
+  pointer-events: none;
+  opacity: 0.4;
 }
 .protocol-label {
   font-size: 10px;
@@ -781,40 +804,34 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* 좌하단: 추론 결과 */
-.infer-area {
+/* 통합 하단 바: infer-area + video-toolbar 묶음 */
+.video-bar {
   position: absolute;
   bottom: 8px;
-  left: 8px;
+  right: 8px;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   z-index: 5;
-}
-.infer-btn {
-  align-self: flex-start;
 }
 .infer-triggered {
   background: rgba(255, 220, 50, 0.25);
 }
 
-/* 우하단 툴바 */
-.video-toolbar {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  display: flex;
-  gap: 4px;
-  z-index: 5;
-}
 .toolbar-btn {
   width: 32px;
   height: 32px;
   border: none;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -822,26 +839,19 @@ onBeforeUnmount(() => {
   transition: background 0.15s, color 0.15s;
 }
 .toolbar-btn:hover {
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(255, 255, 255, 0.16);
   color: rgba(255, 255, 255, 1);
 }
-.toolbar-btn-danger {
-  color: rgba(255, 255, 255, 0.7);
-}
-.toolbar-btn-danger:hover {
-  background: rgba(208, 56, 56, 0.7);
-  color: rgba(255, 255, 255, 0.95);
-}
 .toolbar-btn-disabled {
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.25);
   cursor: default;
   pointer-events: none;
 }
 
-/* 패널 영역 (툴바 위) */
+/* 패널 영역 (통합 바 위) */
 .toolbar-panels {
   position: absolute;
-  bottom: 46px;
+  bottom: 60px;
   right: 8px;
   display: flex;
   flex-direction: column;

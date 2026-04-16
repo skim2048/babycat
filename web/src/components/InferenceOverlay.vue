@@ -1,9 +1,13 @@
 <script setup>
+import { computed } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 
 defineProps({ open: Boolean })
 
 const { state } = useSSE()
+
+// ms → s 변환 후 소수점 둘째 자리까지 truncate (예: 5038.5 → 5.03)
+const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(2))
 </script>
 
 <template>
@@ -17,8 +21,11 @@ const { state } = useSSE()
         <span class="infer-config-label">K</span>
         <span class="infer-config-value">{{ state.trigger_keywords }}</span>
       </div>
-      <div class="infer-result">{{ state.infer_raw || '-' }}</div>
-      <div class="infer-meta">{{ state.infer_ms }} ms</div>
+      <div class="infer-config infer-answer">
+        <span class="infer-config-label">A</span>
+        <span class="infer-config-value">{{ state.infer_raw || '-' }}</span>
+      </div>
+      <div class="infer-meta">{{ inferSec }} s</div>
     </div>
   </Transition>
 </template>
@@ -28,7 +35,7 @@ const { state } = useSSE()
    clamp(min, preferred, max)로 너무 작거나 커지는 것을 방지. */
 .infer-panel {
   position: absolute;
-  bottom: 1.2vw;
+  bottom: calc(1.2vw + 56px); /* 통합 video-bar(높이 약 44px + 여백) 위로 */
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.7);
@@ -64,17 +71,11 @@ const { state } = useSSE()
 .infer-config-value {
   text-align: left;
 }
-.infer-config + .infer-result {
+.infer-answer {
   margin-top: 0.4em;
   padding-top: 0.4em;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-.infer-result {
-  font-size: 0.8em;
-  font-weight: 500;
   color: rgba(255, 255, 255, 0.95);
-  line-height: 1.5;
-  word-break: break-word;
 }
 .infer-meta {
   font-size: 0.65em;
