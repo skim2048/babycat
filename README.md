@@ -42,11 +42,12 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 ## Getting Started
 
 ```bash
-# 1) 호스트 GStreamer plugins (JetPack flash-only 환경에 필수)
-#    이 패키지가 없으면 컨테이너의 plugins-bad가 호스트 마운트로 가려져
-#    h264parse 등이 사라지고 babycat-app이 GStreamer 파이프라인 init에서 죽음.
+# 1) JetPack 컴포넌트 (flash-only 상태의 새 젯슨에서 필수)
+#    NVIDIA HW gst plugins (nvv4l2decoder/nvvidconv 등) + 표준 plugins-bad/good을
+#    DeepStream 의존성으로 함께 끌고 온다. 이게 없으면 babycat-app의 GStreamer
+#    파이프라인이 h264parse / nvv4l2decoder 부재로 init 단계에서 죽음.
 sudo apt update
-sudo apt install -y gstreamer1.0-plugins-bad gstreamer1.0-plugins-good
+sudo apt install -y nvidia-jetpack
 
 # 2) 호스트 IP 등록 (WebRTC ICE candidate에 광고됨). zerotier 또는 LAN IP.
 cp .env.example .env
