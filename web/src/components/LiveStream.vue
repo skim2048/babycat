@@ -29,6 +29,23 @@ const stopped = ref(true)
 const fullscreen = ref(false)
 const activePanel = ref(null) // 'sys' | 'stats' | 'ptz' | null
 const inferOpen = ref(false)
+
+// VLM 상태 pill 배지 — ready 전이 시 3초 뒤 자동 숨김, loading/error는 계속 표시
+const vlmBadgeVisible = ref(true)
+let vlmBadgeTimer = null
+watch(() => sseState.vlm_state, (s) => {
+  if (vlmBadgeTimer) { clearTimeout(vlmBadgeTimer); vlmBadgeTimer = null }
+  vlmBadgeVisible.value = true
+  if (s === 'ready') {
+    vlmBadgeTimer = setTimeout(() => { vlmBadgeVisible.value = false }, 3000)
+  }
+}, { immediate: true })
+const vlmBadgeLabel = computed(() => {
+  if (sseState.vlm_state === 'ready') return 'VLM 준비 완료'
+  if (sseState.vlm_state === 'error') return `VLM 오류: ${sseState.vlm_error || '알 수 없는 원인'}`
+  return 'VLM 준비 중'
+})
+onBeforeUnmount(() => { if (vlmBadgeTimer) clearTimeout(vlmBadgeTimer) })
 const stats = reactive({
   resolution: '',
   fps: '',
@@ -492,6 +509,26 @@ onBeforeUnmount(() => {
     <div class="video-wrap" ref="videoWrapRef">
       <video ref="videoRef" muted playsinline />
 
+      <!-- 좌상단: VLM 로드 상태 pill 배지 -->
+      <Transition name="fade">
+        <div
+          v-if="vlmBadgeVisible"
+          class="vlm-badge"
+          :class="`vlm-${sseState.vlm_state}`"
+          :title="sseState.vlm_state === 'error' ? sseState.vlm_error : ''"
+        >
+          <span v-if="sseState.vlm_state === 'loading'" class="vlm-spinner" aria-hidden="true"></span>
+          <svg v-else-if="sseState.vlm_state === 'ready'" class="vlm-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="2,6 5,9 10,3" />
+          </svg>
+          <svg v-else class="vlm-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="3" x2="9" y2="9" />
+            <line x1="9" y1="3" x2="3" y2="9" />
+          </svg>
+          <span class="vlm-label">{{ vlmBadgeLabel }}</span>
+        </div>
+      </Transition>
+
       <!-- 연결 대기중: 재생 아이콘 클릭으로 연결 -->
       <div v-if="stopped" class="video-overlay clickable" @click="handleConnect">
         <div class="play-icon">
@@ -802,6 +839,61 @@ onBeforeUnmount(() => {
 }
 .retry-btn:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* 좌상단 VLM 상태 pill 배지 */
+.vlm-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 6;
+  user-select: none;
+}
+.vlm-loading { /* 기본 회색 */ }
+.vlm-ready {
+  border-color: rgba(52, 211, 153, 0.55);
+  color: rgba(167, 243, 208, 1);
+}
+.vlm-error {
+  background: rgba(185, 28, 28, 0.72);
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fff;
+  max-width: 320px;
+}
+.vlm-error .vlm-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vlm-icon {
+  flex-shrink: 0;
+}
+.vlm-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: vlm-spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes vlm-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* 통합 하단 바: infer-area + video-toolbar 묶음 */

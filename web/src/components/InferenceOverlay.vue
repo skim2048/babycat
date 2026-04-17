@@ -53,7 +53,7 @@ const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(
   gap: 0.5em;
   align-items: baseline;
   justify-content: flex-start;
-  font-size: 0.6em;
+  font-size: 11px; /* VLM 상태 배지(.vlm-badge)와 동일 */
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.55);
   line-height: 1.4;
@@ -78,7 +78,7 @@ const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(
   color: rgba(255, 255, 255, 0.95);
 }
 .infer-meta {
-  font-size: 0.65em;
+  font-size: 11px; /* VLM 상태 배지(.vlm-badge)와 동일 */
   font-weight: 600;
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.55);

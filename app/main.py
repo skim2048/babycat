@@ -398,9 +398,15 @@ def main() -> None:
     Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
 
     log.info("Loading VLM model: %s", MODEL_ID)
+    debug_state.set_vlm_state("loading")
     t0 = time.time()
-    model = NanoLLM.from_pretrained(MODEL_ID, api="mlc", quantization="q4f16_ft")
+    try:
+        model = NanoLLM.from_pretrained(MODEL_ID, api="mlc", quantization="q4f16_ft")
+    except Exception as e:
+        debug_state.set_vlm_state("error", str(e)[:240])
+        raise
     log.info("Model loaded (%.1fs)", time.time() - t0)
+    debug_state.set_vlm_state("ready")
 
     # 컴포넌트 초기화
     ring    = RingBuffer(maxlen=RING_SIZE)

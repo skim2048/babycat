@@ -46,6 +46,22 @@ class AppState:
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
 
+        # VLM 로드 생명주기 — loading | ready | error
+        self.vlm_state: str = "loading"
+        self.vlm_error: str = ""
+
+    def set_vlm_state(self, state: str, error: str = ""):
+        """VLM 상태 전이 + SSE 즉시 푸시."""
+        with self._lock:
+            self.vlm_state = state
+            self.vlm_error = error
+        with self._sse_lock:
+            for q in self._sse_queues:
+                try:
+                    q.put_nowait(1)
+                except queue.Full:
+                    pass
+
     def set_refs(self, ring, ring_size: int, config: dict):
         self._ring      = ring
         self._ring_size = ring_size
@@ -184,6 +200,8 @@ class AppState:
             "trigger_keywords": ",".join(self.trigger_keywords),
             "event_triggered": self.event_triggered,
             "clip_count": len(self.list_clips()),
+            "vlm_state": self.vlm_state,
+            "vlm_error": self.vlm_error,
             **{f"cfg_{k}": v for k, v in self._config.items()},
         }
 
