@@ -68,6 +68,10 @@ const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
 
+// MediaMTX 기본 포트. docker-compose의 mediamtx 서비스 publish와 일치해야 한다.
+const MEDIAMTX_HLS_PORT = 8888
+const MEDIAMTX_WHEP_PORT = 8889
+
 const isWebRTC = computed(() => config.stream_protocol === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
 
@@ -124,12 +128,12 @@ function handleDisconnect() {
 
 function getHlsUrl() {
   const host = window.location.hostname
-  return `http://${host}:8888/live/index.m3u8`
+  return `http://${host}:${MEDIAMTX_HLS_PORT}/live/index.m3u8`
 }
 
 function getWhepUrl() {
   const host = window.location.hostname
-  return `http://${host}:8889/live/whep`
+  return `http://${host}:${MEDIAMTX_WHEP_PORT}/live/whep`
 }
 
 // ── Lifecycle ──
