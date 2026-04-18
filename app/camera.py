@@ -1,9 +1,11 @@
 """
-카메라 설정 관리 모듈
+Camera configuration module.
 
-babycat은 단일 카메라 전제로 동작한다.
-클립은 연/월 디렉토리(DATA_DIR/{YYYY}/{MM}/)에 저장되며,
-카메라 프로필 변경과 무관하게 모든 클립은 동일한 저장소에 누적된다.
+Babycat assumes a single camera. Clips are stored under per-year/month
+directories (DATA_DIR/{YYYY}/{MM}/) and accumulate in the same location
+regardless of camera-profile changes.
+
+@claude
 """
 
 import json
@@ -23,7 +25,7 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
 MEDIAMTX_API = "http://babycat-mediamtx:9997"
 MEDIAMTX_PATH_NAME = "live"
 
-# 클립 저장 베이스 디렉토리. 실제 파일은 {DATA_DIR}/{YYYY}/{MM}/ 하위에 저장된다.
+# @claude Clip storage base directory; actual files live under {DATA_DIR}/{YYYY}/{MM}/.
 DATA_DIR = os.getenv("DATA_DIR", "/data")
 
 camera_ready = threading.Event()
@@ -40,16 +42,16 @@ def load() -> Optional[dict]:
 
 
 def save(config: dict) -> None:
-    """저장 시 기존 파일의 필드를 보존한 뒤 덮어쓴다 (ptz_home 등)."""
+    """Merge into the existing file (preserving fields like ptz_home) before overwriting. @claude"""
     existing = load() or {}
     existing.update(config)
-    existing.pop("name", None)  # 레거시 필드 제거
+    existing.pop("name", None)  # @claude Drop a legacy field.
     with open(CONFIG_PATH, "w") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
 
 
 def apply(config: dict) -> dict:
-    """카메라 설정 적용. 성공 시 {"ok": True} 반환."""
+    """Apply a camera configuration. Returns {"ok": True} on success. @claude"""
     for field in _REQUIRED_FIELDS:
         if not config.get(field, "").strip():
             return {"ok": False, "error": f"'{field}' is required"}
@@ -60,11 +62,9 @@ def apply(config: dict) -> dict:
 
     save(config)
 
-    # PTZ 설정
     onvif_url = _build_onvif_url(config)
     ptz.configure(onvif_url, config["username"], config["password"])
 
-    # MediaMTX RTSP 소스 설정
     rtsp_url = _build_rtsp_url(config)
     ok = _update_mediamtx(rtsp_url)
     if not ok:
@@ -80,11 +80,10 @@ def startup_apply() -> None:
         log.info("No saved config — set via frontend")
         return
 
-    # PTZ 즉시 설정
     onvif_url = _build_onvif_url(config)
     ptz.configure(onvif_url, config["username"], config["password"])
 
-    # MediaMTX 재시도 (지수 백오프)
+    # @claude MediaMTX may not be ready yet; retry with exponential backoff.
     rtsp_url = _build_rtsp_url(config)
     delay = 1.0
     for attempt in range(1, 11):

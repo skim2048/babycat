@@ -1,7 +1,9 @@
 """
-Jetson Orin NX 하드웨어 모니터
+Jetson Orin NX hardware monitor.
 
-/proc, /sys에서 CPU·RAM·GPU 사용률과 온도를 읽는다.
+Reads CPU/RAM/GPU utilization and temperatures from /proc and /sys.
+
+@claude
 """
 
 import logging
@@ -48,7 +50,7 @@ class HardwareMonitor:
             return 0.0
 
     def ram_usage(self) -> tuple[int, int]:
-        """(used_mb, total_mb)"""
+        """Return (used_mb, total_mb). @claude"""
         try:
             info = {}
             with open("/proc/meminfo") as f:

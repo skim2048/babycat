@@ -1,8 +1,11 @@
 """
-App 공유 상태.
+Shared application state.
 
-파이프라인(GStreamer 콜백·추론 워커), VLM 생명주기, 프롬프트/트리거 키워드,
-클립 캐시를 한 객체로 모아 HTTP 서버가 읽어가도록 한다.
+Aggregates pipeline state (GStreamer callback / inference worker), VLM
+lifecycle, prompt / trigger keywords, and clip cache behind a single
+object that the HTTP server reads from.
+
+@claude
 """
 
 import io
@@ -20,7 +23,7 @@ import ptz
 
 
 class AppState:
-    """파이프라인 ↔ HTTP 서버 간 공유 상태."""
+    """Shared state between the pipeline and the HTTP server. @claude"""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -47,16 +50,16 @@ class AppState:
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
 
-        # VLM 로드 생명주기 — initializing | downloading | compiling | loading | ready | switching | error
-        # - initializing: 앱 부팅 직후, precompile 단계 진입 전
-        # - loading: 로컬에 준비된 모델을 메모리에 올리는 단계 (다운로드·컴파일은 별개 단계)
+        # @claude VLM load lifecycle — initializing | downloading | compiling | loading | ready | switching | error.
+        # @claude `initializing`: right after boot, before entering the precompile stage.
+        # @claude `loading`: loading a locally-ready model into memory (download/compile are separate stages).
         self.vlm_state: str = "initializing"
         self.vlm_error: str = ""
         self.vlm_models: list[str] = []
         self.vlm_current_model: str = ""
 
     def set_vlm_state(self, state: str, error: str = ""):
-        """VLM 상태 전이 + SSE 즉시 푸시."""
+        """Transition VLM state and push SSE immediately. @claude"""
         with self._lock:
             self.vlm_state = state
             self.vlm_error = error
@@ -87,7 +90,7 @@ class AppState:
         self._config    = config
 
     def set_clip_dir(self, path: str):
-        """현재 활성 카메라의 클립 디렉토리 설정. 카메라 전환 시 갱신된다."""
+        """Set the clip directory for the currently active camera; refreshed on camera switch. @claude"""
         self._clip_dir = path
         self._clip_cache = []
         self._clip_cache_time = 0.0
@@ -101,8 +104,10 @@ class AppState:
 
     def list_clips(self) -> list[dict]:
         """
-        클립 디렉토리({DATA_DIR}/{YYYY}/{MM}/)의 모든 mp4 파일 목록 반환.
-        메타데이터 포함, 최신순, 5초 TTL 캐시.
+        Return every mp4 under the clip directory ({DATA_DIR}/{YYYY}/{MM}/),
+        with metadata, newest first, cached with a 5-second TTL.
+
+        @claude
         """
         now = time.time()
         if self._clip_cache and now - self._clip_cache_time < 5.0:

@@ -1,13 +1,17 @@
 """
-VLM 홀더 싱글톤 + 전환 요청 검증.
+VLM holder singleton and switch-request validation.
 
-main.py는 컨테이너에서 `python main.py`로 실행되어 __main__ 모듈이 된다.
-server.py가 `from main import ...` 하면 Python이 main.py를 `main`이라는
-별도 모듈로 다시 로드하여 전역 상태가 분리된다. 이 모듈은 양쪽이 공유하는
-단일 진입점을 제공해 그 함정을 피한다.
+When the container runs `python main.py`, `main.py` becomes the `__main__`
+module. If `server.py` does `from main import ...`, Python re-loads
+`main.py` as a separate module named `main`, splitting the global state
+across two module objects. This module is the single entry point both
+sides share, which avoids that pitfall.
 
-계약: `_available_models` 는 main._precompile_all 이 끝난 뒤 set_available()
-로만 채워진다. 그 전에 request_switch 가 불리면 어떤 모델이든 거절된다.
+Contract: `_available_models` is populated only by `set_available()`
+after `main._precompile_all` finishes. Any `request_switch` call before
+that point is rejected regardless of the requested model.
+
+@claude
 """
 
 import os
@@ -18,7 +22,8 @@ if not VLM_MODELS:
     VLM_MODELS = [_DEFAULT]
 
 _holder = None
-_available_models: list[str] = []  # precompile 완료 후 main이 set_available()로 채운다.
+# @claude Filled in by main via set_available() once precompilation finishes.
+_available_models: list[str] = []
 
 
 def set_holder(h) -> None:
@@ -33,8 +38,10 @@ def set_available(models: list[str]) -> None:
 
 def request_switch(name: str) -> tuple[bool, str]:
     """
-    서버 핸들러에서 호출. (accepted, reason) 반환.
-    accepted=True 이면 곧 추론 워커가 전환을 수행한다.
+    Called from the HTTP handler. Returns (accepted, reason); when
+    accepted=True the inference worker will perform the switch shortly.
+
+    @claude
     """
     if _holder is None:
         return False, "model not loaded yet"

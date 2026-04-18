@@ -1,10 +1,12 @@
 """
-Babycat — App 메인 엔트리포인트
+Babycat — app entry point.
 
-파이프라인:
-  rtspsrc (MediaMTX) → rtph264depay → h264parse → nvv4l2decoder
-  → nvvidconv (RGBA) → videorate → appsink
-  → RingBuffer → VLM 추론 → 키워드 매칭 → 트리거 클립 저장
+Pipeline:
+  rtspsrc (MediaMTX) -> rtph264depay -> h264parse -> nvv4l2decoder
+  -> nvvidconv (RGBA) -> videorate -> appsink
+  -> RingBuffer -> VLM inference -> keyword match -> trigger clip recording
+
+@claude
 """
 
 import gc
@@ -34,11 +36,12 @@ from ptz import is_moving as ptz_is_moving
 
 log = logging.getLogger(__name__)
 
-# ── 설정 ──────────────────────────────────────────────────────────────────────
+# ── Configuration ────────────────────────────────────────────────────────────
 
 MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://babycat-mediamtx:8554/live")
 
-# VLM_MODELS / holder 싱글톤은 별도 모듈에서 관리 (__main__ 이중 import 회피).
+# @claude VLM_MODELS / holder singletons live in a dedicated module to avoid the
+# @claude double-import trap caused by main.py being loaded both as __main__ and as `main`.
 from holder import VLM_MODELS, set_holder as _set_holder, set_available as _set_available
 MODEL_ID = VLM_MODELS[0]
 
@@ -50,18 +53,21 @@ RING_SIZE = int(os.getenv("RING_SIZE", "30"))
 TRIGGER_COOLDOWN  = float(os.getenv("TRIGGER_COOLDOWN", "30"))
 TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
 
-# SigLIP 입력 해상도 (VLM 내부에서 384×384로 리사이즈됨)
+# @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
 
 INFERENCE_PROMPT_DEFAULT = "What is the person doing? Answer in one sentence."
 
 
-# ── Ring Buffer ───────────────────────────────────────────────────────────────
+# ── Ring buffer ──────────────────────────────────────────────────────────────
 
 class RingBuffer:
     """
-    VLM 컨텍스트용 고정 크기 순환 버퍼.
-    GStreamer 콜백(다른 스레드)에서 push, 추론 스레드에서 latest() 호출.
+    Fixed-size circular buffer for VLM context frames. Pushed from the
+    GStreamer callback thread and read via latest() from the inference
+    thread.
+
+    @claude
     """
 
     def __init__(self, maxlen: int):
@@ -73,7 +79,7 @@ class RingBuffer:
             self._buf.append(frame)
 
     def latest(self, n: int) -> list:
-        """가장 최근 n개 프레임을 반환. n보다 적으면 있는 것만 반환."""
+        """Return the most recent n frames (fewer if the buffer has less). @claude"""
         with self._lock:
             frames = list(self._buf)
         return frames[-n:] if len(frames) >= n else frames
@@ -83,7 +89,7 @@ class RingBuffer:
             return len(self._buf)
 
 
-# ── 트리거 클립 저장 ─────────────────────────────────────────────────────────
+# ── Trigger clip recording ───────────────────────────────────────────────────
 
 _trigger_last_save: float = 0.0
 _trigger_lock = threading.Lock()
@@ -92,9 +98,12 @@ _trigger_lock = threading.Lock()
 def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
                       event_time: float) -> None:
     """
-    트리거 키워드 이벤트 발생 시 ffmpeg로 RTSP 스트림에서 TRIGGER_CLIP_DUR초 직접 녹화.
-    경로: {DATA_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4 + 동명의 .json
-    TRIGGER_COOLDOWN 이내 재호출은 무시.
+    On a trigger keyword event, record TRIGGER_CLIP_DUR seconds straight
+    from the RTSP stream via ffmpeg. Output path:
+      {DATA_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4 (+ same-name .json)
+    Repeat calls within TRIGGER_COOLDOWN are ignored.
+
+    @claude
     """
     global _trigger_last_save
     with _trigger_lock:
@@ -138,7 +147,6 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         log.error("trigger-clip recording error: %s", e)
         return
 
-    # 메타데이터 저장
     try:
         meta = {
             "timestamp": int(event_time),
@@ -153,13 +161,15 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     app_state.invalidate_clip_cache()
 
 
-# ── VLM 모델 홀더 (전환 지원) ─────────────────────────────────────────────────
+# ── VLM model holder (switch support) ────────────────────────────────────────
 
 class ModelHolder:
     """
-    추론 워커가 읽는 현재 모델 + 대기 중인 전환 요청.
-    워커는 매 iteration 시작 전 pop_request()로 전환 요청을 확인하고,
-    진행 중이던 추론이 끝난 뒤에만 전환이 수행된다 (원자성).
+    Current VLM model plus any pending switch request. The worker checks
+    pop_request() at the top of each iteration, so a switch only happens
+    between inferences, never mid-generation (atomicity).
+
+    @claude
     """
     def __init__(self, model, name: str):
         self._lock = threading.Lock()
@@ -172,7 +182,7 @@ class ModelHolder:
             return False
         with self._lock:
             if name == self.name and self._switch_to is None:
-                return True  # 이미 해당 모델 — no-op 성공
+                return True  # @claude already the active model — treat as no-op success.
             self._switch_to = name
         return True
 
@@ -183,26 +193,29 @@ class ModelHolder:
 
 
 def _load_model(model_id: str):
-    """NanoLLM 로드 (q4f16_ft MLC). 예외는 상위에서 처리."""
+    """Load via NanoLLM (q4f16_ft MLC). Exceptions bubble up. @claude"""
     return NanoLLM.from_pretrained(model_id, api="mlc", quantization="q4f16_ft")
 
 
 def _so_path(model_id: str) -> Path:
-    """MLC 컴파일 산출물 경로. NanoLLM 내부 규약에 의존."""
+    """MLC compile artifact path; depends on NanoLLM's internal layout. @claude"""
     base = model_id.split("/")[-1]
     return Path(f"/data/models/mlc/dist/{base}/ctx4096/{base}-q4f16_ft/{base}-q4f16_ft-cuda.so")
 
 
 def _hf_snapshot_exists(model_id: str) -> bool:
-    """HF 스냅샷 캐시 존재 여부. 없으면 _precompile_one이 다운로드부터 수행한다."""
+    """Whether the HF snapshot cache exists; when absent _precompile_one downloads first. @claude"""
     return Path(f"/data/models/huggingface/models--{model_id.replace('/', '--')}").exists()
 
 
 def _precompile_one(model_id: str) -> bool:
     """
-    서브프로세스에서 NanoLLM.from_pretrained 호출 → .so 캐시 생성 후 프로세스 종료.
-    서브프로세스 종료 시 OS가 CUDA/TVM 메모리를 확실히 회수하므로, 순차 컴파일 시
-    이전 모델 잔여로 인한 OOM을 방지한다.
+    Invoke NanoLLM.from_pretrained in a subprocess so the .so cache is
+    produced and the process exits. The OS reclaims CUDA/TVM memory on
+    subprocess exit, which prevents OOM from leftover state when models
+    are compiled sequentially.
+
+    @claude
     """
     log.info("Precompiling VLM (subprocess): %s", model_id)
     t0 = time.time()
@@ -220,9 +233,12 @@ def _precompile_one(model_id: str) -> bool:
 
 def _precompile_all(models: list[str]) -> list[str]:
     """
-    .so가 없는 모델만 순차 컴파일. 반환값은 사용 가능한(캐시 완비) 모델 리스트.
-    기본 모델(리스트 첫 항목) 컴파일 실패 시 RuntimeError로 중단 — 없으면 부팅 불가.
-    보조 모델 실패 시 해당 모델만 드롭하고 진행.
+    Compile only models that lack a cached .so. Returns the list of models
+    whose cache is complete. If the default model (first entry) fails to
+    compile, raise RuntimeError — booting is pointless without it.
+    Secondary model failures are dropped silently.
+
+    @claude
     """
     available = []
     for m in models:
@@ -230,10 +246,10 @@ def _precompile_all(models: list[str]) -> list[str]:
             log.info("MLC cache hit: %s", m)
             available.append(m)
             continue
-        app_state.set_vlm_current_model(m)  # UI에 현재 컴파일 중인 모델 표시
-        # HF 스냅샷이 없으면 _precompile_one이 다운로드부터 수행 — 다운로드가
-        # 컴파일보다 훨씬 길기 때문에 더 두드러진 단계로 라벨링한다. 한 서브프로세스
-        # 안에서 다운로드→컴파일이 연속 진행되므로 경계는 정확하지 않다(설계상 OK).
+        app_state.set_vlm_current_model(m)  # @claude Surface the model currently being compiled in the UI.
+        # @claude If the HF snapshot is missing, _precompile_one downloads first; download
+        # @claude takes far longer than compilation, so label the longer phase distinctly.
+        # @claude A single subprocess covers both phases so the boundary is approximate (OK by design).
         if not _hf_snapshot_exists(m):
             app_state.set_vlm_state("downloading")
         else:
@@ -250,13 +266,16 @@ def _precompile_all(models: list[str]) -> list[str]:
 
 def _perform_switch(holder: ModelHolder, target: str) -> None:
     """
-    홀더의 모델을 target으로 교체. 진행 중 추론은 호출 전에 끝났다고 가정.
-    실패 시 기존 모델로 복귀 시도.
+    Replace the holder's model with `target`. Assumes any in-flight
+    inference has already finished. Attempts to roll back to the previous
+    model on failure.
+
+    @claude
     """
     prev = holder.name
     log.info("Switching VLM: %s → %s", prev, target)
     app_state.set_vlm_state("switching")
-    app_state.set_vlm_current_model(target)  # UI에는 곧 전환될 모델 선반영
+    app_state.set_vlm_current_model(target)  # @claude Pre-apply the target to the UI so the selector reflects intent.
 
     holder.model = None
     gc.collect()
@@ -266,7 +285,7 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
     except Exception as e:
         log.error("VLM switch failed (%s → %s): %s", prev, target, e)
         app_state.set_vlm_state("error", f"{target}: {str(e)[:200]}")
-        # 이전 모델로 복귀 시도
+        # @claude Rollback attempt to the previous model.
         try:
             holder.model = _load_model(prev)
             app_state.set_vlm_current_model(prev)
@@ -282,13 +301,16 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
     log.info("VLM switch complete: %s", target)
 
 
-# ── VLM 추론 ──────────────────────────────────────────────────────────────────
+# ── VLM inference ────────────────────────────────────────────────────────────
 
 def run_inference(model: NanoLLM, frames: list) -> str:
     """
-    PIL 프레임 리스트로 VLM 추론 실행.
-    ChatHistory API 사용 (NanoLLM 멀티모달 올바른 방법).
-    chat.reset() + gc.collect() 필수 (NanoLLM GitHub issue #39, 메모리 누수 방지).
+    Run VLM inference over a list of PIL frames using the ChatHistory API
+    (the correct multimodal entry point for NanoLLM). chat.reset() and
+    gc.collect() are mandatory — see NanoLLM GitHub issue #39 on memory
+    leaks.
+
+    @claude
     """
     chat = ChatHistory(model)
     for img in frames:
@@ -301,8 +323,8 @@ def run_inference(model: NanoLLM, frames: list) -> str:
         tokens.append(token)
 
     raw = "".join(tokens)
-    # 스톱 토큰 이후 잘라냄 (vicuna-v1: </s>, ChatML: <|im_end|>).
-    # roleplay 아티팩트(###, <|im_start|>, assistant:)도 등장 시 그 앞까지만 사용.
+    # @claude Truncate at any stop token (vicuna-v1 </s>, ChatML <|im_end|>) and at common
+    # @claude roleplay artifacts (###, <|im_start|>, assistant:, user:) when they appear.
     for marker in ("<|im_end|>", "</s>", "<|im_start|>", "###", "assistant:", "user:"):
         idx = raw.find(marker)
         if idx >= 0:
@@ -314,20 +336,23 @@ def run_inference(model: NanoLLM, frames: list) -> str:
     return raw
 
 
-# ── 추론 워커 스레드 ───────────────────────────────────────────────────────────
+# ── Inference worker thread ──────────────────────────────────────────────────
 
 def inference_worker(holder: "ModelHolder", ring: RingBuffer,
                      infer_queue: queue.Queue) -> None:
     """
-    appsink 콜백이 infer_queue에 신호를 보내면 ring에서 최신 N_FRAMES를 꺼내
-    VLM 추론 → 키워드 매칭 → 필요 시 트리거 클립 저장.
+    When the appsink callback signals infer_queue, pull the latest
+    N_FRAMES from `ring`, run VLM inference, match keywords, and record a
+    trigger clip if needed.
 
-    매 iteration 시작 전 holder.pop_request()로 모델 전환 요청을 확인하여,
-    진행 중이던 추론이 끝난 뒤에만 전환이 수행되도록 보장한다.
+    Each iteration starts by consulting holder.pop_request() so model
+    switches are only performed between inferences, never mid-generation.
+
+    @claude
     """
     log.info("VLM inference thread started")
     while True:
-        # 추론 1회 완료 직후 시점에서 전환 요청 처리
+        # @claude Handle pending switch requests at the boundary between inferences.
         target = holder.pop_request()
         if target and target != holder.name:
             _perform_switch(holder, target)
@@ -341,7 +366,7 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
             continue
 
         if holder.model is None:
-            # 전환 실패 후 복귀도 실패한 상태 — 스킵
+            # @claude Both switch and rollback failed — skip this iteration.
             continue
 
         frames = ring.latest(N_FRAMES)
@@ -356,7 +381,6 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
             continue
         elapsed_ms = (time.time() - t0) * 1000
 
-        # 트리거 키워드 매칭
         triggers = app_state.get_triggers()
         raw_lower = raw.lower()
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
@@ -378,12 +402,15 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
             ).start()
 
 
-# ── GStreamer 파이프라인 ───────────────────────────────────────────────────────
+# ── GStreamer pipeline ───────────────────────────────────────────────────────
 
 def build_pipeline_str(url: str, target_fps: float) -> str:
     """
-    파이프라인 문자열 생성.
-    videorate로 FPS 정규화: 카메라 원본 FPS에 무관하게 균일 간격 프레임 추출.
+    Build the pipeline string. `videorate` normalizes to target_fps so
+    frame extraction is evenly spaced regardless of the source camera's
+    native FPS.
+
+    @claude
     """
     fps = Fraction(target_fps).limit_denominator(1000)
     return (
@@ -397,9 +424,12 @@ def build_pipeline_str(url: str, target_fps: float) -> str:
 
 def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
     """
-    appsink 'new-sample' 시그널 콜백 생성.
-    - RGBA 버퍼 → numpy → PIL (384×384 RGB) → RingBuffer push
-    - 추론 큐에 신호 전송 (큐가 가득 찬 경우 drop — 이전 추론 진행 중)
+    Build the `new-sample` signal callback for appsink.
+      - RGBA buffer -> numpy -> PIL (384x384 RGB) -> RingBuffer push
+      - Signal the inference queue; drop when full (previous inference
+        still running).
+
+    @claude
     """
     def on_new_sample(sink) -> Gst.FlowReturn:
         sample = sink.emit('pull-sample')
@@ -441,25 +471,25 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
     return on_new_sample
 
 
-# ── 파이프라인 관리 ──────────────────────────────────────────────────────────
+# ── Pipeline management ──────────────────────────────────────────────────────
 
 _pipeline = None
 _pipeline_lock = threading.Lock()
 _pipeline_started_at: float = 0.0
 _last_frame_time: float = 0.0
 
-# 파이프라인 참조(ring/infer_q). main()에서 초기화 전에는 None이며,
-# 이 시점에 restart_pipeline()이 호출되면 no-op으로 빠진다 (부팅 중 호출 안전).
+# @claude Pipeline refs (ring/infer_q). None until main() initializes them; any
+# @claude restart_pipeline() call before that is a safe no-op (safe during boot).
 _pipeline_refs: dict | None = None
 
-# 워치독 파라미터
-WATCHDOG_GRACE    = 15.0   # PLAYING 이후 이 시간 안에 프레임이 없어도 유예 (초기 RTSP 확립)
-WATCHDOG_TIMEOUT  = 15.0   # 마지막 프레임 후 이 시간 동안 프레임 없으면 재시작
-WATCHDOG_INTERVAL = 5.0    # 점검 주기
+# @claude Watchdog parameters.
+WATCHDOG_GRACE    = 15.0   # @claude Grace period after PLAYING before we complain about missing frames (initial RTSP handshake).
+WATCHDOG_TIMEOUT  = 15.0   # @claude Restart if no frames arrive for this long after the last one.
+WATCHDOG_INTERVAL = 5.0    # @claude Check interval.
 
 
 def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
-    """GStreamer 파이프라인을 (재)시작한다. 기존 파이프라인이 있으면 정지 후 교체."""
+    """(Re)start the GStreamer pipeline. Stops and replaces any existing one. @claude"""
     global _pipeline, _pipeline_started_at, _last_frame_time
     with _pipeline_lock:
         if _pipeline is not None:
@@ -482,15 +512,18 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
 
 
 def restart_pipeline() -> None:
-    """외부(서버 핸들러 등)에서 파이프라인 재시작을 요청할 때 사용."""
+    """Used by external callers (e.g. server handlers) to request a pipeline restart. @claude"""
     if _pipeline_refs is not None:
         start_pipeline(_pipeline_refs['ring'], _pipeline_refs['infer_q'])
 
 
 def watchdog_worker() -> None:
     """
-    파이프라인 PLAYING 이후 프레임이 일정 시간 동안 들어오지 않으면 자동 재시작.
-    (rtspsrc가 MediaMTX 준비 전에 붙어 멈추는 상황을 복구한다.)
+    Auto-restart the pipeline if no frames have arrived for a while after
+    PLAYING — this recovers from rtspsrc latching onto MediaMTX before
+    MediaMTX is ready and then stalling.
+
+    @claude
     """
     log.info("Pipeline watchdog started (grace=%.0fs, timeout=%.0fs)",
              WATCHDOG_GRACE, WATCHDOG_TIMEOUT)
@@ -513,7 +546,7 @@ def watchdog_worker() -> None:
             restart_pipeline()
 
 
-# ── 메인 ─────────────────────────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     logging.basicConfig(
@@ -530,34 +563,34 @@ def main() -> None:
     log.info("  N_FRAMES     : %s", N_FRAMES)
     log.info("  RING_SIZE    : %s", RING_SIZE)
 
-    # 디버그 상태 초기 세팅 (모델 로드 전에 디버그 서버가 정상 동작해야 함)
     app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     app_state.set_clip_dir(camera.DATA_DIR)
 
-    # 디버그 웹서버 즉시 시작 — 모델 로딩 중에도 web에서 카메라 프로필 저장 가능해야 함.
-    # 모델 캐시가 비어 있으면 NanoLLM.from_pretrained가 수십 분 걸릴 수 있다.
+    # @claude Start the debug/web server immediately so the web UI can save a camera profile
+    # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes
+    # @claude on a cold model cache).
     start_server(8080)
 
-    # 저장된 카메라 설정이 있으면 백그라운드로 적용 (MediaMTX 재시도 포함)
+    # @claude Apply any saved camera config in the background (includes MediaMTX retry).
     threading.Thread(target=camera.startup_apply, daemon=True).start()
 
-    # VLM 모델 로드 (시간 소요. 모델 로드 중 사용자가 web에서 카메라 프로필을
-    # 저장하면 camera.apply가 정상 동작하지만, restart_pipeline은 _pipeline_refs가
-    # 아직 None이므로 no-op이 되며, 모델 로드 후 camera.camera_ready가 set되어
-    # 있으면 아래에서 start_pipeline이 한 번 호출된다.)
+    # @claude VLM load takes time. If the user saves a camera profile during loading,
+    # @claude camera.apply works, but restart_pipeline() is a no-op while _pipeline_refs is
+    # @claude None — after load completes, if camera.camera_ready is set, start_pipeline is
+    # @claude invoked once below.
     #
-    # MLC quantize()가 huggingface 스냅샷을 /data/models/mlc/dist/models/{MODEL}로
-    # symlink 만드는데 부모 디렉토리가 없으면 FileNotFoundError로 컨테이너가 죽는다
-    # (NanoLLM 내부에서 mkdir 안 함). 새 젯슨에서 git clone → docker compose up 한
-    # 번에 동작하려면 여기서 미리 만들어 둬야 한다.
+    # @claude MLC quantize() symlinks the HF snapshot into /data/models/mlc/dist/models/{MODEL};
+    # @claude NanoLLM doesn't mkdir the parent, so the container crashes with FileNotFoundError
+    # @claude if the directory is missing. Pre-create it so fresh Jetsons can go from
+    # @claude `git clone` to `docker compose up` in one shot.
     Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
 
-    # 후보 모델 선공개. 실제 사용 가능 목록은 precompile 결과로 갱신됨.
-    # 상태는 AppState 초기값 "initializing" 에서 시작해 _precompile_all 내부에서
-    # downloading/compiling 으로 전이된다.
+    # @claude Publish the candidate model list. The true available list comes back from
+    # @claude _precompile_all. State starts at "initializing" (AppState default) and transitions
+    # @claude to downloading/compiling inside _precompile_all.
     app_state.set_vlm_models(VLM_MODELS, MODEL_ID)
 
-    # 미컴파일 모델은 서브프로세스로 .so 생성 (같은 프로세스 순차 컴파일은 OOM).
+    # @claude Uncompiled models are built in a subprocess — sequential in-process compiles OOM.
     try:
         available = _precompile_all(VLM_MODELS)
     except Exception as e:
@@ -568,8 +601,9 @@ def main() -> None:
 
     log.info("Loading default VLM: %s", MODEL_ID)
     app_state.set_vlm_current_model(MODEL_ID)
-    # 다운로드/컴파일을 마친 모델을 메모리에 적재하는 단계. 'loading'은 이 단계만을
-    # 의미하도록 좁혔다(이전엔 다운로드·컴파일까지 포괄해 사용자에게 진행이 멈춘 것처럼 보였음).
+    # @claude Load the precompiled/downloaded model into memory. "loading" is scoped to
+    # @claude this single stage — previously it covered downloading+compiling too, which made
+    # @claude the UI look stuck.
     app_state.set_vlm_state("loading")
     t0 = time.time()
     try:
@@ -580,26 +614,25 @@ def main() -> None:
     log.info("Model loaded (%.1fs)", time.time() - t0)
     app_state.set_vlm_state("ready")
 
-    # 추론 워커 + /vlm/switch 핸들러 간 공유 홀더
+    # @claude Shared holder between the inference worker and the /vlm/switch handler.
     holder = ModelHolder(model, MODEL_ID)
     _set_holder(holder)
 
-    # 컴포넌트 초기화
     ring    = RingBuffer(maxlen=RING_SIZE)
     infer_q = queue.Queue(maxsize=1)
 
-    # restart_pipeline에서 접근할 수 있도록 참조 저장 (부팅 중 조기 호출은 no-op).
+    # @claude Publish refs for restart_pipeline (before this point, early calls are a no-op).
     global _pipeline_refs
     _pipeline_refs = {'ring': ring, 'infer_q': infer_q}
 
-    # 디버그 대시보드에 ring 참조 전달 (SSE 핸들러가 ring buffer 사용량을 노출)
+    # @claude Hand the ring ref to AppState so the SSE snapshot can expose ring fill level.
     app_state.set_refs(ring, RING_SIZE, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
     })
 
-    # 카메라 설정이 아직 없으면 web 입력을 대기 (start_server가 떠 있으므로
-    # 사용자는 모델 로딩 직후에도 카메라 프로필을 저장할 수 있다)
+    # @claude If no camera config is saved yet, wait for the user's web input (start_server
+    # @claude is already up, so the user can save a profile even while the model is loading).
     if not camera.camera_ready.is_set():
         log.info("Waiting for camera config (max 60s)...")
         if camera.camera_ready.wait(timeout=60):
@@ -607,7 +640,6 @@ def main() -> None:
         else:
             log.info("Camera not configured — pipeline will start when camera is set")
 
-    # 추론 워커 스레드 시작
     worker = threading.Thread(
         target=inference_worker,
         args=(holder, ring, infer_q),
@@ -615,10 +647,8 @@ def main() -> None:
     )
     worker.start()
 
-    # 프레임 워치독 스레드 시작 (rtspsrc 멈춤 시 자동 재시작)
     threading.Thread(target=watchdog_worker, daemon=True).start()
 
-    # GStreamer 파이프라인 초기화 (카메라 설정이 있을 때만 시작)
     Gst.init(None)
     if camera.camera_ready.is_set():
         start_pipeline(ring, infer_q)

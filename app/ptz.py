@@ -1,8 +1,10 @@
 """
-ONVIF PTZ 제어 모듈
+ONVIF PTZ control module.
 
-ContinuousMove / Stop / AbsoluteMove / GetStatus 폴링.
-SOAP + WS-Security(UsernameToken) 인증.
+ContinuousMove / Stop / AbsoluteMove / GetStatus polling, authenticated
+with SOAP + WS-Security (UsernameToken).
+
+@claude
 """
 
 import base64
@@ -110,7 +112,7 @@ def _post(body: str) -> str:
         return resp.read().decode()
 
 
-# ── PTZ 명령 ─────────────────────────────────────────────────────────────────
+# ── PTZ commands ─────────────────────────────────────────────────────────────
 
 def move(pan: float, tilt: float) -> None:
     if not is_configured():
@@ -176,10 +178,10 @@ def get_status() -> Optional[dict]:
     return None
 
 
-# ── 홈 위치 저장/로드 ────────────────────────────────────────────────────────
+# ── Home position save/load ──────────────────────────────────────────────────
 
 def load_home(data: Optional[dict]) -> None:
-    """프로파일에서 읽은 ptz_home dict를 반영한다."""
+    """Apply a ptz_home dict read from the saved profile. @claude"""
     global _saved
     if not data:
         return
@@ -195,7 +197,7 @@ def load_home(data: Optional[dict]) -> None:
 
 
 def save_home() -> Optional[dict]:
-    """현재 위치를 홈으로 저장. 호출자가 반환값을 프로파일에 영속화해야 한다."""
+    """Save the current position as home. Caller must persist the return value into the profile. @claude"""
     with _lock:
         cur = dict(_current)
     if cur["pan"] is None:
@@ -206,10 +208,10 @@ def save_home() -> Optional[dict]:
     return {"pan": cur["pan"], "tilt": cur["tilt"]}
 
 
-# ── 폴링 루프 ────────────────────────────────────────────────────────────────
+# ── Polling loop ─────────────────────────────────────────────────────────────
 
 def poll_loop() -> None:
-    """백그라운드 스레드: 2초마다 현재 PTZ 위치 폴링."""
+    """Background thread: poll the current PTZ position every 2 seconds. @claude"""
     while True:
         if is_configured():
             status = get_status()

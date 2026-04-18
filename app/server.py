@@ -1,15 +1,19 @@
 """
-Babycat — App HTTP 서버
+Babycat — app HTTP server.
 
-엔드포인트:
-  GET  /            HTML 대시보드
-  GET  /stream      MJPEG 스트림 (VLM 입력 프레임)
-  GET  /events      SSE (추론 결과 + 하드웨어 상태 실시간)
-  GET  /clips       클립 목록 (JSON)
-  GET  /clip/{name} 클립 파일 다운로드 (Range 지원)
-  POST /prompt      VLM 프롬프트/트리거 변경
-  POST /ptz         PTZ 제어 (move / stop / save / goto)
-  DELETE /clips     클립 선택 삭제
+Endpoints:
+  GET  /            Health check
+  GET  /stream      MJPEG stream (VLM input frames)
+  GET  /events      SSE (inference results + live hardware status)
+  GET  /clips       Clip list (JSON)
+  GET  /clip/{name} Clip file download (supports Range)
+  POST /prompt      Change VLM prompt / trigger keywords
+  POST /ptz         PTZ control (move / stop / save / goto)
+  POST /camera      Apply camera profile
+  POST /vlm/switch  Request VLM model switch
+  DELETE /clips     Delete selected clips
+
+@claude
 """
 
 import hashlib
@@ -32,12 +36,12 @@ from state import state as app_state
 
 log = logging.getLogger(__name__)
 
-MAX_BODY = 65536  # 64KB
+MAX_BODY = 65536  # @claude 64KB cap on request bodies.
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
 
 
 def _verify_jwt(token: str) -> bool:
-    """JWT(HMAC-SHA256) 서명 및 만료 검증."""
+    """Verify JWT (HMAC-SHA256) signature and expiry. @claude"""
     try:
         parts = token.split(".")
         if len(parts) != 3:
@@ -63,12 +67,12 @@ class AppHandler(BaseHTTPRequestHandler):
         pass
 
     def _check_auth(self) -> bool:
-        """Authorization 헤더 또는 쿼리 파라미터의 토큰 검증. 실패 시 401 응답."""
-        # 1) Authorization: Bearer <token>
+        """Validate a token from the Authorization header or the ?token= query param; 401 on failure. @claude"""
+        # @claude 1) Authorization: Bearer <token>
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and _verify_jwt(auth[7:]):
             return True
-        # 2) ?token=<token> (EventSource 등 헤더 설정 불가 클라이언트용)
+        # @claude 2) ?token=<token> for clients that can't set headers (EventSource, etc.).
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
         token_list = qs.get("token", [])
@@ -80,7 +84,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"detail": "unauthorized"}).encode())
         return False
 
-    # ── GET ───────────────────────────────────────────────────────────────────
+    # ── GET ──────────────────────────────────────────────────────────────────
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
@@ -102,7 +106,7 @@ class AppHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    # ── POST ──────────────────────────────────────────────────────────────────
+    # ── POST ─────────────────────────────────────────────────────────────────
 
     def do_POST(self):
         if not self._check_auth():
@@ -119,7 +123,7 @@ class AppHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    # ── DELETE ────────────────────────────────────────────────────────────────
+    # ── DELETE ───────────────────────────────────────────────────────────────
 
     def do_DELETE(self):
         if not self._check_auth():
@@ -130,7 +134,7 @@ class AppHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    # ── 유틸리티 ──────────────────────────────────────────────────────────────
+    # ── Utilities ────────────────────────────────────────────────────────────
 
     def _read_json_body(self) -> dict:
         try:
@@ -157,7 +161,7 @@ class AppHandler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 remaining -= len(chunk)
 
-    # ── 핸들러 구현 ──────────────────────────────────────────────────────────
+    # ── Handler implementations ──────────────────────────────────────────────
 
     def _serve_health(self):
         body = json.dumps({"status": "ok"}).encode()
@@ -227,14 +231,14 @@ class AppHandler(BaseHTTPRequestHandler):
         if not clip_dir:
             self.send_error(404)
             return
-        # 파일명이 {YYYYMMDD}_... 형식이므로 연/월 디렉토리를 추론
+        # @claude Filenames start with {YYYYMMDD}_, so infer the year/month directory first.
         fpath = None
         if len(name) >= 8 and name[:8].isdigit():
             yyyy, mm = name[:4], name[4:6]
             candidate = Path(clip_dir) / yyyy / mm / name
             if candidate.exists() and candidate.is_file():
                 fpath = candidate
-        # 폴백: 전체 재귀 검색
+        # @claude Fallback: recursive search across the clip directory.
         if fpath is None:
             for p in Path(clip_dir).rglob(name):
                 if p.is_file():
@@ -344,7 +348,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def _handle_camera(self):
         body = self._read_json_body()
         result = camera.apply(body)
-        # 카메라 설정 변경 시 파이프라인 재시작
+        # @claude Camera config change -> restart pipeline so rtspsrc attaches to the new source.
         if result.get("ok"):
             from main import restart_pipeline
             threading.Thread(target=restart_pipeline, daemon=True).start()
@@ -357,9 +361,13 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def _handle_vlm_switch(self):
         """
-        요청: {"model": "<model_id>"}
-        응답: {"ok": bool, "reason": str}
-        실제 전환은 추론 워커가 다음 iteration 시작 전에 수행.
+        Request:  {"model": "<model_id>"}
+        Response: {"ok": bool, "reason": str}
+
+        The actual switch is performed by the inference worker at the
+        start of its next iteration.
+
+        @claude
         """
         from holder import request_switch
         body = self._read_json_body()
@@ -411,10 +419,10 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"ok": True, "deleted": deleted}).encode())
 
 
-# ── 서버 시작 ────────────────────────────────────────────────────────────────
+# ── Server bootstrap ─────────────────────────────────────────────────────────
 
 def start_server(port: int = 8080):
-    """별도 데몬 스레드에서 App HTTP 서버 시작."""
+    """Start the App HTTP server in a dedicated daemon thread. @claude"""
     config = camera.load()
     ptz.load_home(config.get("ptz_home") if config else None)
 
