@@ -22,6 +22,9 @@ function toggleTheme() {
 const menuOpen = ref(false)
 const menuRef = ref(null)
 const menuBtnRef = ref(null)
+const profileMenuOpen = ref(false)
+const profileMenuRef = ref(null)
+const profileBtnRef = ref(null)
 const cameraModalOpen = ref(false)
 const passwordModalOpen = ref(false)
 const promptModalOpen = ref(false)
@@ -29,11 +32,20 @@ const clipsModalOpen = ref(false)
 
 function toggleMenu() {
   menuOpen.value = !menuOpen.value
+  if (menuOpen.value) profileMenuOpen.value = false
+}
+
+function toggleProfileMenu() {
+  profileMenuOpen.value = !profileMenuOpen.value
+  if (profileMenuOpen.value) menuOpen.value = false
 }
 
 function closeMenu(e) {
   if (menuRef.value && !menuRef.value.contains(e.target) && !menuBtnRef.value.contains(e.target)) {
     menuOpen.value = false
+  }
+  if (profileMenuRef.value && !profileMenuRef.value.contains(e.target) && !profileBtnRef.value.contains(e.target)) {
+    profileMenuOpen.value = false
   }
 }
 
@@ -43,7 +55,7 @@ function openCameraModal() {
 }
 
 function openPasswordModal() {
-  menuOpen.value = false
+  profileMenuOpen.value = false
   passwordModalOpen.value = true
 }
 
@@ -78,7 +90,7 @@ onMounted(() => {
 onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 
 function handleLogout() {
-  menuOpen.value = false
+  profileMenuOpen.value = false
   logout()
   router.push({ name: 'login' })
 }
@@ -86,22 +98,35 @@ function handleLogout() {
 
 <template>
   <div class="header">
-    <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="header-logo" />
-    <div class="header-actions">
+    <div class="header-left">
+      <div class="header-actions">
+        <div class="menu-wrapper">
+          <button ref="menuBtnRef" class="menu-btn" @click="toggleMenu" aria-label="메뉴">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
+          </button>
+          <Transition name="dropdown">
+            <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
+              <button class="dropdown-item" @click="openCameraModal">카메라 프로필 설정</button>
+              <button class="dropdown-item" @click="openPromptModal">프롬프트 설정</button>
+              <button class="dropdown-item" @click="openClipsModal">녹화 클립</button>
+              <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
+            </div>
+          </Transition>
+        </div>
+      </div>
+      <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="header-logo" />
+    </div>
+    <div class="header-right">
       <div class="menu-wrapper">
-        <button ref="menuBtnRef" class="menu-btn" @click="toggleMenu" aria-label="메뉴">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <line x1="3" y1="12" x2="21" y2="12"/>
-            <line x1="3" y1="18" x2="21" y2="18"/>
-          </svg>
+        <button ref="profileBtnRef" class="profile-btn" @click="toggleProfileMenu" aria-label="프로필">
+          <img src="/user_profile.svg" alt="" class="profile-icon" />
         </button>
         <Transition name="dropdown">
-          <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
-            <button class="dropdown-item" @click="openCameraModal">카메라 프로필 설정</button>
-            <button class="dropdown-item" @click="openPromptModal">프롬프트 설정</button>
-            <button class="dropdown-item" @click="openClipsModal">녹화 클립</button>
-            <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
+          <div v-if="profileMenuOpen" ref="profileMenuRef" class="dropdown-menu dropdown-menu-right">
             <button class="dropdown-item" @click="openPasswordModal">비밀번호 변경</button>
             <button class="dropdown-item danger" @click="handleLogout">로그아웃</button>
           </div>
@@ -180,6 +205,15 @@ function handleLogout() {
 </template>
 
 <style scoped>
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+}
 .header-logo {
   height: 32px;
   display: block;
@@ -194,27 +228,46 @@ function handleLogout() {
 .menu-wrapper {
   position: relative;
 }
-.menu-btn {
+.menu-btn,
+.profile-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius);
-  background: transparent;
   color: var(--text-2);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, filter 0.15s;
+}
+.menu-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
 }
 .menu-btn:hover {
   background: var(--bg-surface-hover);
+}
+.profile-btn {
+  border-radius: 50%;
+  background: transparent;
+  overflow: hidden;
+  padding: 0;
+}
+.profile-btn:hover {
+  filter: brightness(0.95);
+}
+.profile-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .dropdown-menu {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
   min-width: 140px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -222,6 +275,10 @@ function handleLogout() {
   box-shadow: var(--shadow-md);
   padding: 4px 0;
   z-index: 100;
+}
+.dropdown-menu.dropdown-menu-right {
+  left: auto;
+  right: 0;
 }
 .dropdown-item {
   display: block;
