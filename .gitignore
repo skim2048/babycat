@@ -44,6 +44,9 @@ config/cam_profile.json
 *.sln
 *.sw?
 
+# ChatGPT
+.codex
+
 # Claude
 .claude/
 CLAUDE.md
