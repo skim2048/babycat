@@ -7,13 +7,13 @@ defineProps({ open: Boolean })
 
 const { state } = useSSE()
 
-// ms → s 변환 후 소수점 둘째 자리까지 truncate (예: 5038.5 → 5.03)
+// @claude Convert ms -> s and truncate to two decimals (e.g. 5038.5 -> 5.03).
 const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(2))
 
-// VLM 상태 섹션(배지 + 라디오) 노출 여부. 모델이 하나라도 등록되어 있으면 표시.
+// @claude Whether to show the VLM section (badge + radios). Visible when at least one model exists.
 const showVlmSection = computed(() => (state.vlm_models?.length || 0) >= 1)
 
-// 준비 완료 상태가 아니면 라디오 비활성화 (initializing / loading / switching / error 등)
+// @claude Disable radios when not ready (initializing / loading / switching / error, etc.).
 const switchDisabled = computed(() => state.vlm_state !== 'ready')
 
 const vlmStatusLabel = computed(() => {
@@ -27,7 +27,7 @@ const vlmStatusLabel = computed(() => {
   return 'Loading VLM ...'
 })
 
-// 진행 중(스피너) 상태 — 사용자에게 "백에서 작업 중"임을 알려야 하는 모든 단계.
+// @claude In-progress states (spinner) — every stage the user should see as "work in flight on the backend".
 const vlmInProgress = computed(() =>
   ['initializing', 'loading', 'switching', 'downloading', 'compiling'].includes(state.vlm_state)
 )
@@ -45,7 +45,7 @@ async function selectModel(name) {
   }
 }
 
-// model id의 마지막 경로 조각을 표시 (예: Efficient-Large-Model/VILA1.5-3b → VILA1.5-3b)
+// @claude Display only the last path segment of the model id (e.g. Efficient-Large-Model/VILA1.5-3b -> VILA1.5-3b).
 function shortName(id) {
   if (!id) return ''
   const parts = id.split('/')
@@ -106,11 +106,11 @@ function shortName(id) {
 </template>
 
 <style scoped>
-/* 뷰포트 너비에 비례하여 폰트·여백 크기가 스케일링되도록 상대 단위 사용.
-   clamp(min, preferred, max)로 너무 작거나 커지는 것을 방지. */
+/* @claude Use viewport-relative units so font and padding scale with viewport width.
+   @claude clamp(min, preferred, max) prevents the result from getting too small or too large. */
 .infer-panel {
   position: absolute;
-  bottom: calc(1.2vw + 56px); /* 통합 video-bar(높이 약 44px + 여백) 위로 */
+  bottom: calc(1.2vw + 56px); /* @claude Sit above the unified video-bar (height ~44px + padding). */
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.7);
@@ -185,7 +185,7 @@ function shortName(id) {
   gap: 0.5em;
   align-items: baseline;
   justify-content: flex-start;
-  font-size: 11px; /* VLM 상태 배지와 동일 */
+  font-size: 11px; /* @claude Match the VLM status badge. */
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.55);
   line-height: 1.4;
@@ -210,7 +210,7 @@ function shortName(id) {
   color: rgba(255, 255, 255, 0.95);
 }
 .infer-meta {
-  font-size: 11px; /* VLM 상태 배지와 동일 */
+  font-size: 11px; /* @claude Match the VLM status badge. */
   font-weight: 600;
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.55);

@@ -5,7 +5,7 @@ import { useCamera } from '../composables/useCamera.js'
 const emit = defineEmits(['close'])
 const { config, status, save } = useCamera()
 
-// 로컬 복사본 — 취소 시 원본에 영향 없음
+// @claude Local working copy — cancelling leaves the shared config untouched.
 const local = reactive({
   ip: '',
   rtsp_port: 554,
@@ -48,7 +48,7 @@ function togglePasswordVisibility() {
 }
 
 async function handleSave() {
-  // 로컬 → 공유 config에 반영 후 저장
+  // @claude Copy local edits into the shared config, then save.
   Object.assign(config, local)
   const ok = await save()
   if (ok) emit('close')

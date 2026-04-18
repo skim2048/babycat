@@ -11,7 +11,7 @@ const { state: sseState } = useSSE()
 
 const { config, configured, connecting, connected, reconnectKey, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
 
-// 카메라 프로필 저장 성공 시 자동 재연결 (타임아웃 상태에서도 복구)
+// @claude Auto-reconnect after a successful camera-profile save (recovers from timeout state too).
 watch(reconnectKey, () => {
   if (!configured.value) return
   stopCountdown()
@@ -68,7 +68,7 @@ const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
 
-// MediaMTX 기본 포트. docker-compose의 mediamtx 서비스 publish와 일치해야 한다.
+// @claude MediaMTX default ports; must match the mediamtx service publish in docker-compose.
 const MEDIAMTX_HLS_PORT = 8888
 const MEDIAMTX_WHEP_PORT = 8889
 
@@ -374,7 +374,6 @@ async function collectStats() {
   const video = videoRef.value
   if (!video) return
 
-  // 해상도 (공통)
   if (video.videoWidth && video.videoHeight) {
     stats.resolution = `${video.videoWidth}×${video.videoHeight}`
   }
@@ -397,11 +396,9 @@ async function collectWebRTCStats() {
 
     reports.forEach((r) => {
       if (r.type === 'inbound-rtp' && r.kind === 'video') {
-        // FPS
         if (r.framesPerSecond != null) {
           stats.fps = `${Math.round(r.framesPerSecond)}`
         }
-        // 비트레이트
         const now = performance.now()
         const bytes = r.bytesReceived || 0
         if (prevBytes > 0 && now > prevTime) {
@@ -414,12 +411,10 @@ async function collectWebRTCStats() {
         }
         prevBytes = bytes
         prevTime = now
-        // 코덱
         if (r.codecId && codecs[r.codecId]) {
           const c = codecs[r.codecId]
           stats.codec = c.mimeType ? c.mimeType.replace('video/', '') : ''
         }
-        // 패킷 손실
         if (r.packetsLost != null && r.packetsReceived != null) {
           const total = r.packetsReceived + r.packetsLost
           if (total > 0) {
@@ -440,11 +435,9 @@ async function collectWebRTCStats() {
 function collectHlsStats() {
   if (!hls) return
   const level = hls.levels && hls.levels[hls.currentLevel]
-  // FPS
   if (level && level.attrs && level.attrs['FRAME-RATE']) {
     stats.fps = `${Math.round(parseFloat(level.attrs['FRAME-RATE']))}`
   }
-  // 비트레이트
   if (hls.bandwidthEstimate) {
     const bps = hls.bandwidthEstimate
     if (bps >= 1_000_000) {
@@ -453,7 +446,6 @@ function collectHlsStats() {
       stats.bitrate = `${Math.round(bps / 1000)} kbps`
     }
   }
-  // 코덱
   if (level && level.videoCodec) {
     stats.codec = level.videoCodec
   } else if (level && level.codecSet) {
@@ -497,7 +489,7 @@ onBeforeUnmount(() => {
     <div class="video-wrap" ref="videoWrapRef">
       <video ref="videoRef" muted playsinline />
 
-      <!-- 연결 대기중: 재생 아이콘 클릭으로 연결 -->
+      <!-- @claude Awaiting connection: click the play icon to connect. -->
       <div v-if="stopped" class="video-overlay clickable" @click="handleConnect">
         <div class="play-icon">
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -508,23 +500,23 @@ onBeforeUnmount(() => {
         <span class="overlay-text">연결 대기중</span>
       </div>
 
-      <!-- 연결 중 -->
+      <!-- @claude Connecting. -->
       <div v-else-if="loading" class="video-overlay">
         <div class="spinner" />
         <span class="overlay-text">연결 중... {{ remainingSec }}초</span>
       </div>
 
-      <!-- 연결 시간 초과 -->
+      <!-- @claude Connection timeout. -->
       <div v-else-if="timedOut" class="video-overlay">
         <span class="overlay-text timeout">네트워크 상태 또는 카메라 프로필을 확인하세요.</span>
         <button class="retry-btn" @click="handleConnect">재연결</button>
       </div>
 
 
-      <!-- 하단 중앙: 추론 결과 패널 -->
+      <!-- @claude Bottom-center: inference result panel. -->
       <InferenceOverlay :open="inferOpen && isPlaying" />
 
-      <!-- 우하단 패널 영역 (통합 바 위쪽에 anchor) -->
+      <!-- @claude Bottom-right panel area (anchored above the unified bar). -->
       <div class="toolbar-panels">
         <SystemOverlay :open="activePanel === 'sys'" />
 
@@ -560,16 +552,16 @@ onBeforeUnmount(() => {
         <PtzOverlay v-if="hasOnvif" :open="activePanel === 'ptz' && isPlaying" />
       </div>
 
-      <!-- 통합 하단 바 (우측 정렬, 항상 표시) -->
+      <!-- @claude Unified bottom bar (right-aligned, always visible). -->
       <div class="video-bar">
-        <!-- 시스템 모니터 (파형 시그널 아이콘) -->
+        <!-- @claude System monitor (waveform signal icon). -->
         <button class="toolbar-btn" @click.stop="togglePanel('sys')" title="시스템 모니터">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <polyline points="1,8 3,8 5,3 7,13 9,5 11,11 13,7 15,8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
         </button>
 
-        <!-- 송수신 정보 (교차 화살표 아이콘) -->
+        <!-- @claude Throughput info (crossed-arrows icon). -->
         <button
           class="toolbar-btn"
           :class="{ 'toolbar-btn-disabled': !isPlaying }"
@@ -585,7 +577,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <!-- 연결 해제 -->
+        <!-- @claude Disconnect. -->
         <button
           class="toolbar-btn"
           :class="{ 'toolbar-btn-disabled': !isPlaying }"
@@ -599,7 +591,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <!-- PTZ 조작 -->
+        <!-- @claude PTZ controls. -->
         <button
           v-if="hasOnvif"
           class="toolbar-btn"
@@ -617,7 +609,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <!-- 추론 결과 토글 -->
+        <!-- @claude Inference-result toggle. -->
         <button
           class="toolbar-btn infer-btn"
           :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
@@ -625,12 +617,12 @@ onBeforeUnmount(() => {
           @click.stop="inferOpen = !inferOpen"
           title="추론 결과"
         >
-          <!-- 평상시: 꺼진 전구 -->
+          <!-- @claude Idle: unlit bulb. -->
           <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5.5 14 L10.5 14" />
             <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
           </svg>
-          <!-- 이벤트 발생: 켜진 전구 -->
+          <!-- @claude Event fired: lit bulb. -->
           <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
             <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
@@ -642,7 +634,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <!-- 확대/축소 -->
+        <!-- @claude Zoom in/out. -->
         <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? '축소' : '확대'">
           <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="11,1 17,1 17,7" />
@@ -809,7 +801,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* 통합 하단 바: infer-area + video-toolbar 묶음 */
+/* @claude Unified bottom bar: infer-area + video-toolbar group. */
 .video-bar {
   position: absolute;
   bottom: 8px;
@@ -853,7 +845,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* 패널 영역 (통합 바 위) */
+/* @claude Panel area (above the unified bar). */
 .toolbar-panels {
   position: absolute;
   bottom: 60px;
