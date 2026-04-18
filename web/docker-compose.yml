@@ -10,9 +10,9 @@ services:
     container_name: babycat-web
     restart: unless-stopped
     ports:
-      - "5173:5173"    # Vite dev server
+      - "5173:5173"    # @claude Vite dev server.
     volumes:
-      - .:/app         # live-mount for HMR (web/ 자체). node_modules는 ./node_modules에 생성
+      - .:/app         # @claude Live-mount for HMR (web/ itself). node_modules lands under ./node_modules.
     networks:
       - babycat
 

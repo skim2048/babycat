@@ -1,6 +1,6 @@
-# Babycat — Web Dashboard Container (dev)
-# Vue 3 + Vite dev server
-# node_modules는 bind mount된 프로젝트 루트(./node_modules)에 생성됨
+# @claude Babycat — web dashboard container (dev).
+# @claude Vue 3 + Vite dev server.
+# @claude node_modules is populated under the bind-mounted project root (./node_modules).
 
 FROM node:22-slim
 

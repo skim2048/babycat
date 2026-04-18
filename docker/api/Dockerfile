@@ -1,5 +1,5 @@
-# Babycat — API Server Container
-# REST API (FastAPI) + SQLite (embedded)
+# @claude Babycat — API server container.
+# @claude REST API (FastAPI) + SQLite (embedded).
 
 FROM python:3.11-slim
 

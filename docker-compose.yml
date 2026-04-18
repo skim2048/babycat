@@ -5,14 +5,14 @@ services:
     container_name: babycat-mediamtx
     restart: unless-stopped
     environment:
-      # WebRTC ICE candidate로 광고할 호스트 IP (.env 의 HOST_IP).
-      # 컨테이너에서 호스트 NIC를 못 보므로 외부 주입. 콤마로 여러 개 가능.
+      # @claude Host IP advertised as a WebRTC ICE candidate (HOST_IP from .env).
+      # @claude Containers cannot see the host NIC, so it must be injected. Comma-separated list supported.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-}
     ports:
-      - "8554:8554"   # RTSP
-      - "8888:8888"   # HLS
-      - "8889:8889"   # WebRTC HTTP
-      - "8890:8890/udp"  # WebRTC ICE
+      - "8554:8554"   # @claude RTSP
+      - "8888:8888"   # @claude HLS
+      - "8889:8889"   # @claude WebRTC HTTP
+      - "8890:8890/udp"  # @claude WebRTC ICE
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
     networks:
@@ -27,43 +27,43 @@ services:
     restart: unless-stopped
     runtime: nvidia
     ports:
-      - "8080:8080"   # Debug web UI
+      - "8080:8080"   # @claude Debug web UI.
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-      # NVIDIA GStreamer plugins are mounted from host (see volumes below)
+      # @claude NVIDIA GStreamer plugins are mounted from the host (see volumes below).
       - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
-      # JWT 인증 (api 컨테이너와 동일한 시크릿 사용)
+      # @claude JWT auth (shares the secret with the api container).
       - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
-      # 선택 가능한 VLM 모델 목록 (콤마 구분). 첫 항목이 부팅 시 기본.
+      # @claude Candidate VLM model list (comma-separated). The first entry is the boot default.
       - VLM_MODELS=${VLM_MODELS:-Efficient-Large-Model/VILA1.5-3b}
-      # FCM 알림 (미설정 시 로그 출력만)
-      # FCM 활성화 방법:
-      #   1. Firebase Console에서 service account JSON 키 발급 → config/fcm_credentials.json 저장
-      #   2. 아래 두 줄 주석 해제 후 FCM_TOKEN 값 입력
-      #   3. volumes 섹션의 fcm_credentials 마운트도 주석 해제
+      # @claude FCM notifications (when unset, only logs).
+      # @claude Enabling FCM:
+      # @claude   1. In the Firebase console, mint a service-account JSON key and save to config/fcm_credentials.json.
+      # @claude   2. Uncomment the two lines below and set FCM_TOKEN.
+      # @claude   3. Uncomment the matching fcm_credentials mount in the volumes section.
       #- FCM_CREDENTIALS=/run/fcm/credentials.json
-      #- FCM_TOKEN=<기기_FCM_등록_토큰>
+      #- FCM_TOKEN=<device_fcm_registration_token>
     group_add:
-      - video                                                       # /dev/nvmap은 video 그룹(GID 44) 소유 — NrRmMemInitNvmap 접근 필수
+      - video                                                       # @claude /dev/nvmap is owned by the video group (GID 44); NrRmMemInitNvmap needs access.
     devices:
-      - /dev/v4l2-nvdec                                             # HW 비디오 디코더 (Orin NX)
-      - /dev/v4l2-nvenc                                             # HW 비디오 인코더 (Orin NX)
-      - /dev/nvmap                                                  # GPU 메모리 관리자 (nvv4l2decoder 필수)
-      - /dev/nvhost-ctrl-gpu                                        # GPU 제어
-      - /dev/nvhost-gpu                                             # GPU 채널
+      - /dev/v4l2-nvdec                                             # @claude HW video decoder (Orin NX).
+      - /dev/v4l2-nvenc                                             # @claude HW video encoder (Orin NX).
+      - /dev/nvmap                                                  # @claude GPU memory manager (required by nvv4l2decoder).
+      - /dev/nvhost-ctrl-gpu                                        # @claude GPU control.
+      - /dev/nvhost-gpu                                             # @claude GPU channel.
     volumes:
-      - ./data/models:/data/models                                 # NanoLLM model cache (MLC compiled). 프로젝트 외부 경로 금지 (이식성).
-      #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM 활성화 시 주석 해제
-      - ./app:/app                                                  # live-mount source for development
-      - ./config:/config                                              # camera.json, ptz_home.txt
-      - ./data:/data                                                  # 클립 저장 ({YYYY}/{MM}/*.mp4)
-      # Host NVIDIA GStreamer plugins & tegra libs (build-time install not possible)
+      - ./data/models:/data/models                                 # @claude NanoLLM model cache (MLC compiled). Must stay inside the project tree (portability).
+      #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # @claude Uncomment when FCM is enabled.
+      - ./app:/app                                                  # @claude Live-mount source for development.
+      - ./config:/config                                              # @claude camera.json, ptz_home.txt
+      - ./data:/data                                                  # @claude Clip storage ({YYYY}/{MM}/*.mp4).
+      # @claude Host NVIDIA GStreamer plugins + tegra libs (cannot be installed at image build time).
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
-      - /tmp/nvscsock:/tmp/nvscsock                                 # NvSciIPC 데몬 소켓 — NvMMLite HW 경로 필수 (없으면 cuvidv4l2로 폴백 후 CUDA_GPU_ID EINVAL)
-    ipc: host      # NvSciIPC uses POSIX shm/mqueue on host IPC namespace
+      - /tmp/nvscsock:/tmp/nvscsock                                 # @claude NvSciIPC daemon socket — NvMMLite HW path requires it (otherwise falls back to cuvidv4l2 and fails with CUDA_GPU_ID EINVAL).
+    ipc: host      # @claude NvSciIPC uses POSIX shm/mqueue on the host IPC namespace.
     depends_on:
       - babycat-mediamtx
     networks:
@@ -84,7 +84,7 @@ services:
       - DEFAULT_USER=${DEFAULT_USER:-admin}
       - DEFAULT_PASS=${DEFAULT_PASS:-admin}
     volumes:
-      - ./data:/data                          # 클립 저장 ({YYYY}/{MM}/*.mp4) + SQLite
+      - ./data:/data                          # @claude Clip storage ({YYYY}/{MM}/*.mp4) + SQLite.
     depends_on:
       - app
     networks:

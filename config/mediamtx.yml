@@ -1,15 +1,15 @@
 ###############################################
-# MediaMTX configuration for Babycat
+# @claude MediaMTX configuration for Babycat.
 ###############################################
 
-# Log level
+# @claude Log level.
 logLevel: info
 
-# API server (App 컨테이너가 런타임에 RTSP 소스를 설정)
+# @claude API server (the App container configures the RTSP source at runtime).
 api: yes
 apiAddress: :9997
 
-# API 접근 허용 (컨테이너 간 통신)
+# @claude Allow API access (for inter-container traffic).
 authInternalUsers:
   - user: any
     pass: ""
@@ -20,21 +20,22 @@ authInternalUsers:
       - action: read
       - action: playback
 
-# RTSP server
+# @claude RTSP server.
 rtspAddress: :8554
 
-# SRT 미사용 — 포트 8890 충돌 방지
+# @claude SRT not used — avoids a port 8890 conflict.
 srt: no
 
-# WebRTC server
+# @claude WebRTC server.
 webrtcAddress: :8889
-# webrtcAdditionalHosts: ICE candidate로 광고할 추가 호스트 IP/이름.
-# 컨테이너에서 호스트 NIC를 직접 볼 수 없으므로 docker-compose가 환경변수
-# MTX_WEBRTCADDITIONALHOSTS=${HOST_IP}로 주입한다 (.env 의 HOST_IP).
+# @claude webrtcAdditionalHosts: extra host IPs/names to advertise as ICE candidates.
+# @claude Containers cannot see the host NIC, so docker-compose injects
+# @claude MTX_WEBRTCADDITIONALHOSTS=${HOST_IP} (from .env).
 webrtcLocalUDPAddress: :8890
 
 paths:
   live:
-    # Source is configured at runtime via API from the app container
-    # (카메라 자격증명은 프론트엔드에서 입력 → App이 API로 설정)
-    # 이벤트 클립은 app 컨테이너가 ffmpeg로 RTSP에서 직접 재녹화한다 (mediamtx 세그먼트 미사용).
+    # @claude Source is configured at runtime via API from the app container.
+    # @claude (Camera credentials are entered in the frontend; the app sets them via the API.)
+    # @claude Event clips are re-recorded directly from RTSP by the app container via ffmpeg
+    # @claude — mediamtx segments are not used.
