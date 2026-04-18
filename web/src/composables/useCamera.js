@@ -11,14 +11,14 @@ const config = reactive({
   stream_protocol: 'hls',
 })
 
-// configured: camera.json에 설정이 저장된 상태 (영속)
-// connecting: 스트림 연결 시도 중 (transient)
-// connected:  스트림이 실제 재생 중 (transient, LiveStream이 설정)
+// @claude configured: profile is persisted in camera.json (durable).
+// @claude connecting: stream connection attempt in progress (transient).
+// @claude connected:  stream is actually playing (transient; set by LiveStream).
 const configured = ref(false)
 const connecting = ref(false)
 const connected = ref(false)
 const status = ref('')
-const reconnectKey = ref(0)  // 프로필 저장 성공 시 증가 → LiveStream이 자동 재연결
+const reconnectKey = ref(0)  // @claude Bumped on successful profile save so LiveStream auto-reconnects.
 let loaded = false
 
 async function load() {

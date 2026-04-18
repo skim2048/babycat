@@ -1,8 +1,10 @@
 import { useAuth } from './useAuth.js'
 
 /**
- * 인증 토큰을 자동으로 첨부하는 fetch 래퍼.
- * 401 응답 시 자동으로 토큰을 삭제하고 로그인 페이지로 리다이렉트한다.
+ * fetch wrapper that automatically attaches the auth token.
+ * On a 401 response it clears the token and redirects to /login.
+ *
+ * @claude
  */
 export function authFetch(url, options = {}) {
   const { getToken, logout } = useAuth()

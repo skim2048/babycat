@@ -3,33 +3,33 @@ import { useAuth } from './useAuth.js'
 
 const state = reactive({
   uptime: '-',
-  // Inference
+  // @claude Inference
   infer_raw: '',
   infer_ms: 0,
   event_triggered: false,
-  // Pipeline
+  // @claude Pipeline
   frame_w: 0,
   frame_h: 0,
   cfg_n_frames: 0,
-  // Hardware
+  // @claude Hardware
   cpu_percent: 0,
   ram_used_mb: 0,
   ram_total_mb: 0,
   gpu_load: 0,
   cpu_temp: 0,
   gpu_temp: 0,
-  // PTZ
+  // @claude PTZ
   ptz_pan: null,
   ptz_tilt: null,
   ptz_saved_pan: null,
   ptz_saved_tilt: null,
-  // Prompt
+  // @claude Prompt
   inference_prompt: '',
   trigger_keywords: '',
-  // Clips
+  // @claude Clips
   clip_count: 0,
-  // VLM lifecycle — downloading | compiling | loading | ready | switching | error
-  vlm_state: 'loading',
+  // @claude VLM lifecycle — initializing | downloading | compiling | loading | ready | switching | error
+  vlm_state: 'initializing',
   vlm_error: '',
   vlm_models: [],
   vlm_current_model: '',
@@ -57,7 +57,7 @@ function connect() {
       try {
         Object.assign(state, JSON.parse(e.data))
       } catch {
-        // malformed JSON — 무시
+        // @claude Malformed JSON — ignored.
       }
     }
 

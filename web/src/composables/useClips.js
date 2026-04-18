@@ -16,7 +16,7 @@ async function fetchClips() {
     clips.value = data.clips || []
     checked.value = {}
   } catch {
-    // 네트워크 오류 — 무시 (다음 SSE 갱신 시 재시도)
+    // @claude Network error — ignored; the next SSE tick will retry.
   }
 }
 
@@ -29,7 +29,7 @@ async function deleteClips(names) {
     })
     if (res.ok) await fetchClips()
   } catch {
-    // 네트워크 오류
+    // @claude Network error — ignored.
   }
 }
 
@@ -45,8 +45,8 @@ async function deleteSelected() {
   await deleteClips(names)
 }
 
-// 컴포넌트 생명주기와 분리된 글로벌 effectScope에 워처 등록.
-// 인증된 상태에서만 1회 등록하여 로그인 페이지에서 401 루프를 방지한다.
+// @claude Register the watcher in a global effectScope, detached from component lifetimes.
+// @claude Only registered once while authenticated; prevents a 401 loop on the login page.
 const globalScope = effectScope(true)
 let watcherStarted = false
 function ensureWatcher() {
