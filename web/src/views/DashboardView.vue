@@ -118,7 +118,7 @@ function handleLogout() {
     </div>
   </div>
 
-  <!-- Camera Profile Modal -->
+  <!-- @claude Camera Profile Modal -->
   <Transition name="modal">
     <div v-if="cameraModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
@@ -133,7 +133,7 @@ function handleLogout() {
     </div>
   </Transition>
 
-  <!-- Change Password Modal -->
+  <!-- @claude Change Password Modal -->
   <Transition name="modal">
     <div v-if="passwordModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
@@ -148,7 +148,7 @@ function handleLogout() {
     </div>
   </Transition>
 
-  <!-- Clips Modal -->
+  <!-- @claude Clips Modal -->
   <Transition name="modal">
     <div v-if="clipsModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content clips-modal">
@@ -163,7 +163,7 @@ function handleLogout() {
     </div>
   </Transition>
 
-  <!-- Prompt Settings Modal -->
+  <!-- @claude Prompt Settings Modal -->
   <Transition name="modal">
     <div v-if="promptModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
@@ -264,7 +264,7 @@ function handleLogout() {
   font-size: 14px;
 }
 
-/* ── Modal ── */
+/* @claude ── Modal ── */
 .modal-backdrop {
   position: fixed;
   inset: 0;

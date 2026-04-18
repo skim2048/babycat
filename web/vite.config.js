@@ -6,13 +6,13 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    // Vite 5.0.12+/6은 기본적으로 localhost 외 Host 헤더를 차단 (CVE-2025-30208).
-    // 사설망(Jetson IP)에서 접속하는 구성이므로 모든 호스트 허용.
+    // @claude Vite 5.0.12+/6 block non-localhost Host headers by default (CVE-2025-30208).
+    // @claude We serve from a private network (Jetson IP), so all hosts are allowed.
     allowedHosts: true,
     proxy: {
       '/api':     'http://api:8000',
-      '/clips':   'http://api:8000',   // 클립 목록/다운로드/삭제는 api 단일화 (Phase 4)
-      '/events':  'http://app:8080',   // SSE — query token 인증
+      '/clips':   'http://api:8000',   // @claude Clip list / download / delete go through api (Phase 4).
+      '/events':  'http://app:8080',   // @claude SSE — query-token auth.
       '/prompt':  'http://app:8080',
       '/ptz':     'http://app:8080',
       '/camera':  'http://app:8080',
