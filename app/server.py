@@ -114,6 +114,8 @@ class AppHandler(BaseHTTPRequestHandler):
             self._handle_ptz()
         elif path == "/camera":
             self._handle_camera()
+        elif path == "/vlm/switch":
+            self._handle_vlm_switch()
         else:
             self.send_error(404)
 
@@ -352,6 +354,27 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(resp)))
         self.end_headers()
         self.wfile.write(resp)
+
+    def _handle_vlm_switch(self):
+        """
+        요청: {"model": "<model_id>"}
+        응답: {"ok": bool, "reason": str}
+        실제 전환은 추론 워커가 다음 iteration 시작 전에 수행.
+        """
+        from holder import request_switch
+        body = self._read_json_body()
+        name = (body.get("model") or "").strip()
+        if not name:
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": False, "reason": "model required"}).encode())
+            return
+        ok, reason = request_switch(name)
+        self.send_response(200 if ok else 400)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": ok, "reason": reason}).encode())
 
     def _handle_clip_delete(self):
         body = self._read_json_body()

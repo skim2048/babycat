@@ -28,9 +28,11 @@ const state = reactive({
   trigger_keywords: '',
   // Clips
   clip_count: 0,
-  // VLM lifecycle — loading | ready | error
+  // VLM lifecycle — downloading | compiling | loading | ready | switching | error
   vlm_state: 'loading',
   vlm_error: '',
+  vlm_models: [],
+  vlm_current_model: '',
 })
 
 let started = false

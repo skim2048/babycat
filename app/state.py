@@ -46,15 +46,32 @@ class AppState:
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
 
-        # VLM 로드 생명주기 — loading | ready | error
+        # VLM 로드 생명주기 — downloading | compiling | loading | ready | switching | error
+        # loading은 "로컬에 준비된 모델을 메모리에 올리는 단계"만 의미한다.
         self.vlm_state: str = "loading"
         self.vlm_error: str = ""
+        self.vlm_models: list[str] = []
+        self.vlm_current_model: str = ""
 
     def set_vlm_state(self, state: str, error: str = ""):
         """VLM 상태 전이 + SSE 즉시 푸시."""
         with self._lock:
             self.vlm_state = state
             self.vlm_error = error
+        self._sse_push()
+
+    def set_vlm_models(self, models: list[str], current: str):
+        with self._lock:
+            self.vlm_models = list(models)
+            self.vlm_current_model = current
+        self._sse_push()
+
+    def set_vlm_current_model(self, current: str):
+        with self._lock:
+            self.vlm_current_model = current
+        self._sse_push()
+
+    def _sse_push(self):
         with self._sse_lock:
             for q in self._sse_queues:
                 try:
@@ -202,6 +219,8 @@ class AppState:
             "clip_count": len(self.list_clips()),
             "vlm_state": self.vlm_state,
             "vlm_error": self.vlm_error,
+            "vlm_models": list(self.vlm_models),
+            "vlm_current_model": self.vlm_current_model,
             **{f"cfg_{k}": v for k, v in self._config.items()},
         }
 

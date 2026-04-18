@@ -37,7 +37,10 @@ log = logging.getLogger(__name__)
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
 MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://babycat-mediamtx:8554/live")
-MODEL_ID     = os.getenv("VLM_MODEL",    "Efficient-Large-Model/VILA1.5-3b")
+
+# VLM_MODELS / holder 싱글톤은 별도 모듈에서 관리 (__main__ 이중 import 회피).
+from holder import VLM_MODELS, set_holder as _set_holder, set_available as _set_available
+MODEL_ID = VLM_MODELS[0]
 
 TARGET_FPS = float(os.getenv("TARGET_FPS", "1.0"))
 N_FRAMES   = int(os.getenv("N_FRAMES",   "4"))
@@ -150,6 +153,135 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     debug_state.invalidate_clip_cache()
 
 
+# ── VLM 모델 홀더 (전환 지원) ─────────────────────────────────────────────────
+
+class ModelHolder:
+    """
+    추론 워커가 읽는 현재 모델 + 대기 중인 전환 요청.
+    워커는 매 iteration 시작 전 pop_request()로 전환 요청을 확인하고,
+    진행 중이던 추론이 끝난 뒤에만 전환이 수행된다 (원자성).
+    """
+    def __init__(self, model, name: str):
+        self._lock = threading.Lock()
+        self.model = model
+        self.name = name
+        self._switch_to: str | None = None
+
+    def request_switch(self, name: str) -> bool:
+        if name not in VLM_MODELS:
+            return False
+        with self._lock:
+            if name == self.name and self._switch_to is None:
+                return True  # 이미 해당 모델 — no-op 성공
+            self._switch_to = name
+        return True
+
+    def pop_request(self) -> str | None:
+        with self._lock:
+            target, self._switch_to = self._switch_to, None
+            return target
+
+
+def _load_model(model_id: str):
+    """NanoLLM 로드 (q4f16_ft MLC). 예외는 상위에서 처리."""
+    return NanoLLM.from_pretrained(model_id, api="mlc", quantization="q4f16_ft")
+
+
+def _so_path(model_id: str) -> Path:
+    """MLC 컴파일 산출물 경로. NanoLLM 내부 규약에 의존."""
+    base = model_id.split("/")[-1]
+    return Path(f"/data/models/mlc/dist/{base}/ctx4096/{base}-q4f16_ft/{base}-q4f16_ft-cuda.so")
+
+
+def _hf_snapshot_exists(model_id: str) -> bool:
+    """HF 스냅샷 캐시 존재 여부. 없으면 _precompile_one이 다운로드부터 수행한다."""
+    return Path(f"/data/models/huggingface/models--{model_id.replace('/', '--')}").exists()
+
+
+def _precompile_one(model_id: str) -> bool:
+    """
+    서브프로세스에서 NanoLLM.from_pretrained 호출 → .so 캐시 생성 후 프로세스 종료.
+    서브프로세스 종료 시 OS가 CUDA/TVM 메모리를 확실히 회수하므로, 순차 컴파일 시
+    이전 모델 잔여로 인한 OOM을 방지한다.
+    """
+    log.info("Precompiling VLM (subprocess): %s", model_id)
+    t0 = time.time()
+    code = (
+        "from nano_llm import NanoLLM; "
+        f"NanoLLM.from_pretrained({model_id!r}, api='mlc', quantization='q4f16_ft')"
+    )
+    result = subprocess.run([sys.executable, "-c", code], check=False)
+    if result.returncode != 0:
+        log.error("Precompile failed for %s (exit %d)", model_id, result.returncode)
+        return False
+    log.info("Precompiled %s in %.1fs", model_id, time.time() - t0)
+    return True
+
+
+def _precompile_all(models: list[str]) -> list[str]:
+    """
+    .so가 없는 모델만 순차 컴파일. 반환값은 사용 가능한(캐시 완비) 모델 리스트.
+    기본 모델(리스트 첫 항목) 컴파일 실패 시 RuntimeError로 중단 — 없으면 부팅 불가.
+    보조 모델 실패 시 해당 모델만 드롭하고 진행.
+    """
+    available = []
+    for m in models:
+        if _so_path(m).exists():
+            log.info("MLC cache hit: %s", m)
+            available.append(m)
+            continue
+        debug_state.set_vlm_current_model(m)  # UI에 현재 컴파일 중인 모델 표시
+        # HF 스냅샷이 없으면 _precompile_one이 다운로드부터 수행 — 다운로드가
+        # 컴파일보다 훨씬 길기 때문에 더 두드러진 단계로 라벨링한다. 한 서브프로세스
+        # 안에서 다운로드→컴파일이 연속 진행되므로 경계는 정확하지 않다(설계상 OK).
+        if not _hf_snapshot_exists(m):
+            debug_state.set_vlm_state("downloading")
+        else:
+            debug_state.set_vlm_state("compiling")
+        ok = _precompile_one(m)
+        if ok:
+            available.append(m)
+        elif m == models[0]:
+            raise RuntimeError(f"default model precompile failed: {m}")
+        else:
+            log.warning("Dropping %s from available models (precompile failed)", m)
+    return available
+
+
+def _perform_switch(holder: ModelHolder, target: str) -> None:
+    """
+    홀더의 모델을 target으로 교체. 진행 중 추론은 호출 전에 끝났다고 가정.
+    실패 시 기존 모델로 복귀 시도.
+    """
+    prev = holder.name
+    log.info("Switching VLM: %s → %s", prev, target)
+    debug_state.set_vlm_state("switching")
+    debug_state.set_vlm_current_model(target)  # UI에는 곧 전환될 모델 선반영
+
+    holder.model = None
+    gc.collect()
+
+    try:
+        new_model = _load_model(target)
+    except Exception as e:
+        log.error("VLM switch failed (%s → %s): %s", prev, target, e)
+        debug_state.set_vlm_state("error", f"{target}: {str(e)[:200]}")
+        # 이전 모델로 복귀 시도
+        try:
+            holder.model = _load_model(prev)
+            debug_state.set_vlm_current_model(prev)
+            debug_state.set_vlm_state("ready")
+            log.info("Rolled back to %s", prev)
+        except Exception as e2:
+            log.error("Rollback to %s also failed: %s", prev, e2)
+        return
+
+    holder.model = new_model
+    holder.name = target
+    debug_state.set_vlm_state("ready")
+    log.info("VLM switch complete: %s", target)
+
+
 # ── VLM 추론 ──────────────────────────────────────────────────────────────────
 
 def run_inference(model: NanoLLM, frames: list) -> str:
@@ -168,7 +300,14 @@ def run_inference(model: NanoLLM, frames: list) -> str:
     for token in model.generate(embedding, max_new_tokens=32, streaming=True):
         tokens.append(token)
 
-    raw = "".join(tokens).replace("</s>", "").strip()
+    raw = "".join(tokens)
+    # 스톱 토큰 이후 잘라냄 (vicuna-v1: </s>, ChatML: <|im_end|>).
+    # roleplay 아티팩트(###, <|im_start|>, assistant:)도 등장 시 그 앞까지만 사용.
+    for marker in ("<|im_end|>", "</s>", "<|im_start|>", "###", "assistant:", "user:"):
+        idx = raw.find(marker)
+        if idx >= 0:
+            raw = raw[:idx]
+    raw = raw.strip()
     chat.reset()
     gc.collect()
 
@@ -177,14 +316,22 @@ def run_inference(model: NanoLLM, frames: list) -> str:
 
 # ── 추론 워커 스레드 ───────────────────────────────────────────────────────────
 
-def inference_worker(model: NanoLLM, ring: RingBuffer,
+def inference_worker(holder: "ModelHolder", ring: RingBuffer,
                      infer_queue: queue.Queue) -> None:
     """
     appsink 콜백이 infer_queue에 신호를 보내면 ring에서 최신 N_FRAMES를 꺼내
     VLM 추론 → 키워드 매칭 → 필요 시 트리거 클립 저장.
+
+    매 iteration 시작 전 holder.pop_request()로 모델 전환 요청을 확인하여,
+    진행 중이던 추론이 끝난 뒤에만 전환이 수행되도록 보장한다.
     """
     log.info("VLM inference thread started")
     while True:
+        # 추론 1회 완료 직후 시점에서 전환 요청 처리
+        target = holder.pop_request()
+        if target and target != holder.name:
+            _perform_switch(holder, target)
+
         try:
             infer_queue.get(timeout=5)
         except queue.Empty:
@@ -193,13 +340,17 @@ def inference_worker(model: NanoLLM, ring: RingBuffer,
         if ptz_is_moving():
             continue
 
+        if holder.model is None:
+            # 전환 실패 후 복귀도 실패한 상태 — 스킵
+            continue
+
         frames = ring.latest(N_FRAMES)
         if not frames:
             continue
 
         t0 = time.time()
         try:
-            raw = run_inference(model, frames)
+            raw = run_inference(holder.model, frames)
         except Exception as e:
             log.error("VLM inference error: %s", e)
             continue
@@ -370,7 +521,8 @@ def main() -> None:
 
     log.info("=== Babycat App start ===")
     log.info("  MEDIAMTX_URL : %s", MEDIAMTX_URL)
-    log.info("  MODEL_ID     : %s", MODEL_ID)
+    log.info("  VLM_MODELS   : %s", VLM_MODELS)
+    log.info("  MODEL_ID     : %s (default)", MODEL_ID)
     log.info("  TARGET_FPS   : %s", TARGET_FPS)
     log.info("  N_FRAMES     : %s", N_FRAMES)
     log.info("  RING_SIZE    : %s", RING_SIZE)
@@ -397,16 +549,36 @@ def main() -> None:
     # 번에 동작하려면 여기서 미리 만들어 둬야 한다.
     Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
 
-    log.info("Loading VLM model: %s", MODEL_ID)
+    # 후보 모델 선공개 + 상태 전이. 실제 사용 가능 목록은 precompile 결과로 갱신됨.
+    debug_state.set_vlm_models(VLM_MODELS, MODEL_ID)
+    debug_state.set_vlm_state("loading")
+
+    # 미컴파일 모델은 서브프로세스로 .so 생성 (같은 프로세스 순차 컴파일은 OOM).
+    try:
+        available = _precompile_all(VLM_MODELS)
+    except Exception as e:
+        debug_state.set_vlm_state("error", str(e)[:240])
+        raise
+    debug_state.set_vlm_models(available, MODEL_ID)
+    _set_available(available)
+
+    log.info("Loading default VLM: %s", MODEL_ID)
+    debug_state.set_vlm_current_model(MODEL_ID)
+    # 다운로드/컴파일을 마친 모델을 메모리에 적재하는 단계. 'loading'은 이 단계만을
+    # 의미하도록 좁혔다(이전엔 다운로드·컴파일까지 포괄해 사용자에게 진행이 멈춘 것처럼 보였음).
     debug_state.set_vlm_state("loading")
     t0 = time.time()
     try:
-        model = NanoLLM.from_pretrained(MODEL_ID, api="mlc", quantization="q4f16_ft")
+        model = _load_model(MODEL_ID)
     except Exception as e:
         debug_state.set_vlm_state("error", str(e)[:240])
         raise
     log.info("Model loaded (%.1fs)", time.time() - t0)
     debug_state.set_vlm_state("ready")
+
+    # 추론 워커 + /vlm/switch 핸들러 간 공유 홀더
+    holder = ModelHolder(model, MODEL_ID)
+    _set_holder(holder)
 
     # 컴포넌트 초기화
     ring    = RingBuffer(maxlen=RING_SIZE)
@@ -433,7 +605,7 @@ def main() -> None:
     # 추론 워커 스레드 시작
     worker = threading.Thread(
         target=inference_worker,
-        args=(model, ring, infer_q),
+        args=(holder, ring, infer_q),
         daemon=True,
     )
     worker.start()

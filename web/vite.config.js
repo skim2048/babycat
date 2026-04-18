@@ -16,6 +16,7 @@ export default defineConfig({
       '/prompt':  'http://app:8080',
       '/ptz':     'http://app:8080',
       '/camera':  'http://app:8080',
+      '/vlm':     'http://app:8080',
     },
   },
 })

@@ -36,6 +36,8 @@ services:
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
       # JWT 인증 (api 컨테이너와 동일한 시크릿 사용)
       - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
+      # 선택 가능한 VLM 모델 목록 (콤마 구분). 첫 항목이 부팅 시 기본.
+      - VLM_MODELS=${VLM_MODELS:-Efficient-Large-Model/VILA1.5-3b}
       # FCM 알림 (미설정 시 로그 출력만)
       # FCM 활성화 방법:
       #   1. Firebase Console에서 service account JSON 키 발급 → config/fcm_credentials.json 저장
