@@ -28,7 +28,7 @@ from pathlib import Path
 
 import camera
 import ptz
-from state import state
+from state import state as app_state
 
 log = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         try:
             while True:
-                jpeg = state.get_jpeg()
+                jpeg = app_state.get_jpeg()
                 if jpeg:
                     self.wfile.write(b"--frame\r\n")
                     self.wfile.write(b"Content-Type: image/jpeg\r\n")
@@ -193,23 +193,23 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        q = state.sse_subscribe()
+        q = app_state.sse_subscribe()
         try:
             while True:
                 try:
                     q.get(timeout=1)
                 except queue.Empty:
                     pass
-                snap = state.snapshot()
+                snap = app_state.snapshot()
                 self.wfile.write(f"data: {json.dumps(snap, ensure_ascii=False)}\n\n".encode())
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
-            state.sse_unsubscribe(q)
+            app_state.sse_unsubscribe(q)
 
     def _serve_clip_list(self):
-        clips = state.list_clips()
+        clips = app_state.list_clips()
         body = json.dumps(clips, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -223,7 +223,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if "/" in name or "\\" in name or ".." in name:
             self.send_error(400)
             return
-        clip_dir = state.get_clip_dir()
+        clip_dir = app_state.get_clip_dir()
         if not clip_dir:
             self.send_error(404)
             return
@@ -277,10 +277,10 @@ class AppHandler(BaseHTTPRequestHandler):
         prompt = body.get("prompt", "").strip()
         triggers_raw = body.get("triggers", "").strip()
         if prompt:
-            state.set_prompt(prompt)
+            app_state.set_prompt(prompt)
             log.info("Prompt changed: %s", prompt[:80])
         keywords = [k.strip().lower() for k in triggers_raw.split(",") if k.strip()]
-        state.set_triggers(keywords)
+        app_state.set_triggers(keywords)
         if keywords:
             log.info("Trigger keywords: %s", keywords)
         self.send_response(200)
@@ -379,7 +379,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def _handle_clip_delete(self):
         body = self._read_json_body()
         names = body.get("names", [])
-        clip_dir = state.get_clip_dir()
+        clip_dir = app_state.get_clip_dir()
         deleted = 0
         if clip_dir:
             base = Path(clip_dir)
@@ -403,7 +403,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     if meta_path.exists():
                         meta_path.unlink()
         if deleted > 0:
-            state.invalidate_clip_cache()
+            app_state.invalidate_clip_cache()
         log.info("Clips deleted: %d", deleted)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

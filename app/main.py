@@ -28,7 +28,7 @@ from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
 import camera
-from state import state as debug_state
+from state import state as app_state
 from server import start_server
 from ptz import is_moving as ptz_is_moving
 
@@ -102,7 +102,7 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
             return
         _trigger_last_save = event_time
 
-    clip_dir = debug_state.get_clip_dir()
+    clip_dir = app_state.get_clip_dir()
     if not clip_dir:
         log.warning("No clip directory set — skipping trigger clip")
         return
@@ -150,7 +150,7 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     except Exception as e:
         log.error("metadata save error: %s", e)
 
-    debug_state.invalidate_clip_cache()
+    app_state.invalidate_clip_cache()
 
 
 # ── VLM 모델 홀더 (전환 지원) ─────────────────────────────────────────────────
@@ -230,14 +230,14 @@ def _precompile_all(models: list[str]) -> list[str]:
             log.info("MLC cache hit: %s", m)
             available.append(m)
             continue
-        debug_state.set_vlm_current_model(m)  # UI에 현재 컴파일 중인 모델 표시
+        app_state.set_vlm_current_model(m)  # UI에 현재 컴파일 중인 모델 표시
         # HF 스냅샷이 없으면 _precompile_one이 다운로드부터 수행 — 다운로드가
         # 컴파일보다 훨씬 길기 때문에 더 두드러진 단계로 라벨링한다. 한 서브프로세스
         # 안에서 다운로드→컴파일이 연속 진행되므로 경계는 정확하지 않다(설계상 OK).
         if not _hf_snapshot_exists(m):
-            debug_state.set_vlm_state("downloading")
+            app_state.set_vlm_state("downloading")
         else:
-            debug_state.set_vlm_state("compiling")
+            app_state.set_vlm_state("compiling")
         ok = _precompile_one(m)
         if ok:
             available.append(m)
@@ -255,8 +255,8 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
     """
     prev = holder.name
     log.info("Switching VLM: %s → %s", prev, target)
-    debug_state.set_vlm_state("switching")
-    debug_state.set_vlm_current_model(target)  # UI에는 곧 전환될 모델 선반영
+    app_state.set_vlm_state("switching")
+    app_state.set_vlm_current_model(target)  # UI에는 곧 전환될 모델 선반영
 
     holder.model = None
     gc.collect()
@@ -265,12 +265,12 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
         new_model = _load_model(target)
     except Exception as e:
         log.error("VLM switch failed (%s → %s): %s", prev, target, e)
-        debug_state.set_vlm_state("error", f"{target}: {str(e)[:200]}")
+        app_state.set_vlm_state("error", f"{target}: {str(e)[:200]}")
         # 이전 모델로 복귀 시도
         try:
             holder.model = _load_model(prev)
-            debug_state.set_vlm_current_model(prev)
-            debug_state.set_vlm_state("ready")
+            app_state.set_vlm_current_model(prev)
+            app_state.set_vlm_state("ready")
             log.info("Rolled back to %s", prev)
         except Exception as e2:
             log.error("Rollback to %s also failed: %s", prev, e2)
@@ -278,7 +278,7 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
 
     holder.model = new_model
     holder.name = target
-    debug_state.set_vlm_state("ready")
+    app_state.set_vlm_state("ready")
     log.info("VLM switch complete: %s", target)
 
 
@@ -293,7 +293,7 @@ def run_inference(model: NanoLLM, frames: list) -> str:
     chat = ChatHistory(model)
     for img in frames:
         chat.append('user', image=img)
-    chat.append('user', text=debug_state.get_prompt())
+    chat.append('user', text=app_state.get_prompt())
 
     embedding, _ = chat.embed_chat()
     tokens = []
@@ -357,7 +357,7 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
         elapsed_ms = (time.time() - t0) * 1000
 
         # 트리거 키워드 매칭
-        triggers = debug_state.get_triggers()
+        triggers = app_state.get_triggers()
         raw_lower = raw.lower()
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
         event_triggered = len(matched) > 0
@@ -367,7 +367,7 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
         else:
             log.info("%.0fms -> normal", elapsed_ms)
 
-        debug_state.update_inference(
+        app_state.update_inference(
             "EVENT" if event_triggered else "정상",
             raw, elapsed_ms,
             event_triggered=event_triggered)
@@ -429,7 +429,7 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
         global _last_frame_time
         _last_frame_time = time.time()
         ring.push(img)
-        debug_state.update_frame(img, w, h)
+        app_state.update_frame(img, w, h)
 
         try:
             infer_queue.put_nowait(True)
@@ -447,6 +447,10 @@ _pipeline = None
 _pipeline_lock = threading.Lock()
 _pipeline_started_at: float = 0.0
 _last_frame_time: float = 0.0
+
+# 파이프라인 참조(ring/infer_q). main()에서 초기화 전에는 None이며,
+# 이 시점에 restart_pipeline()이 호출되면 no-op으로 빠진다 (부팅 중 호출 안전).
+_pipeline_refs: dict | None = None
 
 # 워치독 파라미터
 WATCHDOG_GRACE    = 15.0   # PLAYING 이후 이 시간 안에 프레임이 없어도 유예 (초기 RTSP 확립)
@@ -479,9 +483,8 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
 
 def restart_pipeline() -> None:
     """외부(서버 핸들러 등)에서 파이프라인 재시작을 요청할 때 사용."""
-    refs = getattr(restart_pipeline, '_refs', None)
-    if refs:
-        start_pipeline(refs['ring'], refs['infer_q'])
+    if _pipeline_refs is not None:
+        start_pipeline(_pipeline_refs['ring'], _pipeline_refs['infer_q'])
 
 
 def watchdog_worker() -> None:
@@ -528,8 +531,8 @@ def main() -> None:
     log.info("  RING_SIZE    : %s", RING_SIZE)
 
     # 디버그 상태 초기 세팅 (모델 로드 전에 디버그 서버가 정상 동작해야 함)
-    debug_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
-    debug_state.set_clip_dir(camera.DATA_DIR)
+    app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
+    app_state.set_clip_dir(camera.DATA_DIR)
 
     # 디버그 웹서버 즉시 시작 — 모델 로딩 중에도 web에서 카메라 프로필 저장 가능해야 함.
     # 모델 캐시가 비어 있으면 NanoLLM.from_pretrained가 수십 분 걸릴 수 있다.
@@ -539,9 +542,9 @@ def main() -> None:
     threading.Thread(target=camera.startup_apply, daemon=True).start()
 
     # VLM 모델 로드 (시간 소요. 모델 로드 중 사용자가 web에서 카메라 프로필을
-    # 저장하면 camera.apply가 정상 동작하지만, restart_pipeline은 _refs가 아직
-    # 없으므로 no-op이 되며, 모델 로드 후 camera.camera_ready가 set되어 있으면
-    # 아래에서 start_pipeline이 한 번 호출된다.)
+    # 저장하면 camera.apply가 정상 동작하지만, restart_pipeline은 _pipeline_refs가
+    # 아직 None이므로 no-op이 되며, 모델 로드 후 camera.camera_ready가 set되어
+    # 있으면 아래에서 start_pipeline이 한 번 호출된다.)
     #
     # MLC quantize()가 huggingface 스냅샷을 /data/models/mlc/dist/models/{MODEL}로
     # symlink 만드는데 부모 디렉토리가 없으면 FileNotFoundError로 컨테이너가 죽는다
@@ -549,32 +552,33 @@ def main() -> None:
     # 번에 동작하려면 여기서 미리 만들어 둬야 한다.
     Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
 
-    # 후보 모델 선공개 + 상태 전이. 실제 사용 가능 목록은 precompile 결과로 갱신됨.
-    debug_state.set_vlm_models(VLM_MODELS, MODEL_ID)
-    debug_state.set_vlm_state("loading")
+    # 후보 모델 선공개. 실제 사용 가능 목록은 precompile 결과로 갱신됨.
+    # 상태는 AppState 초기값 "initializing" 에서 시작해 _precompile_all 내부에서
+    # downloading/compiling 으로 전이된다.
+    app_state.set_vlm_models(VLM_MODELS, MODEL_ID)
 
     # 미컴파일 모델은 서브프로세스로 .so 생성 (같은 프로세스 순차 컴파일은 OOM).
     try:
         available = _precompile_all(VLM_MODELS)
     except Exception as e:
-        debug_state.set_vlm_state("error", str(e)[:240])
+        app_state.set_vlm_state("error", str(e)[:240])
         raise
-    debug_state.set_vlm_models(available, MODEL_ID)
+    app_state.set_vlm_models(available, MODEL_ID)
     _set_available(available)
 
     log.info("Loading default VLM: %s", MODEL_ID)
-    debug_state.set_vlm_current_model(MODEL_ID)
+    app_state.set_vlm_current_model(MODEL_ID)
     # 다운로드/컴파일을 마친 모델을 메모리에 적재하는 단계. 'loading'은 이 단계만을
     # 의미하도록 좁혔다(이전엔 다운로드·컴파일까지 포괄해 사용자에게 진행이 멈춘 것처럼 보였음).
-    debug_state.set_vlm_state("loading")
+    app_state.set_vlm_state("loading")
     t0 = time.time()
     try:
         model = _load_model(MODEL_ID)
     except Exception as e:
-        debug_state.set_vlm_state("error", str(e)[:240])
+        app_state.set_vlm_state("error", str(e)[:240])
         raise
     log.info("Model loaded (%.1fs)", time.time() - t0)
-    debug_state.set_vlm_state("ready")
+    app_state.set_vlm_state("ready")
 
     # 추론 워커 + /vlm/switch 핸들러 간 공유 홀더
     holder = ModelHolder(model, MODEL_ID)
@@ -584,11 +588,12 @@ def main() -> None:
     ring    = RingBuffer(maxlen=RING_SIZE)
     infer_q = queue.Queue(maxsize=1)
 
-    # restart_pipeline에서 접근할 수 있도록 참조 저장
-    restart_pipeline._refs = {'ring': ring, 'infer_q': infer_q}
+    # restart_pipeline에서 접근할 수 있도록 참조 저장 (부팅 중 조기 호출은 no-op).
+    global _pipeline_refs
+    _pipeline_refs = {'ring': ring, 'infer_q': infer_q}
 
     # 디버그 대시보드에 ring 참조 전달 (SSE 핸들러가 ring buffer 사용량을 노출)
-    debug_state.set_refs(ring, RING_SIZE, {
+    app_state.set_refs(ring, RING_SIZE, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
     })
