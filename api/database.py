@@ -1,4 +1,4 @@
-"""Babycat — SQLite database (events, devices)."""
+"""Babycat — SQLite database (events, devices). @claude"""
 
 import os
 import sqlite3

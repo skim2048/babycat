@@ -1,14 +1,17 @@
 """
-Babycat API Server — clips, events, devices.
+Babycat API server — clips, events, devices.
 
-Clip Storage Architecture:
-    단일 카메라 전제. app 컨테이너의 save_trigger_clip이 ffmpeg로 RTSP에서 직접
-    재녹화하여 다음 경로에 저장한다:
+Clip storage architecture:
+    Single-camera assumption. The app container's save_trigger_clip
+    writes files (via ffmpeg re-recording from RTSP) to:
         {CAM_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4
 
-    이 API는 동일 볼륨을 읽어 클립 목록·재생·삭제를 제공한다. 조회는 rglob으로
-    연/월 트리를 재귀 스캔한다. 파일 해석은 파일명에서 YYYYMMDD를 추출해
-    {CAM_DIR}/YYYY/MM/{name} 경로를 직접 시도하고, 매칭이 없으면 rglob 폴백.
+    This API mounts the same volume for listing, playback, and deletion.
+    Listing uses rglob across the year/month tree. Name resolution first
+    tries the direct {CAM_DIR}/YYYY/MM/{name} path inferred from the
+    filename's leading YYYYMMDD, then falls back to rglob.
+
+@claude
 """
 
 import os
@@ -63,13 +66,13 @@ import urllib.request
 APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://babycat-app:8080")
 
 CAM_DIR = os.environ.get("CAM_DIR", "/data")
-MIN_CLIP_SIZE = 10240  # 10KB — ffmpeg 녹화 중 불완전 파일 제외
+MIN_CLIP_SIZE = 10240  # @claude 10KB — excludes partially-written files from an in-progress ffmpeg recording.
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # users 테이블 초기화 및 기본 계정 시딩
+    # @claude Initialize the users table and seed the default account.
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     try:
@@ -81,9 +84,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Babycat API", version="1.0.0", lifespan=lifespan)
 
-# CORS — 로컬 개발 및 사설망 origin 허용.
-# localhost/127.0.0.1, 사설 IP 대역(10.*, 172.16-31.*, 192.168.*), Capacitor origin을 regex로 매칭.
-# 운영/외부 도메인은 환경변수 CORS_EXTRA_ORIGINS=https://a.com,https://b.com 로 추가.
+# @claude CORS — allow local development and private-network origins.
+# @claude Matches localhost/127.0.0.1, private IP ranges (10.*, 172.16-31.*, 192.168.*),
+# @claude and the Capacitor origin via regex.
+# @claude For production / external domains, add CORS_EXTRA_ORIGINS=https://a.com,https://b.com.
 _extra = [o.strip() for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",") if o.strip()]
 _origin_regex = (
     r"^(https?://(localhost|127\.0\.0\.1|"
@@ -130,7 +134,7 @@ def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
 
 @app.post("/api/logout")
 def logout(body: LogoutIn, db: sqlite3.Connection = Depends(get_db)):
-    """refresh token을 폐기. access token 검증 불필요 (이미 분실 가능성)."""
+    """Revoke the refresh token. Access-token validation is skipped because it may already be lost. @claude"""
     if body.refresh_token:
         revoke_refresh_token(body.refresh_token, db)
     return {"ok": True}
@@ -156,11 +160,11 @@ def health():
     return {"status": "ok"}
 
 
-# ── Camera Profile (babycat-app 으로 프록시) ─────────────────────────────────
+# ── Camera profile (proxied to babycat-app) ──────────────────────────────────
 
 
 def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | None = None, timeout: int = 10):
-    """babycat-app 내부 디버그 서버로 프록시. (status, json) 반환."""
+    """Proxy a request to babycat-app's internal HTTP server; returns (status, json). @claude"""
     url = f"{APP_INTERNAL_URL}{path}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
@@ -181,7 +185,7 @@ def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | Non
 
 @app.get("/camera", response_model=CameraProfileOut)
 def get_camera(request: Request, _=Depends(require_auth)):
-    """현재 카메라 프로필 조회. configured=False면 미설정 상태."""
+    """Return the current camera profile; configured=False when unset. @claude"""
     auth = request.headers.get("Authorization")
     _, data = _proxy_app("GET", "/camera", auth)
     return CameraProfileOut(**(data or {"configured": False}))
@@ -189,7 +193,7 @@ def get_camera(request: Request, _=Depends(require_auth)):
 
 @app.post("/camera", response_model=ApplyResultOut)
 def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
-    """카메라 프로필 적용. babycat-app 측에서 저장 + 파이프라인 재시작."""
+    """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
     auth = request.headers.get("Authorization")
     payload = body.model_dump(exclude_none=True)
     status, data = _proxy_app("POST", "/camera", auth, payload)
@@ -202,7 +206,7 @@ def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth))
 
 
 def _read_clip_meta(mp4_path: Path) -> dict:
-    """동명의 .json 메타데이터(트리거 이벤트 정보)를 읽어 반환. 없으면 빈 dict."""
+    """Read the same-name .json metadata (trigger event info). Returns an empty dict when missing. @claude"""
     meta_path = mp4_path.with_suffix(".json")
     if not meta_path.exists():
         return {}
@@ -214,9 +218,11 @@ def _read_clip_meta(mp4_path: Path) -> dict:
 
 
 def _list_clips(q: str | None = None) -> list[ClipOut]:
-    """{CAM_DIR}/{YYYY}/{MM}/*.mp4 트리를 재귀 스캔하여 클립 목록을 반환한다.
+    """Recursively scan {CAM_DIR}/{YYYY}/{MM}/*.mp4 and return the clip list.
+    If a same-name .json metadata file exists, its timestamp/keywords/vlm_text
+    fields are populated on the result.
 
-    동명의 .json 메타데이터가 있으면 timestamp/keywords/vlm_text 필드를 채운다.
+    @claude
     """
     base = Path(CAM_DIR)
     if not base.exists():
@@ -247,7 +253,7 @@ def _list_clips(q: str | None = None) -> list[ClipOut]:
 
 
 def _resolve_clip(name: str) -> Path:
-    """파일명에서 YYYYMMDD 추출 → {CAM_DIR}/YYYY/MM/{name}. 폴백은 rglob."""
+    """Extract YYYYMMDD from the name -> {CAM_DIR}/YYYY/MM/{name}. Falls back to rglob. @claude"""
     if "/" in name or "\\" in name or ".." in name:
         raise HTTPException(400, "invalid clip name")
     base = Path(CAM_DIR)
@@ -315,7 +321,7 @@ def get_clip(name: str, request: Request, _=Depends(require_auth)):
 
 @app.delete("/clips", response_model=DeletedOut)
 def delete_clips(body: ClipDeleteIn, _=Depends(require_auth)):
-    """이름 목록에 매칭되는 클립을 삭제. _resolve_clip과 동일한 경로 추론을 사용한다."""
+    """Delete clips matching the given name list; uses the same path inference as _resolve_clip. @claude"""
     deleted = 0
     base = Path(CAM_DIR)
     for name in body.names:
@@ -342,7 +348,7 @@ def delete_clips(body: ClipDeleteIn, _=Depends(require_auth)):
 
 @app.delete("/clips/all", response_model=DeletedOut)
 def delete_all_clips(_=Depends(require_auth)):
-    """{CAM_DIR} 트리의 모든 mp4 클립과 동명의 메타데이터(.json)를 삭제."""
+    """Delete every mp4 clip and its matching .json metadata under the {CAM_DIR} tree. @claude"""
     base = Path(CAM_DIR)
     if not base.exists():
         return DeletedOut(deleted=0)

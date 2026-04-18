@@ -1,4 +1,4 @@
-"""Babycat — Pydantic request/response schemas."""
+"""Babycat — Pydantic request/response schemas. @claude"""
 
 from pydantic import BaseModel
 from typing import Optional
