@@ -45,8 +45,8 @@ config/cam_profile.json
 *.sw?
 
 # Claude
+.claude/
 CLAUDE.md
-TMP.md
 
 # Etc.
 tmp/
