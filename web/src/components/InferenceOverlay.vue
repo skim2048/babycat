@@ -10,10 +10,10 @@ const { state } = useSSE()
 // ms → s 변환 후 소수점 둘째 자리까지 truncate (예: 5038.5 → 5.03)
 const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(2))
 
-// 모델이 1개 이상이면 셀렉터 노출 (단일이어도 VLM 상태 + 현재 모델 표시용)
-const showSelector = computed(() => (state.vlm_models?.length || 0) >= 1)
+// VLM 상태 섹션(배지 + 라디오) 노출 여부. 모델이 하나라도 등록되어 있으면 표시.
+const showVlmSection = computed(() => (state.vlm_models?.length || 0) >= 1)
 
-// 준비 완료 상태가 아니면 라디오 비활성화 (loading / switching / error)
+// 준비 완료 상태가 아니면 라디오 비활성화 (initializing / loading / switching / error 등)
 const switchDisabled = computed(() => state.vlm_state !== 'ready')
 
 const vlmStatusLabel = computed(() => {
@@ -22,13 +22,14 @@ const vlmStatusLabel = computed(() => {
   if (s === 'switching') return 'Switching VLM ...'
   if (s === 'downloading') return 'Downloading VLM ...'
   if (s === 'compiling') return 'Compiling VLM ...'
+  if (s === 'initializing') return 'Initializing VLM ...'
   if (s === 'error') return `VLM error: ${state.vlm_error || 'unknown'}`
   return 'Loading VLM ...'
 })
 
 // 진행 중(스피너) 상태 — 사용자에게 "백에서 작업 중"임을 알려야 하는 모든 단계.
 const vlmInProgress = computed(() =>
-  ['loading', 'switching', 'downloading', 'compiling'].includes(state.vlm_state)
+  ['initializing', 'loading', 'switching', 'downloading', 'compiling'].includes(state.vlm_state)
 )
 
 async function selectModel(name) {
@@ -55,7 +56,7 @@ function shortName(id) {
 <template>
   <Transition name="fade">
     <div v-if="open" class="infer-panel">
-      <div v-if="showSelector" class="infer-model-section">
+      <div v-if="showVlmSection" class="infer-model-section">
         <div class="infer-vlm-status" :class="`vlm-${state.vlm_state}`">
           <span v-if="vlmInProgress" class="vlm-spinner" aria-hidden="true"></span>
           <svg v-else-if="state.vlm_state === 'ready'" class="vlm-icon" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -1,7 +1,8 @@
 """
-App 공유 상태
+App 공유 상태.
 
-GStreamer 콜백 / 추론 워커에서 업데이트, HTTP 서버에서 읽기.
+파이프라인(GStreamer 콜백·추론 워커), VLM 생명주기, 프롬프트/트리거 키워드,
+클립 캐시를 한 객체로 모아 HTTP 서버가 읽어가도록 한다.
 """
 
 import io
@@ -46,9 +47,10 @@ class AppState:
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
 
-        # VLM 로드 생명주기 — downloading | compiling | loading | ready | switching | error
-        # loading은 "로컬에 준비된 모델을 메모리에 올리는 단계"만 의미한다.
-        self.vlm_state: str = "loading"
+        # VLM 로드 생명주기 — initializing | downloading | compiling | loading | ready | switching | error
+        # - initializing: 앱 부팅 직후, precompile 단계 진입 전
+        # - loading: 로컬에 준비된 모델을 메모리에 올리는 단계 (다운로드·컴파일은 별개 단계)
+        self.vlm_state: str = "initializing"
         self.vlm_error: str = ""
         self.vlm_models: list[str] = []
         self.vlm_current_model: str = ""
@@ -168,13 +170,7 @@ class AppState:
             self.infer_raw   = raw
             self.infer_ms    = elapsed_ms
             self.event_triggered = event_triggered
-        with self._sse_lock:
-            queues = list(self._sse_queues)
-        for q in queues:
-            try:
-                q.put_nowait(True)
-            except queue.Full:
-                pass
+        self._sse_push()
 
     def get_jpeg(self) -> Optional[bytes]:
         with self._lock:
