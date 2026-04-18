@@ -335,7 +335,11 @@ class AppHandler(BaseHTTPRequestHandler):
     def _serve_camera(self):
         config = camera.load()
         if config:
-            result = {"configured": True, **config}
+            result = {
+                "configured": True,
+                **{k: v for k, v in config.items() if k != "password"},
+                "password_set": bool(config.get("password")),
+            }
         else:
             result = {"configured": False}
         body = json.dumps(result, ensure_ascii=False).encode()

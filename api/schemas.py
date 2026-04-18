@@ -27,6 +27,8 @@ class RefreshIn(BaseModel):
 class RefreshOut(BaseModel):
     token: str
     expires_in: int
+    refresh_token: str
+    refresh_expires_in: int
 
 
 class LogoutIn(BaseModel):
@@ -43,7 +45,7 @@ class ChangePasswordIn(BaseModel):
 class CameraProfileIn(BaseModel):
     ip: str
     username: str
-    password: str
+    password: Optional[str] = None
     rtsp_port: Optional[int] = None
     onvif_port: Optional[int] = None
     stream_path: Optional[str] = None
@@ -54,7 +56,7 @@ class CameraProfileOut(BaseModel):
     configured: bool
     ip: Optional[str] = None
     username: Optional[str] = None
-    password: Optional[str] = None
+    password_set: bool = False
     rtsp_port: Optional[int] = None
     onvif_port: Optional[int] = None
     stream_path: Optional[str] = None

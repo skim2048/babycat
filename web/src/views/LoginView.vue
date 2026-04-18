@@ -11,6 +11,7 @@ const { theme } = useTheme()
 
 const username = ref('')
 const password = ref('')
+const rememberMe = ref(false)
 const error = ref('')
 const loading = ref(false)
 
@@ -18,7 +19,7 @@ async function handleLogin() {
   error.value = ''
   loading.value = true
   try {
-    await login(username.value, password.value)
+    await login(username.value, password.value, rememberMe.value)
     router.push({ name: 'dashboard' })
   } catch (e) {
     if (e.message.startsWith('too many attempts')) {
@@ -57,7 +58,7 @@ async function handleLogin() {
 
       <div class="login-options">
         <label class="login-remember">
-          <input type="checkbox" />
+          <input v-model="rememberMe" type="checkbox" />
           <span>로그인 정보 저장</span>
         </label>
         <a class="login-find" @click.prevent="error = '아직 지원되지 않습니다.'">아이디 | 비밀번호 찾기</a>

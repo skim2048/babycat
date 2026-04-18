@@ -6,6 +6,7 @@ const config = reactive({
   rtsp_port: 554,
   username: '',
   password: '',
+  password_set: false,
   stream_path: 'stream1',
   onvif_port: null,
   stream_protocol: 'hls',
@@ -32,7 +33,8 @@ async function load() {
       config.ip = data.ip || ''
       config.rtsp_port = data.rtsp_port || 554
       config.username = data.username || ''
-      config.password = data.password || ''
+      config.password = ''
+      config.password_set = !!data.password_set
       config.stream_path = data.stream_path || 'stream1'
       config.onvif_port = data.onvif_port || null
       config.stream_protocol = data.stream_protocol || 'hls'
@@ -50,8 +52,10 @@ async function save() {
       ip: config.ip,
       rtsp_port: config.rtsp_port,
       username: config.username,
-      password: config.password,
       stream_path: config.stream_path,
+    }
+    if (config.password) {
+      body.password = config.password
     }
     if (config.onvif_port) {
       body.onvif_port = config.onvif_port
@@ -65,6 +69,8 @@ async function save() {
     const data = await res.json()
     if (data.ok) {
       configured.value = true
+      config.password = ''
+      config.password_set = true
       reconnectKey.value += 1
       return true
     } else {

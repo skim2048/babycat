@@ -31,11 +31,11 @@ from auth import (
     REFRESH_EXPIRY,
     authenticate,
     change_password,
-    consume_refresh_token,
     create_token,
     init_users,
     require_auth,
     revoke_refresh_token,
+    rotate_refresh_token,
 )
 from database import DB_PATH, get_db, init_db
 from schemas import (
@@ -126,10 +126,16 @@ def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
 
 @app.post("/api/refresh", response_model=RefreshOut)
 def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
-    username = consume_refresh_token(body.refresh_token, db)
-    if not username:
+    rotated = rotate_refresh_token(body.refresh_token, db)
+    if not rotated:
         raise HTTPException(status_code=401, detail="invalid or expired refresh token")
-    return RefreshOut(token=create_token(username), expires_in=JWT_EXPIRY)
+    username, new_refresh_token = rotated
+    return RefreshOut(
+        token=create_token(username),
+        expires_in=JWT_EXPIRY,
+        refresh_token=new_refresh_token,
+        refresh_expires_in=REFRESH_EXPIRY,
+    )
 
 
 @app.post("/api/logout")
@@ -188,7 +194,15 @@ def get_camera(request: Request, _=Depends(require_auth)):
     """Return the current camera profile; configured=False when unset. @claude"""
     auth = request.headers.get("Authorization")
     _, data = _proxy_app("GET", "/camera", auth)
-    return CameraProfileOut(**(data or {"configured": False}))
+    if not data:
+        return CameraProfileOut(configured=False)
+
+    # @chatgpt Keep the UI informed that a password exists without exposing the
+    # @chatgpt stored camera secret back to the browser.
+    sanitized = dict(data)
+    password = sanitized.pop("password", None)
+    sanitized["password_set"] = bool(password)
+    return CameraProfileOut(**sanitized)
 
 
 @app.post("/camera", response_model=ApplyResultOut)

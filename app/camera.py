@@ -52,6 +52,12 @@ def save(config: dict) -> None:
 
 def apply(config: dict) -> dict:
     """Apply a camera configuration. Returns {"ok": True} on success. @claude"""
+    # @chatgpt Preserve the previously saved password when the user updates other
+    # @chatgpt camera fields without re-entering credentials.
+    existing = load() or {}
+    if not config.get("password") and existing.get("password"):
+        config["password"] = existing["password"]
+
     for field in _REQUIRED_FIELDS:
         if not config.get(field, "").strip():
             return {"ok": False, "error": f"'{field}' is required"}

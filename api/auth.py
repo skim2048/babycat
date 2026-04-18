@@ -269,6 +269,29 @@ def consume_refresh_token(token: str, db: sqlite3.Connection) -> str | None:
     return row["username"]
 
 
+def rotate_refresh_token(token: str, db: sqlite3.Connection) -> tuple[str, str] | None:
+    """
+    Atomically revoke a valid refresh token and issue a replacement.
+    Returns (username, new_refresh_token) on success, else None.
+
+    @chatgpt
+    """
+    username = consume_refresh_token(token, db)
+    if not username:
+        return None
+
+    cur = db.execute(
+        "UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0",
+        (_hash_refresh(token),),
+    )
+    if cur.rowcount == 0:
+        db.commit()
+        return None
+
+    new_token = issue_refresh_token(username, db)
+    return username, new_token
+
+
 def revoke_refresh_token(token: str, db: sqlite3.Connection) -> bool:
     """Revoke a single refresh token. Returns True if revoked or already present, False if missing. @claude"""
     cur = db.execute(

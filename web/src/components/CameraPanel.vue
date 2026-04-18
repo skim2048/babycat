@@ -11,6 +11,7 @@ const local = reactive({
   rtsp_port: 554,
   username: '',
   password: '',
+  password_set: false,
   stream_path: 'stream1',
   onvif_port: null,
   stream_protocol: 'hls',
@@ -24,12 +25,13 @@ onMounted(() => {
     ip: config.ip,
     rtsp_port: config.rtsp_port,
     username: config.username,
-    password: config.password,
+    password: '',
+    password_set: config.password_set,
     stream_path: config.stream_path,
     onvif_port: config.onvif_port,
     stream_protocol: config.stream_protocol,
   })
-  if (config.password) {
+  if (config.password_set) {
     passwordLoaded.value = true
   }
 })
@@ -72,6 +74,7 @@ function handleCancel() {
           <input class="cam-input pw-input" :class="{ 'pw-loaded': passwordLoaded }"
                  v-model="local.password"
                  :type="showPassword ? 'text' : 'password'"
+                 :placeholder="passwordLoaded ? '저장된 비밀번호 유지' : ''"
                  @focus="onPasswordFocus" />
           <button type="button" class="pw-toggle"
                   :class="{ disabled: passwordLoaded }"

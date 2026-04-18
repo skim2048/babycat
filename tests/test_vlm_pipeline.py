@@ -19,18 +19,15 @@ Environment variables:
 """
 
 import gc
+import importlib.util
 import os
 import queue
 import time
 from fractions import Fraction
 
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-
-import numpy as np
 from PIL import Image
-from nano_llm import NanoLLM, ChatHistory
+
+HAS_NANO_LLM = importlib.util.find_spec("nano_llm") is not None
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
@@ -45,8 +42,10 @@ INFERENCE_PROMPT = "What is the person doing? Answer in one sentence."
 
 # ── VLM inference ────────────────────────────────────────────────────────────
 
-def run_inference(model: NanoLLM, frame: Image.Image) -> str:
+def run_inference(model, frame: Image.Image) -> str:
     """Run single-frame VLM inference; returns the raw text. @claude"""
+    from nano_llm import ChatHistory
+
     chat = ChatHistory(model)
     chat.append('user', image=frame)
     chat.append('user', text=INFERENCE_PROMPT)
@@ -65,6 +64,8 @@ def run_inference(model: NanoLLM, frame: Image.Image) -> str:
 # ── GStreamer callback ───────────────────────────────────────────────────────
 
 def make_frame_callback(frame_q: queue.Queue):
+    import numpy as np
+
     first_frame = [True]
 
     def on_new_sample(sink) -> Gst.FlowReturn:
@@ -107,6 +108,14 @@ def make_frame_callback(frame_q: queue.Queue):
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    if not HAS_NANO_LLM:
+        raise RuntimeError("nano_llm is not installed; run this verification inside the app container")
+
+    import gi
+    gi.require_version('Gst', '1.0')
+    from gi.repository import Gst
+    from nano_llm import NanoLLM
+
     print("=" * 55)
     print("  Babycat VLM Phase 1 verification test")
     print("=" * 55)
