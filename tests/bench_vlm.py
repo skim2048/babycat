@@ -1,6 +1,8 @@
 """
-VLM benchmark for NanoLLM on Jetson Orin NX 16GB
-Measures: model load time, peak memory, inference latency (1/4/8 frames)
+VLM benchmark for NanoLLM on Jetson Orin NX 16GB.
+Measures: model load time, peak memory, inference latency (1/4/8 frames).
+
+@claude
 """
 import time
 import resource

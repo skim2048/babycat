@@ -1,10 +1,12 @@
 """
-Phase 0 검증: GStreamer appsink → Python numpy array 연동 테스트
-- MediaMTX에서 RTSP 수신
-- nvv4l2decoder GPU 디코딩
-- nvvidconv → RGBA 변환
-- appsink로 프레임을 numpy array로 수신
-- 버퍼 크기, shape, FPS 출력
+Phase 0 verification: GStreamer appsink -> Python numpy array.
+  - Receive RTSP from MediaMTX.
+  - GPU-decode via nvv4l2decoder.
+  - Convert to RGBA via nvvidconv.
+  - Pull frames into numpy arrays through appsink.
+  - Print buffer size, shape, and FPS.
+
+@claude
 """
 
 import gi
@@ -36,20 +38,20 @@ def on_new_sample(sink):
         frame_info['width']  = s.get_value('width')
         frame_info['height'] = s.get_value('height')
         frame_info['format'] = s.get_value('format')
-        frame_info['expected_bytes'] = frame_info['width'] * frame_info['height'] * 4  # RGBA
+        frame_info['expected_bytes'] = frame_info['width'] * frame_info['height'] * 4  # @claude RGBA
         print(f"[caps] {frame_info['width']}x{frame_info['height']} {frame_info['format']}")
         print(f"[caps] expected bytes/frame: {frame_info['expected_bytes']:,} "
               f"({frame_info['expected_bytes']/1024/1024:.2f} MB)")
 
     success, map_info = buf.map(Gst.MapFlags.READ)
     if not success:
-        print("ERROR: buffer.map() failed — NVMM 버퍼를 CPU에서 읽을 수 없음")
+        print("ERROR: buffer.map() failed — NVMM buffer is not CPU-readable")
         return Gst.FlowReturn.ERROR
 
     frame_count += 1
     buf_size = len(map_info.data)
 
-    # 처음 3프레임과 이후 매 30프레임마다 상세 출력
+    # @claude Log details for the first 3 frames, then every 30th.
     if frame_count <= 3 or frame_count % 30 == 0:
         w = frame_info['width']
         h = frame_info['height']
@@ -91,15 +93,15 @@ sink = pipeline.get_by_name('sink')
 sink.connect('new-sample', on_new_sample)
 
 pipeline.set_state(Gst.State.PLAYING)
-print(f"Pipeline PLAYING — {TEST_DURATION}초간 프레임 수집...\n")
+print(f"Pipeline PLAYING — collecting frames for {TEST_DURATION}s...\n")
 
 try:
     time.sleep(TEST_DURATION)
 finally:
     pipeline.set_state(Gst.State.NULL)
     elapsed = time.time() - (start_time or time.time())
-    print(f"\n=== 결과 ===")
-    print(f"수신 프레임: {frame_count}")
-    print(f"경과 시간:   {elapsed:.1f}s")
-    print(f"평균 FPS:    {frame_count/elapsed:.1f}" if elapsed > 0 else "N/A")
-    print(f"프레임 크기: {frame_info.get('expected_bytes', 0)/1024/1024:.2f} MB/frame")
+    print(f"\n=== Result ===")
+    print(f"Frames received: {frame_count}")
+    print(f"Elapsed:         {elapsed:.1f}s")
+    print(f"Average FPS:     {frame_count/elapsed:.1f}" if elapsed > 0 else "N/A")
+    print(f"Frame size:      {frame_info.get('expected_bytes', 0)/1024/1024:.2f} MB/frame")
