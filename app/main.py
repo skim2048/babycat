@@ -56,7 +56,7 @@ TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
 
-INFERENCE_PROMPT_DEFAULT = "What is the person doing? Answer in one sentence."
+INFERENCE_PROMPT_DEFAULT = "Describe what the person is doing in one sentence."
 
 
 # ── Ring buffer ──────────────────────────────────────────────────────────────
