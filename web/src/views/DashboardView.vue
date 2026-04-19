@@ -110,7 +110,7 @@ function handleLogout() {
           </button>
           <Transition name="dropdown">
             <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
-              <button class="dropdown-item" @click="openCameraModal">카메라 프로필 설정</button>
+              <button class="dropdown-item" @click="openCameraModal">카메라 설정</button>
               <button class="dropdown-item" @click="openPromptModal">프롬프트 설정</button>
               <button class="dropdown-item" @click="openClipsModal">녹화 클립</button>
               <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
@@ -138,7 +138,7 @@ function handleLogout() {
     <div class="video-area">
       <LiveStream v-if="configured || connecting" />
       <div v-else class="empty-state">
-        <p>카메라가 설정되지 않았습니다. 메뉴에서 카메라 프로필 설정을 완료하세요.</p>
+        <p>카메라가 설정되지 않았습니다. 메뉴에서 카메라 설정을 완료하세요.</p>
       </div>
     </div>
   </div>
@@ -148,7 +148,7 @@ function handleLogout() {
     <div v-if="cameraModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
-          <span class="modal-title">카메라 프로필 설정</span>
+          <span class="modal-title">카메라 설정</span>
           <button class="modal-close" @click="cameraModalOpen = false">&times;</button>
         </div>
         <div class="modal-body">
