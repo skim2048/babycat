@@ -49,19 +49,21 @@ async function apply() {
 <template>
   <div class="prompt-form">
     <label class="prompt-label">질의 프롬프트</label>
+    <p class="prompt-hint">분석 지시문입니다. 영어만 지원합니다.</p>
     <textarea
       class="prompt-input"
       v-model="prompt"
-      placeholder="질의 프롬프트 입력..."
+      placeholder="e.g. Describe what the person is doing"
       rows="3"
     />
 
     <label class="prompt-label">이벤트 키워드</label>
+    <p class="prompt-hint">분석 결과문에서 이벤트 발생 여부를 판단합니다. 영어만 지원합니다.</p>
     <div class="triggers-field">
       <input
         class="prompt-input"
         v-model="triggers"
-        placeholder="키워드를 쉼표로 구분하여 입력"
+        placeholder="e.g. person, walking"
       />
       <button
         type="button"
@@ -120,6 +122,14 @@ async function apply() {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
+.prompt-hint {
+  margin: -4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-4);
+  font-weight: 400;
+}
+
 .triggers-field {
   display: flex;
   gap: 6px;
