@@ -478,7 +478,7 @@ onBeforeUnmount(() => {
   <div class="video-box">
     <div class="video-header">
       <span class="video-label">실시간 스트림</span>
-      <div class="protocol-toggle" :class="{ disabled: !isPlaying }" @click="isPlaying && toggleProtocol()">
+      <div class="protocol-toggle" @click="toggleProtocol()">
         <span class="protocol-label" :class="{ active: !isWebRTC }">HLS</span>
         <div class="toggle-track" :class="{ on: isWebRTC }">
           <div class="toggle-thumb" />
