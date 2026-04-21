@@ -1,19 +1,3 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/banner-dark-theme.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/banner-light-theme.png">
-  <img src="./assets/banner-light-theme.png" alt="babycat banner">
-</picture>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Docker-2496ED.svg?&logo=Docker&logoColor=fff" alt="Docker">
-  <img src="https://img.shields.io/badge/FastAPI-009688.svg?&logo=FastAPI&logoColor=fff" alt="FastAPI">
-  <img src="https://img.shields.io/badge/GStreamer-E4222A.svg?&logo=GStreamer&logoColor=fff" alt="GStreamer">
-  <img src="https://img.shields.io/badge/NVIDIA-76B900.svg?&logo=NVIDIA&logoColor=fff" alt="NVIDIA">
-  <img src="https://img.shields.io/badge/Python-3776AB.svg?&logo=Python&logoColor=fff" alt="Python">
-  <img src="https://img.shields.io/badge/SQLite-003B57.svg?&logo=SQLite&logoColor=fff" alt="SQLite">
-  <img src="https://img.shields.io/badge/Vue.js-4FC08D.svg?&logo=Vue.js&logoColor=fff" alt="Vue.js">
-</p>
-
 ## Overview
 
 An edge-AI backend that analyzes RTSP camera streams in real time with a Visual Language Model (VLM) and fires notifications when user-defined conditions are met.
