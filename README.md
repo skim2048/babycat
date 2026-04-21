@@ -26,21 +26,14 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 ## Getting Started
 
 ```bash
-# 1) JetPack 컴포넌트 (flash-only 상태의 새 젯슨에서 필수)
-#    NVIDIA HW gst plugins (nvv4l2decoder/nvvidconv 등) + 표준 plugins-bad/good을
-#    DeepStream 의존성으로 함께 끌고 온다. 이게 없으면 babycat-app의 GStreamer
-#    파이프라인이 h264parse / nvv4l2decoder 부재로 init 단계에서 죽음.
 sudo apt update
 sudo apt install -y nvidia-jetpack
 
-# 2) 호스트 IP 등록 (WebRTC ICE candidate에 광고됨). zerotier 또는 LAN IP.
 cp .env.example .env
 $EDITOR .env   # HOST_IP=<젯슨 IP> 채우기
 
-# 3) Main stack
 docker compose up -d --build
 
-# 4) Web dashboard (optional)
 cd web && docker compose up -d --build
 ```
 
