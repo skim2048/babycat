@@ -333,15 +333,7 @@ class AppHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"ok": ok}).encode())
 
     def _serve_camera(self):
-        config = camera.load()
-        if config:
-            result = {
-                "configured": True,
-                **{k: v for k, v in config.items() if k != "password"},
-                "password_set": bool(config.get("password")),
-            }
-        else:
-            result = {"configured": False}
+        result = camera.profile_view()
         body = json.dumps(result, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

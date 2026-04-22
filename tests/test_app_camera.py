@@ -6,6 +6,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 import camera as camera_module  # noqa: E402
 
 
+def test_profile_view_masks_password_and_marks_configured(monkeypatch):
+    monkeypatch.setattr(camera_module, "load", lambda: {
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+        "stream_path": "stream1",
+    })
+
+    result = camera_module.profile_view()
+
+    assert result["configured"] is True
+    assert result["password_set"] is True
+    assert result["ip"] == "192.168.0.10"
+    assert "password" not in result
+
+
 def test_apply_mediamtx_source_builds_rtsp_url_before_update(monkeypatch):
     captured = {}
 

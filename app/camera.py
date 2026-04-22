@@ -50,6 +50,17 @@ def save(config: dict) -> None:
         json.dump(existing, f, indent=2, ensure_ascii=False)
 
 
+def profile_view() -> dict:
+    config = load()
+    if not config:
+        return {"configured": False}
+    return {
+        "configured": True,
+        **{k: v for k, v in config.items() if k != "password"},
+        "password_set": bool(config.get("password")),
+    }
+
+
 def apply(config: dict) -> dict:
     """Apply a camera configuration. Returns {"ok": True} on success. @claude"""
     # @chatgpt Preserve the previously saved password when the user updates other

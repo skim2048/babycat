@@ -1,8 +1,8 @@
-# Refactoring Checklist: Camera Apply Shared Activation Paths
+# Refactoring Checklist: Camera Shared Activation And Profile Paths
 
 ## 1. Change Summary
 
-- Refactoring target: shared PTZ, MediaMTX, and ready-state activation paths inside `app/camera.py`
+- Refactoring target: shared PTZ, MediaMTX, ready-state activation, and camera-profile response paths inside `app/camera.py`
 - Main flow: `Camera Apply`
 - Reason for change: remove the smallest internal duplication between manual apply and startup apply without changing camera behavior
 
@@ -30,6 +30,7 @@
 - What was validated:
   - `apply()` and `startup_apply()` now use the same helper structure for runtime activation order
   - `apply()` and `startup_apply()` still preserve PTZ-before-MediaMTX behavior
+  - camera profile response shaping now comes from `app/camera.py` instead of being duplicated in `app/server.py`
   - `python -m pytest tests/test_app_camera.py -q` passed
 - What was not validated:
   - live MediaMTX API interaction
