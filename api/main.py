@@ -232,7 +232,7 @@ def get_camera(request: Request, _=Depends(require_auth)):
 @app.post("/camera", response_model=ApplyResultOut)
 def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
     """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
-    payload = body.model_dump(exclude_none=True)
+    payload = body.model_dump()
     status, data = _proxy_app("POST", "/camera", _request_auth_header(request), payload)
     return _camera_apply_out(status, data)
 

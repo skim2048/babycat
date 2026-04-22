@@ -3,6 +3,7 @@ import { authFetch } from './useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
 const config = reactive({
+  source_type: 'rtsp_camera',
   ip: '',
   rtsp_port: 554,
   username: '',
@@ -31,6 +32,7 @@ async function load() {
     if (!res.ok) return
     const data = await res.json()
     if (data.configured) {
+      config.source_type = data.source_type || 'rtsp_camera'
       config.ip = data.ip || ''
       config.rtsp_port = data.rtsp_port || 554
       config.username = data.username || ''
@@ -50,16 +52,15 @@ async function save() {
   status.value = ''
   try {
     const body = {
+      source_type: config.source_type || 'rtsp_camera',
       ip: config.ip,
       rtsp_port: config.rtsp_port,
       username: config.username,
       stream_path: config.stream_path,
+      onvif_port: config.onvif_port,
     }
     if (config.password) {
       body.password = config.password
-    }
-    if (config.onvif_port) {
-      body.onvif_port = config.onvif_port
     }
     body.stream_protocol = config.stream_protocol
     const res = await authFetch(APP_ENDPOINTS.camera, {

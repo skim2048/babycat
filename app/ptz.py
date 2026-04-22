@@ -42,6 +42,17 @@ def configure(url: str, user: str, password: str) -> None:
     log.info("PTZ configured: %s", url)
 
 
+def clear_config() -> None:
+    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS, _moving
+    with _lock:
+        _ONVIF_URL = None
+        _ONVIF_USER = None
+        _ONVIF_PASS = None
+        _moving = False
+        _current.update({"pan": None, "tilt": None})
+    log.info("PTZ disabled")
+
+
 def is_configured() -> bool:
     with _lock:
         return _ONVIF_URL is not None

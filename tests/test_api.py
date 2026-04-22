@@ -132,6 +132,7 @@ def test_get_camera_masks_password(monkeypatch):
     def fake_proxy(method, path, auth_header, body=None, timeout=10):
         return 200, {
             "configured": True,
+            "source_type": "rtsp_camera",
             "ip": "192.168.0.10",
             "username": "admin",
             "password": "secret",
@@ -141,6 +142,7 @@ def test_get_camera_masks_password(monkeypatch):
     monkeypatch.setattr(api_main, "_proxy_app", fake_proxy)
     result = api_main.get_camera(DummyRequest(), _={})
     assert result.configured is True
+    assert result.source_type == "rtsp_camera"
     assert result.password_set is True
     assert not hasattr(result, "password")
 
@@ -155,8 +157,8 @@ def test_set_camera_maps_upstream_server_error_to_502(monkeypatch):
         headers = {"Authorization": "Bearer token"}
 
     class DummyBody:
-        def model_dump(self, exclude_none=True):
-            return {"ip": "192.168.0.10", "username": "admin"}
+        def model_dump(self):
+            return {"source_type": "rtsp_camera", "ip": "192.168.0.10", "username": "admin", "onvif_port": None}
 
     def fake_proxy(method, path, auth_header, body=None, timeout=10):
         return 500, {"ok": False, "error": "boom"}

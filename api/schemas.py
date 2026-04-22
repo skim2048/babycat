@@ -43,6 +43,7 @@ class ChangePasswordIn(BaseModel):
 # ── Camera Profile ──────────────────────────────────────────────────────────
 
 class CameraProfileIn(BaseModel):
+    source_type: Optional[str] = None
     ip: str
     username: str
     password: Optional[str] = None
@@ -54,6 +55,7 @@ class CameraProfileIn(BaseModel):
 
 class CameraProfileOut(BaseModel):
     configured: bool
+    source_type: Optional[str] = None
     ip: Optional[str] = None
     username: Optional[str] = None
     password_set: bool = False

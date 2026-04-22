@@ -7,6 +7,7 @@ const { config, status, save } = useCamera()
 
 // @claude Local working copy — cancelling leaves the shared config untouched.
 const local = reactive({
+  source_type: 'rtsp_camera',
   ip: '',
   rtsp_port: 554,
   username: '',
@@ -22,6 +23,7 @@ const passwordLoaded = ref(false)
 
 onMounted(() => {
   Object.assign(local, {
+    source_type: config.source_type,
     ip: config.ip,
     rtsp_port: config.rtsp_port,
     username: config.username,

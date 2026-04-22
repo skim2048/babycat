@@ -30,7 +30,8 @@ DATA_DIR = os.getenv("DATA_DIR", "/data")
 
 camera_ready = threading.Event()
 
-_REQUIRED_FIELDS = ("ip", "username", "password")
+DEFAULT_SOURCE_TYPE = "rtsp_camera"
+_REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
 
 
 def load() -> Optional[dict]:
@@ -56,6 +57,7 @@ def profile_view() -> dict:
         return {"configured": False}
     return {
         "configured": True,
+        "source_type": _source_type(config),
         **{k: v for k, v in config.items() if k != "password"},
         "password_set": bool(config.get("password")),
     }
@@ -63,32 +65,28 @@ def profile_view() -> dict:
 
 def apply(config: dict) -> dict:
     """Apply a camera configuration. Returns {"ok": True} on success. @claude"""
-    # @chatgpt Preserve the previously saved password when the user updates other
-    # @chatgpt camera fields without re-entering credentials.
     existing = load() or {}
-    if not config.get("password") and existing.get("password"):
-        config["password"] = existing["password"]
+    normalized, error = _normalize_profile(config, existing)
+    if error:
+        return {"ok": False, "error": error}
 
-    for field in _REQUIRED_FIELDS:
-        if not config.get(field, "").strip():
-            return {"ok": False, "error": f"'{field}' is required"}
+    save(normalized)
 
-    config.setdefault("onvif_port", 2020)
-    config.setdefault("rtsp_port", 554)
-    config.setdefault("stream_path", "stream1")
-
-    save(config)
-
-    if not _activate_runtime(config):
+    if not _activate_runtime(normalized):
         return {"ok": False, "error": "MediaMTX API connection failed"}
 
     return {"ok": True}
 
 
 def startup_apply() -> None:
-    config = load()
-    if config is None:
+    saved = load()
+    if saved is None:
         log.info("No saved config — set via frontend")
+        return
+
+    config, error = _normalize_profile(saved, saved)
+    if error:
+        log.error("Saved camera config is invalid: %s", error)
         return
 
     _configure_ptz(config)
@@ -117,11 +115,71 @@ def _build_rtsp_url(config: dict) -> str:
 
 def _build_onvif_url(config: dict) -> str:
     ip = config["ip"]
-    port = config.get("onvif_port", 2020)
+    port = config["onvif_port"]
     return f"http://{ip}:{port}/onvif/service"
 
 
+def _source_type(config: dict | None, existing: dict | None = None) -> str:
+    raw = None
+    if config:
+        raw = config.get("source_type")
+    if not raw and existing:
+        raw = existing.get("source_type")
+    value = str(raw or DEFAULT_SOURCE_TYPE).strip()
+    return value or DEFAULT_SOURCE_TYPE
+
+
+def _normalize_profile(config: dict, existing: dict) -> tuple[dict | None, str | None]:
+    source_type = _source_type(config, existing)
+    if source_type == DEFAULT_SOURCE_TYPE:
+        return _normalize_rtsp_camera_profile(config, existing, source_type)
+    return None, f"unsupported source_type: {source_type}"
+
+
+def _normalize_rtsp_camera_profile(config: dict, existing: dict, source_type: str) -> tuple[dict | None, str | None]:
+    password = config.get("password")
+    if not password and existing.get("password"):
+        password = existing["password"]
+
+    normalized = {
+        "source_type": source_type,
+        "ip": str(config.get("ip", existing.get("ip", ""))).strip(),
+        "username": str(config.get("username", existing.get("username", ""))).strip(),
+        "password": password,
+        "rtsp_port": _coalesce(config, existing, "rtsp_port", 554),
+        "onvif_port": _coalesce_optional(config, existing, "onvif_port"),
+        "stream_path": str(_coalesce(config, existing, "stream_path", "stream1")).strip(),
+        "stream_protocol": str(_coalesce(config, existing, "stream_protocol", "hls")).strip() or "hls",
+    }
+
+    for field in _REQUIRED_RTSP_FIELDS:
+        value = normalized.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return None, f"'{field}' is required"
+
+    return normalized, None
+
+
+def _coalesce(config: dict, existing: dict, key: str, default):
+    value = config.get(key)
+    if value is not None:
+        return value
+    value = existing.get(key)
+    if value is not None:
+        return value
+    return default
+
+
+def _coalesce_optional(config: dict, existing: dict, key: str):
+    if key in config:
+        return config.get(key)
+    return existing.get(key)
+
+
 def _configure_ptz(config: dict) -> None:
+    if not config.get("onvif_port"):
+        ptz.clear_config()
+        return
     ptz.configure(_build_onvif_url(config), config["username"], config["password"])
 
 
