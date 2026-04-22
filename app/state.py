@@ -185,44 +185,57 @@ class AppState:
             self.frame.save(buf, format="JPEG", quality=80)
             return buf.getvalue()
 
-    def snapshot(self) -> dict:
-        with self._lock:
-            pipeline = {
-                "frame_w":     self.frame_w,
-                "frame_h":     self.frame_h,
-                "infer_label": self.infer_label,
-                "infer_raw":   self.infer_raw,
-                "infer_ms":    round(self.infer_ms, 1),
-            }
-
-        uptime_s = int(time.time() - self._start_time)
-        h, rem = divmod(uptime_s, 3600)
-        m, s   = divmod(rem, 60)
-
-        ptz_cur  = ptz.get_current()
-        ptz_save = ptz.get_saved()
-
-        hw = self._hw.snapshot()
-
+    def _pipeline_snapshot_locked(self) -> dict:
         return {
-            **pipeline,
-            **hw,
+            "frame_w":     self.frame_w,
+            "frame_h":     self.frame_h,
+            "infer_label": self.infer_label,
+            "infer_raw":   self.infer_raw,
+            "infer_ms":    round(self.infer_ms, 1),
+        }
+
+    def _runtime_snapshot_locked(self) -> dict:
+        return {
             "ring_len":      len(self._ring) if self._ring is not None else 0,
             "ring_size":     self._ring_size,
-            "uptime":        f"{h}h {m:02d}m {s:02d}s",
-            "ptz_pan":       ptz_cur["pan"],
-            "ptz_tilt":      ptz_cur["tilt"],
-            "ptz_saved_pan":  ptz_save["pan"],
-            "ptz_saved_tilt": ptz_save["tilt"],
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
             "event_triggered": self.event_triggered,
-            "clip_count": len(self.list_clips()),
             "vlm_state": self.vlm_state,
             "vlm_error": self.vlm_error,
             "vlm_models": list(self.vlm_models),
             "vlm_current_model": self.vlm_current_model,
             **{f"cfg_{k}": v for k, v in self._config.items()},
+        }
+
+    def _uptime_text(self) -> str:
+        uptime_s = int(time.time() - self._start_time)
+        h, rem = divmod(uptime_s, 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}h {m:02d}m {s:02d}s"
+
+    def _ptz_snapshot(self) -> dict:
+        ptz_cur = ptz.get_current()
+        ptz_save = ptz.get_saved()
+        return {
+            "ptz_pan": ptz_cur["pan"],
+            "ptz_tilt": ptz_cur["tilt"],
+            "ptz_saved_pan": ptz_save["pan"],
+            "ptz_saved_tilt": ptz_save["tilt"],
+        }
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            pipeline = self._pipeline_snapshot_locked()
+            runtime = self._runtime_snapshot_locked()
+
+        return {
+            **pipeline,
+            **self._hw.snapshot(),
+            **self._ptz_snapshot(),
+            **runtime,
+            "uptime": self._uptime_text(),
+            "clip_count": len(self.list_clips()),
         }
 
     def sse_subscribe(self) -> queue.Queue:
