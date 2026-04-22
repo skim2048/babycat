@@ -32,6 +32,7 @@ camera_ready = threading.Event()
 
 DEFAULT_SOURCE_TYPE = "rtsp_camera"
 _REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
+_STREAM_PROTOCOLS = {"hls", "webrtc"}
 
 
 def load() -> Optional[dict]:
@@ -149,7 +150,7 @@ def _normalize_rtsp_camera_profile(config: dict, existing: dict, source_type: st
         "rtsp_port": _coalesce(config, existing, "rtsp_port", 554),
         "onvif_port": _coalesce_optional(config, existing, "onvif_port"),
         "stream_path": str(_coalesce(config, existing, "stream_path", "stream1")).strip(),
-        "stream_protocol": str(_coalesce(config, existing, "stream_protocol", "hls")).strip() or "hls",
+        "stream_protocol": _normalize_stream_protocol(_coalesce(config, existing, "stream_protocol", "hls")),
     }
 
     for field in _REQUIRED_RTSP_FIELDS:
@@ -174,6 +175,13 @@ def _coalesce_optional(config: dict, existing: dict, key: str):
     if key in config:
         return config.get(key)
     return existing.get(key)
+
+
+def _normalize_stream_protocol(value) -> str:
+    protocol = str(value or "hls").strip().lower()
+    if protocol not in _STREAM_PROTOCOLS:
+        return "hls"
+    return protocol
 
 
 def _configure_ptz(config: dict) -> None:

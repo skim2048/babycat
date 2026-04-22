@@ -14,6 +14,10 @@ const config = reactive({
   stream_protocol: 'hls',
 })
 
+function normalizeStreamProtocol(value) {
+  return value === 'webrtc' ? 'webrtc' : 'hls'
+}
+
 // @claude configured: profile is persisted in camera.json (durable).
 // @claude connecting: stream connection attempt in progress (transient).
 // @claude connected:  stream is actually playing (transient; set by LiveStream).
@@ -40,7 +44,7 @@ async function load() {
       config.password_set = !!data.password_set
       config.stream_path = data.stream_path || 'stream1'
       config.onvif_port = data.onvif_port || null
-      config.stream_protocol = data.stream_protocol || 'hls'
+      config.stream_protocol = normalizeStreamProtocol(data.stream_protocol)
       configured.value = true
     }
   } catch {
@@ -62,7 +66,7 @@ async function save() {
     if (config.password) {
       body.password = config.password
     }
-    body.stream_protocol = config.stream_protocol
+    body.stream_protocol = normalizeStreamProtocol(config.stream_protocol)
     const res = await authFetch(APP_ENDPOINTS.camera, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

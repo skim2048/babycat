@@ -64,6 +64,18 @@ def test_normalize_profile_preserves_saved_password_and_allows_onvif_clear():
     assert normalized["username"] == "admin2"
 
 
+def test_normalize_profile_coerces_unknown_stream_protocol_to_hls():
+    normalized, error = camera_module._normalize_profile({
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+        "stream_protocol": "rtsp",
+    }, {})
+
+    assert error is None
+    assert normalized["stream_protocol"] == "hls"
+
+
 def test_apply_mediamtx_source_builds_rtsp_url_before_update(monkeypatch):
     captured = {}
 
