@@ -12,7 +12,7 @@ const state = reactive({
   frame_w: 0,
   frame_h: 0,
   pipeline_state: 'idle',
-  pipeline_status_reason: 'boot',
+  pipeline_status_reason: 'waiting_for_vlm',
   pipeline_source_protocol: '',
   pipeline_source_transport: '',
   pipeline_active_for_s: null,

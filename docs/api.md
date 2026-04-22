@@ -259,7 +259,7 @@ es.onmessage = (e) => {
 |---|---|---|
 | `frame_w`, `frame_h` | int | 원본 프레임 해상도 |
 | `pipeline_state` | string | `app`이 소유하는 파이프라인 상태. 현재 `idle`, `starting`, `streaming`, `stalled`, `restarting`, `stopped`를 사용 |
-| `pipeline_status_reason` | string | 직전 상태 전이 이유. 예: `boot`, `waiting_for_camera`, `camera_apply`, `watchdog_timeout`, `shutdown` |
+| `pipeline_status_reason` | string | 직전 상태 전이 이유. 예: `waiting_for_vlm`, `waiting_for_camera`, `camera_apply`, `watchdog_timeout`, `shutdown` |
 | `pipeline_source_protocol` | string | 현재 파이프라인 입력 프로토콜. 현재는 `rtsp` |
 | `pipeline_source_transport` | string | 현재 파이프라인 입력 전송 방식. 현재는 `tcp` |
 | `pipeline_active_for_s` | float \| null | 현재 파이프라인 시작 이후 경과 시간(초). 시작 전이면 `null` |

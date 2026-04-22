@@ -82,7 +82,7 @@ const pipelineStateMap = {
   stopped: '중지됨',
 }
 const pipelineReasonMap = {
-  boot: '부팅 직후',
+  waiting_for_vlm: 'VLM 준비 대기',
   waiting_for_camera: '카메라 설정 대기',
   startup: '초기 시작',
   camera_apply: '카메라 적용 후 재시작',

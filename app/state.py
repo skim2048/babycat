@@ -50,7 +50,7 @@ class AppState:
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
         self.pipeline_state: str = "idle"
-        self.pipeline_status_reason: str = "boot"
+        self.pipeline_status_reason: str = "waiting_for_vlm"
         self.pipeline_started_at: float = 0.0
         self.pipeline_last_frame_at: float = 0.0
         self.pipeline_restart_count: int = 0

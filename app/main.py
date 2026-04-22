@@ -576,7 +576,7 @@ def main() -> None:
 
     app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     app_state.set_clip_dir(camera.DATA_DIR)
-    app_state.mark_pipeline_idle("boot")
+    app_state.mark_pipeline_idle("waiting_for_vlm")
 
     # @claude Start the debug/web server immediately so the web UI can save a camera profile
     # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes
