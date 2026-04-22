@@ -11,7 +11,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { useTheme } from '../composables/useTheme.js'
 
 const router = useRouter()
-const { configured, connecting, load: loadCamera } = useCamera()
+const { cameraViewState, load: loadCamera } = useCamera()
 const { logout } = useAuth()
 const { theme, setTheme } = useTheme()
 
@@ -136,7 +136,7 @@ function handleLogout() {
   </div>
   <div class="main">
     <div class="video-area">
-      <LiveStream v-if="configured || connecting" />
+      <LiveStream v-if="cameraViewState !== 'unconfigured'" />
       <div v-else class="empty-state">
         <p>카메라가 설정되지 않았습니다. 메뉴에서 카메라 설정을 완료하세요.</p>
       </div>

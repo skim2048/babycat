@@ -1,7 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import Hls from 'hls.js'
-import { useCamera } from '../composables/useCamera.js'
+import { alternateStreamProtocol, normalizeStreamProtocol, useCamera } from '../composables/useCamera.js'
 import { useSSE } from '../composables/useSSE.js'
 import SystemOverlay from './SystemOverlay.vue'
 import PtzOverlay from './PtzOverlay.vue'
@@ -10,7 +10,7 @@ import { getHlsUrl, getWhepUrl } from '../endpoints.js'
 
 const { state: sseState } = useSSE()
 
-const { config, configured, connecting, connected, reconnectKey, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
+const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
 
 // @claude Auto-reconnect after a successful camera-profile save (recovers from timeout state too).
 watch(reconnectKey, () => {
@@ -19,8 +19,6 @@ watch(reconnectKey, () => {
   destroyAll()
   handleConnect()
 })
-
-const hasOnvif = computed(() => !!config.onvif_port)
 
 const videoRef = ref(null)
 const videoWrapRef = ref(null)
@@ -65,24 +63,29 @@ let countdownTimer = null
 let pc = null
 let sessionId = 0
 let connectDeadline = 0
+let fallbackUsed = false
 const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
 
-const isWebRTC = computed(() => config.stream_protocol === 'webrtc')
+const activeProtocol = ref(preferredStreamProtocol.value)
+const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
+const preferredIsWebRTC = computed(() => preferredStreamProtocol.value === 'webrtc')
+const fallbackActive = computed(() => activeProtocol.value !== preferredStreamProtocol.value)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
 
 function toggleProtocol() {
-  config.stream_protocol = isWebRTC.value ? 'hls' : 'webrtc'
+  config.stream_protocol = alternateStreamProtocol(preferredStreamProtocol.value)
   saveCamera()
   if (configured.value && !stopped.value) {
-    restartStream()
+    restartStream({ resetProtocol: true })
   }
 }
 
 function handleConnect() {
   stopped.value = false
   connecting.value = true
+  resetPreferredProtocol()
   connectDeadline = Date.now() + CONNECT_TIMEOUT
   startCountdown()
   restartStream()
@@ -96,6 +99,7 @@ function startCountdown() {
     if (ms <= 0) {
       if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
       if (loading.value) {
+        if (tryFallback(sessionId)) return
         loading.value = false
         timedOut.value = true
         destroyHls()
@@ -125,7 +129,15 @@ function handleDisconnect() {
 
 // ── Lifecycle ──
 
-function restartStream() {
+function resetPreferredProtocol() {
+  activeProtocol.value = preferredStreamProtocol.value
+  fallbackUsed = false
+}
+
+function restartStream({ resetProtocol = false } = {}) {
+  if (resetProtocol) {
+    resetPreferredProtocol()
+  }
   destroyAll()
   initStream()
 }
@@ -152,6 +164,16 @@ function clearAllTimers() {
   if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
   if (stallTimer) { clearInterval(stallTimer); stallTimer = null }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+}
+
+function tryFallback(mySession) {
+  if (fallbackUsed || mySession !== sessionId) return false
+  fallbackUsed = true
+  activeProtocol.value = alternateStreamProtocol(activeProtocol.value)
+  connectDeadline = Date.now() + CONNECT_TIMEOUT
+  startCountdown()
+  initStream()
+  return true
 }
 
 // ── HLS ──
@@ -181,6 +203,7 @@ function initHls() {
     })
     hls.on(Hls.Events.ERROR, (_, data) => {
       if (data.fatal && mySession === sessionId && Date.now() < connectDeadline) {
+        if (tryFallback(mySession)) return
         retryTimer = setTimeout(() => {
           if (mySession === sessionId && Date.now() < connectDeadline) initHls()
         }, 3000)
@@ -257,6 +280,7 @@ async function initWebRTC() {
       if (state === 'connected') {
         onPlaying()
       } else if ((state === 'failed' || state === 'disconnected') && Date.now() < connectDeadline) {
+        if (tryFallback(mySession)) return
         retryTimer = setTimeout(() => {
           if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
         }, 3000)
@@ -295,6 +319,7 @@ async function initWebRTC() {
     console.error('[WebRTC] init failed:', e)
     if (mySession !== sessionId) return
     if (Date.now() < connectDeadline) {
+      if (tryFallback(mySession)) return
       retryTimer = setTimeout(() => {
         if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
       }, 3000)
@@ -466,11 +491,11 @@ onBeforeUnmount(() => {
     <div class="video-header">
       <span class="video-label">실시간 스트림</span>
       <div class="protocol-toggle" @click="toggleProtocol()">
-        <span class="protocol-label" :class="{ active: !isWebRTC }">HLS</span>
-        <div class="toggle-track" :class="{ on: isWebRTC }">
+        <span class="protocol-label" :class="{ active: !preferredIsWebRTC }">HLS</span>
+        <div class="toggle-track" :class="{ on: preferredIsWebRTC }">
           <div class="toggle-thumb" />
         </div>
-        <span class="protocol-label" :class="{ active: isWebRTC }">WebRTC</span>
+        <span class="protocol-label" :class="{ active: preferredIsWebRTC }">WebRTC</span>
       </div>
     </div>
     <div class="video-wrap" ref="videoWrapRef">
@@ -490,13 +515,17 @@ onBeforeUnmount(() => {
       <!-- @claude Connecting. -->
       <div v-else-if="loading" class="video-overlay">
         <div class="spinner" />
-        <span class="overlay-text">연결 중... {{ remainingSec }}초</span>
+        <span class="overlay-text">연결 중... {{ activeProtocol.toUpperCase() }} {{ remainingSec }}초</span>
       </div>
 
       <!-- @claude Connection timeout. -->
       <div v-else-if="timedOut" class="video-overlay">
         <span class="overlay-text timeout">네트워크 상태 또는 카메라 프로필을 확인하세요.</span>
         <button class="retry-btn" @click="handleConnect">재연결</button>
+      </div>
+
+      <div v-if="isPlaying && fallbackActive" class="protocol-badge">
+        현재 재생: {{ activeProtocol.toUpperCase() }} (저장된 선호값에서 폴백됨)
       </div>
 
 
@@ -536,7 +565,7 @@ onBeforeUnmount(() => {
           </div>
         </Transition>
 
-        <PtzOverlay v-if="hasOnvif" :open="activePanel === 'ptz' && isPlaying" />
+        <PtzOverlay v-if="ptzEnabled" :open="activePanel === 'ptz' && isPlaying" />
       </div>
 
       <!-- @claude Unified bottom bar (right-aligned, always visible). -->
@@ -580,7 +609,7 @@ onBeforeUnmount(() => {
 
         <!-- @claude PTZ controls. -->
         <button
-          v-if="hasOnvif"
+          v-if="ptzEnabled"
           class="toolbar-btn"
           :class="{ 'toolbar-btn-disabled': !isPlaying }"
           :disabled="!isPlaying"
@@ -720,6 +749,21 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 0;
   box-shadow: none;
+}
+.protocol-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .video-overlay {
   position: absolute;

@@ -1,4 +1,4 @@
-import { ref, reactive } from 'vue'
+import { computed, ref, reactive } from 'vue'
 import { authFetch } from './useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
@@ -14,8 +14,12 @@ const config = reactive({
   stream_protocol: 'hls',
 })
 
-function normalizeStreamProtocol(value) {
+export function normalizeStreamProtocol(value) {
   return value === 'webrtc' ? 'webrtc' : 'hls'
+}
+
+export function alternateStreamProtocol(value) {
+  return normalizeStreamProtocol(value) === 'webrtc' ? 'hls' : 'webrtc'
 }
 
 // @claude configured: profile is persisted in camera.json (durable).
@@ -27,6 +31,15 @@ const connected = ref(false)
 const status = ref('')
 const reconnectKey = ref(0)  // @claude Bumped on successful profile save so LiveStream auto-reconnects.
 let loaded = false
+
+const preferredStreamProtocol = computed(() => normalizeStreamProtocol(config.stream_protocol))
+const ptzEnabled = computed(() => config.onvif_port != null)
+const cameraViewState = computed(() => {
+  if (!configured.value) return 'unconfigured'
+  if (connecting.value) return 'connecting'
+  if (connected.value) return 'connected'
+  return 'configured'
+})
 
 async function load() {
   if (loaded) return
@@ -106,6 +119,7 @@ function disconnect() {
 export function useCamera() {
   return {
     config, configured, connecting, connected, status, reconnectKey,
+    preferredStreamProtocol, ptzEnabled, cameraViewState,
     load, save, disconnect, setConnected, setDisconnected,
   }
 }
