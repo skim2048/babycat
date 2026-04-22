@@ -2,6 +2,7 @@ import { ref, watch, effectScope } from 'vue'
 import { authFetch } from './useFetch.js'
 import { useSSE } from './useSSE.js'
 import { useAuth } from './useAuth.js'
+import { API_ENDPOINTS } from '../endpoints.js'
 
 const clips = ref([])
 const checked = ref({})
@@ -10,7 +11,7 @@ let knownCount = -1
 
 async function fetchClips() {
   try {
-    const res = await authFetch('/clips')
+    const res = await authFetch(API_ENDPOINTS.clips)
     if (!res.ok) return
     const data = await res.json()
     clips.value = data.clips || []
@@ -22,7 +23,7 @@ async function fetchClips() {
 
 async function deleteClips(names) {
   try {
-    const res = await authFetch('/clips', {
+    const res = await authFetch(API_ENDPOINTS.clips, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ names }),

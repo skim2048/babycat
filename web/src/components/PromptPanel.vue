@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { authFetch } from '../composables/useFetch.js'
+import { APP_ENDPOINTS } from '../endpoints.js'
 
 const emit = defineEmits(['close'])
 
@@ -28,7 +29,7 @@ async function apply() {
   if (!prompt.value.trim()) return
   status.value = ''
   try {
-    const res = await authFetch('/prompt', {
+    const res = await authFetch(APP_ENDPOINTS.prompt, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt.value.trim(), triggers: triggers.value.trim() }),

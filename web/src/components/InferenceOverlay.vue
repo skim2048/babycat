@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { authFetch } from '../composables/useFetch.js'
+import { APP_ENDPOINTS } from '../endpoints.js'
 
 defineProps({ open: Boolean })
 
@@ -35,7 +36,7 @@ const vlmInProgress = computed(() =>
 async function selectModel(name) {
   if (!name || name === state.vlm_current_model || switchDisabled.value) return
   try {
-    await authFetch('/vlm/switch', {
+    await authFetch(APP_ENDPOINTS.vlmSwitch, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: name }),

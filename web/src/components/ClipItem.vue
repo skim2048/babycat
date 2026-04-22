@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
+import { getClipUrl } from '../endpoints.js'
 
 const { getToken } = useAuth()
 
@@ -17,7 +18,7 @@ const isFullscreen = ref(false)
 const expanded = ref(false)
 
 const clipSrc = computed(() =>
-  `/clips/${encodeURIComponent(props.clip.name)}?s=${props.clip.size}&token=${encodeURIComponent(getToken())}`,
+  getClipUrl(props.clip.name, props.clip.size, getToken()),
 )
 
 const timeLabel = computed(() => {

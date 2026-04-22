@@ -6,6 +6,7 @@ import { useSSE } from '../composables/useSSE.js'
 import SystemOverlay from './SystemOverlay.vue'
 import PtzOverlay from './PtzOverlay.vue'
 import InferenceOverlay from './InferenceOverlay.vue'
+import { getHlsUrl, getWhepUrl } from '../endpoints.js'
 
 const { state: sseState } = useSSE()
 
@@ -68,10 +69,6 @@ const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
 
-// @claude MediaMTX default ports; must match the mediamtx service publish in docker-compose.
-const MEDIAMTX_HLS_PORT = 8888
-const MEDIAMTX_WHEP_PORT = 8889
-
 const isWebRTC = computed(() => config.stream_protocol === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
 
@@ -126,16 +123,6 @@ function handleDisconnect() {
   disconnect()
 }
 
-function getHlsUrl() {
-  const host = window.location.hostname
-  return `http://${host}:${MEDIAMTX_HLS_PORT}/live/index.m3u8`
-}
-
-function getWhepUrl() {
-  const host = window.location.hostname
-  return `http://${host}:${MEDIAMTX_WHEP_PORT}/live/whep`
-}
-
 // ── Lifecycle ──
 
 function restartStream() {
@@ -187,7 +174,7 @@ function initHls() {
       maxBufferLength: 3,
       maxMaxBufferLength: 6,
     })
-    hls.loadSource(getHlsUrl())
+    hls.loadSource(getHlsUrl(window.location.hostname))
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       video.play().catch(() => {})
@@ -200,7 +187,7 @@ function initHls() {
       }
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = getHlsUrl()
+    video.src = getHlsUrl(window.location.hostname)
     video.addEventListener('loadedmetadata', () => {
       video.play().catch(() => {})
     })
@@ -283,8 +270,8 @@ async function initWebRTC() {
     await waitForIceGathering(pc)
     if (mySession !== sessionId) return
 
-    console.log('[WebRTC] sending WHEP offer to', getWhepUrl())
-    const res = await fetch(getWhepUrl(), {
+    console.log('[WebRTC] sending WHEP offer to', getWhepUrl(window.location.hostname))
+    const res = await fetch(getWhepUrl(window.location.hostname), {
       method: 'POST',
       headers: { 'Content-Type': 'application/sdp' },
       body: pc.localDescription.sdp,

@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { API_ENDPOINTS } from '../endpoints.js'
 
 const token = ref(localStorage.getItem('token') || '')
 const refreshToken = ref(localStorage.getItem('refresh_token') || '')
@@ -7,7 +8,7 @@ export function useAuth() {
   const isAuthenticated = computed(() => !!token.value)
 
   async function login(username, password, rememberMe = false) {
-    const res = await fetch('/api/login', {
+    const res = await fetch(API_ENDPOINTS.login, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, remember_me: rememberMe }),
@@ -44,7 +45,7 @@ export function useAuth() {
     // @chatgpt be replayed indefinitely after it has been used once.
     if (!refreshToken.value) return false
 
-    const res = await fetch('/api/refresh', {
+    const res = await fetch(API_ENDPOINTS.refresh, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken.value }),

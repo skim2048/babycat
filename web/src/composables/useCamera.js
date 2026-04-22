@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue'
 import { authFetch } from './useFetch.js'
+import { APP_ENDPOINTS } from '../endpoints.js'
 
 const config = reactive({
   ip: '',
@@ -26,7 +27,7 @@ async function load() {
   if (loaded) return
   loaded = true
   try {
-    const res = await authFetch('/camera')
+    const res = await authFetch(APP_ENDPOINTS.camera)
     if (!res.ok) return
     const data = await res.json()
     if (data.configured) {
@@ -61,7 +62,7 @@ async function save() {
       body.onvif_port = config.onvif_port
     }
     body.stream_protocol = config.stream_protocol
-    const res = await authFetch('/camera', {
+    const res = await authFetch(APP_ENDPOINTS.camera, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

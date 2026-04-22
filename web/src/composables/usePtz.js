@@ -1,12 +1,13 @@
 import { ref } from 'vue'
 import { authFetch } from './useFetch.js'
+import { APP_ENDPOINTS } from '../endpoints.js'
 
 const PTZ_SPEED = 0.5
 const status = ref('대기')
 
 async function post(body) {
   try {
-    const res = await authFetch('/ptz', {
+    const res = await authFetch(APP_ENDPOINTS.ptz, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

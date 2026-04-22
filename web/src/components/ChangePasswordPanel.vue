@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { authFetch } from '../composables/useFetch.js'
+import { API_ENDPOINTS } from '../endpoints.js'
 
 const emit = defineEmits(['close'])
 
@@ -33,7 +34,7 @@ async function handleChange() {
 
   loading.value = true
   try {
-    const res = await authFetch('/api/change-password', {
+    const res = await authFetch(API_ENDPOINTS.changePassword, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
