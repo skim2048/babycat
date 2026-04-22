@@ -132,6 +132,8 @@ babycat/
 
 Full schema reference: [docs/api.md](docs/api.md)
 
+Internal refactoring boundary guide: [docs/architecture-boundaries.md](docs/architecture-boundaries.md)
+
 ## Environment Variables
 
 ### Shared
