@@ -73,6 +73,44 @@ const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const preferredIsWebRTC = computed(() => preferredStreamProtocol.value === 'webrtc')
 const fallbackActive = computed(() => activeProtocol.value !== preferredStreamProtocol.value)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
+const pipelineStateMap = {
+  idle: '대기',
+  starting: '시작 중',
+  streaming: '프레임 수신 중',
+  stalled: '프레임 정지',
+  restarting: '재시작 중',
+  stopped: '중지됨',
+}
+const pipelineReasonMap = {
+  boot: '부팅 직후',
+  waiting_for_camera: '카메라 설정 대기',
+  startup: '초기 시작',
+  camera_apply: '카메라 적용 후 재시작',
+  watchdog_timeout: '프레임 정지 감지',
+  shutdown: '종료',
+}
+const pipelineStateLabel = computed(() => pipelineStateMap[sseState.pipeline_state] || sseState.pipeline_state || '알 수 없음')
+const pipelineReasonLabel = computed(() => {
+  const reason = sseState.pipeline_status_reason
+  if (!reason) return ''
+  return pipelineReasonMap[reason] || reason
+})
+const pipelineStatusTone = computed(() => {
+  if (sseState.pipeline_state === 'streaming') return 'ok'
+  if (sseState.pipeline_state === 'stalled' || sseState.pipeline_state === 'restarting') return 'warn'
+  if (sseState.pipeline_state === 'stopped') return 'err'
+  return 'neutral'
+})
+const pipelineStatusText = computed(() => {
+  const parts = [pipelineStateLabel.value]
+  if (pipelineReasonLabel.value) parts.push(pipelineReasonLabel.value)
+  return parts.join(' · ')
+})
+
+function formatSeconds(value) {
+  if (value == null || Number.isNaN(value)) return '-'
+  return `${Number(value).toFixed(1)}초`
+}
 
 function toggleProtocol() {
   config.stream_protocol = alternateStreamProtocol(preferredStreamProtocol.value)
@@ -528,6 +566,10 @@ onBeforeUnmount(() => {
         현재 재생: {{ activeProtocol.toUpperCase() }} (저장된 선호값에서 폴백됨)
       </div>
 
+      <div class="pipeline-badge" :class="`pipeline-${pipelineStatusTone}`">
+        앱 파이프라인: {{ pipelineStatusText }}
+      </div>
+
 
       <!-- @claude Bottom-center: inference result panel. -->
       <InferenceOverlay :open="inferOpen && isPlaying" />
@@ -561,6 +603,26 @@ onBeforeUnmount(() => {
             <div class="stats-row" v-if="stats.packetLoss">
               <span class="stats-key">패킷 손실</span>
               <span class="stats-val">{{ stats.packetLoss }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-key">파이프라인</span>
+              <span class="stats-val">{{ pipelineStateLabel }}</span>
+            </div>
+            <div class="stats-row" v-if="pipelineReasonLabel">
+              <span class="stats-key">상태 이유</span>
+              <span class="stats-val">{{ pipelineReasonLabel }}</span>
+            </div>
+            <div class="stats-row" v-if="sseState.pipeline_last_frame_age_s != null">
+              <span class="stats-key">마지막 프레임</span>
+              <span class="stats-val">{{ formatSeconds(sseState.pipeline_last_frame_age_s) }} 전</span>
+            </div>
+            <div class="stats-row" v-if="sseState.pipeline_active_for_s != null">
+              <span class="stats-key">활성 시간</span>
+              <span class="stats-val">{{ formatSeconds(sseState.pipeline_active_for_s) }}</span>
+            </div>
+            <div class="stats-row">
+              <span class="stats-key">재시작 횟수</span>
+              <span class="stats-val">{{ sseState.pipeline_restart_count }}</span>
             </div>
           </div>
         </Transition>
@@ -764,6 +826,35 @@ onBeforeUnmount(() => {
   letter-spacing: 0.2px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+.pipeline-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.pipeline-badge.pipeline-ok {
+  border-color: rgba(74, 222, 128, 0.35);
+  color: rgba(187, 247, 208, 1);
+}
+.pipeline-badge.pipeline-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: rgba(253, 224, 71, 1);
+}
+.pipeline-badge.pipeline-err {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: rgba(254, 202, 202, 1);
 }
 .video-overlay {
   position: absolute;

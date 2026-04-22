@@ -11,6 +11,13 @@ const state = reactive({
   // @claude Pipeline
   frame_w: 0,
   frame_h: 0,
+  pipeline_state: 'idle',
+  pipeline_status_reason: 'boot',
+  pipeline_source_protocol: '',
+  pipeline_source_transport: '',
+  pipeline_active_for_s: null,
+  pipeline_last_frame_age_s: null,
+  pipeline_restart_count: 0,
   cfg_n_frames: 0,
   // @claude Hardware
   cpu_percent: 0,
