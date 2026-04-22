@@ -44,16 +44,8 @@ config/cam_profile.json
 *.sln
 *.sw?
 
-# ChatGPT
-.codex
-
-# Claude
-.claude/
-CLAUDE.md
-
 # Etc.
 tmp/
-diagnose.result.txt
-
-# Local environment overrides (HOST_IP, JWT_SECRET 등). .env.example만 트래킹.
 .env
+.codex
+.claude
