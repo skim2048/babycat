@@ -68,13 +68,9 @@ def apply(config: dict) -> dict:
 
     save(config)
 
-    _configure_ptz(config)
-
-    ok = _apply_mediamtx_source(config)
-    if not ok:
+    if not _activate_runtime(config):
         return {"ok": False, "error": "MediaMTX API connection failed"}
 
-    camera_ready.set()
     return {"ok": True}
 
 
@@ -89,9 +85,8 @@ def startup_apply() -> None:
     # @claude MediaMTX may not be ready yet; retry with exponential backoff.
     delay = 1.0
     for attempt in range(1, 11):
-        if _apply_mediamtx_source(config):
+        if _activate_runtime(config, configure_ptz=False):
             log.info("MediaMTX source configured (attempt %d)", attempt)
-            camera_ready.set()
             return
         log.warning("MediaMTX connection failed (attempt %d/10, retry in %.0fs)", attempt, delay)
         time.sleep(delay)
@@ -121,6 +116,15 @@ def _configure_ptz(config: dict) -> None:
 
 def _apply_mediamtx_source(config: dict) -> bool:
     return _update_mediamtx(_build_rtsp_url(config))
+
+
+def _activate_runtime(config: dict, configure_ptz: bool = True) -> bool:
+    if configure_ptz:
+        _configure_ptz(config)
+    if not _apply_mediamtx_source(config):
+        return False
+    camera_ready.set()
+    return True
 
 
 def _update_mediamtx(rtsp_url: str) -> bool:

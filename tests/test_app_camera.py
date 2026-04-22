@@ -27,7 +27,7 @@ def test_apply_mediamtx_source_builds_rtsp_url_before_update(monkeypatch):
     assert captured["rtsp_url"] == "rtsp://admin:pa%20ss@192.168.0.10:8554/live/main"
 
 
-def test_startup_apply_uses_shared_mediamtx_apply_helper(monkeypatch):
+def test_startup_apply_uses_shared_runtime_activation_helper(monkeypatch):
     calls = []
 
     monkeypatch.setattr(camera_module, "load", lambda: {
@@ -37,14 +37,20 @@ def test_startup_apply_uses_shared_mediamtx_apply_helper(monkeypatch):
         "onvif_port": 2020,
     })
     monkeypatch.setattr(camera_module.ptz, "configure", lambda *args: None)
-    monkeypatch.setattr(camera_module, "_apply_mediamtx_source", lambda config: calls.append(config.copy()) or True)
-    monkeypatch.setattr(camera_module.camera_ready, "set", lambda: calls.append("ready"))
+    monkeypatch.setattr(
+        camera_module,
+        "_activate_runtime",
+        lambda config, configure_ptz=True: calls.append((config.copy(), configure_ptz)) or True,
+    )
 
     camera_module.startup_apply()
 
-    assert calls[0]["ip"] == "192.168.0.10"
-    assert calls[0]["password"] == "secret"
-    assert calls[1] == "ready"
+    assert calls == [({
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+        "onvif_port": 2020,
+    }, False)]
 
 
 def test_configure_ptz_builds_onvif_url_from_config(monkeypatch):
@@ -72,3 +78,20 @@ def test_configure_ptz_builds_onvif_url_from_config(monkeypatch):
         "username": "admin",
         "password": "secret",
     }
+
+
+def test_activate_runtime_configures_ptz_then_marks_camera_ready(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(camera_module, "_configure_ptz", lambda config: calls.append(("ptz", config["ip"])))
+    monkeypatch.setattr(camera_module, "_apply_mediamtx_source", lambda config: calls.append(("mediamtx", config["ip"])) or True)
+    monkeypatch.setattr(camera_module.camera_ready, "set", lambda: calls.append(("ready", None)))
+
+    ok = camera_module._activate_runtime({
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+    })
+
+    assert ok is True
+    assert calls == [("ptz", "192.168.0.10"), ("mediamtx", "192.168.0.10"), ("ready", None)]
