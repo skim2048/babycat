@@ -49,6 +49,11 @@ class AppState:
         self._clip_dir: str = ""
         self._clip_cache: list[dict] = []
         self._clip_cache_time: float = 0.0
+        self.pipeline_state: str = "idle"
+        self.pipeline_status_reason: str = "boot"
+        self.pipeline_started_at: float = 0.0
+        self.pipeline_last_frame_at: float = 0.0
+        self.pipeline_restart_count: int = 0
 
         # @claude VLM load lifecycle — initializing | downloading | compiling | loading | ready | switching | error.
         # @claude `initializing`: right after boot, before entering the precompile stage.
@@ -163,10 +168,20 @@ class AppState:
             return list(self.trigger_keywords)
 
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
+        transitioned = False
         with self._lock:
             self.frame   = frame.copy()
             self.frame_w = orig_w
             self.frame_h = orig_h
+            now = time.time()
+            self.pipeline_last_frame_at = now
+            if self.pipeline_started_at == 0.0:
+                self.pipeline_started_at = now
+            transitioned = self.pipeline_state != "streaming"
+            self.pipeline_state = "streaming"
+            self.pipeline_status_reason = ""
+        if transitioned:
+            self._sse_push()
 
     def update_inference(self, label: str, raw: str, elapsed_ms: float,
                          event_triggered: bool = False):
@@ -208,6 +223,57 @@ class AppState:
             **{f"cfg_{k}": v for k, v in self._config.items()},
         }
 
+    def _stream_snapshot_locked(self) -> dict:
+        now = time.time()
+        active_for = None
+        if self.pipeline_started_at > 0.0:
+            active_for = round(max(0.0, now - self.pipeline_started_at), 1)
+
+        last_frame_age = None
+        if self.pipeline_last_frame_at > 0.0:
+            last_frame_age = round(max(0.0, now - self.pipeline_last_frame_at), 1)
+
+        return {
+            "pipeline_state": self.pipeline_state,
+            "pipeline_status_reason": self.pipeline_status_reason,
+            "pipeline_source_protocol": "rtsp",
+            "pipeline_source_transport": "tcp",
+            "pipeline_active_for_s": active_for,
+            "pipeline_last_frame_age_s": last_frame_age,
+            "pipeline_restart_count": self.pipeline_restart_count,
+        }
+
+    def mark_pipeline_starting(self, reason: str, restart: bool = False, started_at: float | None = None):
+        with self._lock:
+            self.pipeline_state = "restarting" if restart else "starting"
+            self.pipeline_status_reason = reason
+            self.pipeline_started_at = started_at or time.time()
+            self.pipeline_last_frame_at = 0.0
+            if restart:
+                self.pipeline_restart_count += 1
+        self._sse_push()
+
+    def mark_pipeline_idle(self, reason: str):
+        with self._lock:
+            self.pipeline_state = "idle"
+            self.pipeline_status_reason = reason
+            self.pipeline_started_at = 0.0
+            self.pipeline_last_frame_at = 0.0
+        self._sse_push()
+
+    def mark_pipeline_stalled(self, reason: str):
+        with self._lock:
+            self.pipeline_state = "stalled"
+            self.pipeline_status_reason = reason
+        self._sse_push()
+
+    def mark_pipeline_stopped(self, reason: str):
+        with self._lock:
+            self.pipeline_state = "stopped"
+            self.pipeline_status_reason = reason
+            self.pipeline_started_at = 0.0
+        self._sse_push()
+
     def _uptime_text(self) -> str:
         uptime_s = int(time.time() - self._start_time)
         h, rem = divmod(uptime_s, 3600)
@@ -228,9 +294,11 @@ class AppState:
         with self._lock:
             pipeline = self._pipeline_snapshot_locked()
             runtime = self._runtime_snapshot_locked()
+            stream = self._stream_snapshot_locked()
 
         return {
             **pipeline,
+            **stream,
             **self._hw.snapshot(),
             **self._ptz_snapshot(),
             **runtime,

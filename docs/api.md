@@ -192,7 +192,7 @@ window.addEventListener('load', () => {
 
 ### `GET http://<host>:8080/events`
 
-Server-Sent Events로 추론 결과, 하드웨어 상태, VLM 상태, 파이프라인 상태를 실시간 수신한다. 약 1초 간격으로 스냅샷을 송출한다.
+Server-Sent Events로 추론 결과, 하드웨어 상태, VLM 상태, 파이프라인 상태를 실시간 수신한다. 약 1초 간격으로 스냅샷을 송출한다. 여기의 파이프라인 상태는 `app`이 소유하는 GStreamer 실행 상태이며, 브라우저 재생 상태와는 별개다.
 
 **인증**: JWT 필수. `EventSource`는 헤더를 못 넣으므로 `?token=` 쿼리를 사용한다.
 
@@ -212,6 +212,13 @@ es.onmessage = (e) => {
 {
   "frame_w": 1920,
   "frame_h": 1080,
+  "pipeline_state": "streaming",
+  "pipeline_status_reason": "",
+  "pipeline_source_protocol": "rtsp",
+  "pipeline_source_transport": "tcp",
+  "pipeline_active_for_s": 100.0,
+  "pipeline_last_frame_age_s": 0.4,
+  "pipeline_restart_count": 2,
   "infer_label": "person detected",
   "infer_raw": "I can see a person standing near the door.",
   "infer_ms": 1723.4,
@@ -251,6 +258,13 @@ es.onmessage = (e) => {
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `frame_w`, `frame_h` | int | 원본 프레임 해상도 |
+| `pipeline_state` | string | `app`이 소유하는 파이프라인 상태. 현재 `idle`, `starting`, `streaming`, `stalled`, `restarting`, `stopped`를 사용 |
+| `pipeline_status_reason` | string | 직전 상태 전이 이유. 예: `boot`, `waiting_for_camera`, `camera_apply`, `watchdog_timeout`, `shutdown` |
+| `pipeline_source_protocol` | string | 현재 파이프라인 입력 프로토콜. 현재는 `rtsp` |
+| `pipeline_source_transport` | string | 현재 파이프라인 입력 전송 방식. 현재는 `tcp` |
+| `pipeline_active_for_s` | float \| null | 현재 파이프라인 시작 이후 경과 시간(초). 시작 전이면 `null` |
+| `pipeline_last_frame_age_s` | float \| null | 마지막 프레임 수신 이후 경과 시간(초). 아직 프레임이 없으면 `null` |
+| `pipeline_restart_count` | int | 앱 프로세스 시작 이후 파이프라인 재시작 횟수 |
 | `infer_label` | string | 추론 결과 라벨 |
 | `infer_raw` | string | VLM 원문 응답 |
 | `infer_ms` | float | 추론 소요 시간 (ms) |

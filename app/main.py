@@ -488,7 +488,7 @@ WATCHDOG_TIMEOUT  = 15.0   # @claude Restart if no frames arrive for this long a
 WATCHDOG_INTERVAL = 5.0    # @claude Check interval.
 
 
-def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
+def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startup", restart: bool = False) -> None:
     """(Re)start the GStreamer pipeline. Stops and replaces any existing one. @claude"""
     global _pipeline, _pipeline_started_at, _last_frame_time
     with _pipeline_lock:
@@ -508,6 +508,7 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
         now = time.time()
         _pipeline_started_at = now
         _last_frame_time = now
+        app_state.mark_pipeline_starting(reason, restart=restart, started_at=now)
         log.info("Pipeline PLAYING")
 
 
@@ -517,12 +518,12 @@ def _pipeline_restart_args() -> tuple[RingBuffer, queue.Queue] | None:
     return _pipeline_refs['ring'], _pipeline_refs['infer_q']
 
 
-def restart_pipeline() -> bool:
+def restart_pipeline(reason: str = "manual_restart") -> bool:
     """Request a pipeline restart. Returns False when refs are not ready yet. @codex"""
     args = _pipeline_restart_args()
     if args is None:
         return False
-    start_pipeline(*args)
+    start_pipeline(*args, reason=reason, restart=True)
     return True
 
 
@@ -552,7 +553,8 @@ def watchdog_worker() -> None:
                 "Watchdog: no frames for %.0fs — restarting pipeline",
                 now - last,
             )
-            restart_pipeline()
+            app_state.mark_pipeline_stalled("watchdog_timeout")
+            restart_pipeline("watchdog_timeout")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -574,6 +576,7 @@ def main() -> None:
 
     app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     app_state.set_clip_dir(camera.DATA_DIR)
+    app_state.mark_pipeline_idle("boot")
 
     # @claude Start the debug/web server immediately so the web UI can save a camera profile
     # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes
@@ -648,6 +651,7 @@ def main() -> None:
             log.info("Camera config applied")
         else:
             log.info("Camera not configured — pipeline will start when camera is set")
+            app_state.mark_pipeline_idle("waiting_for_camera")
 
     worker = threading.Thread(
         target=inference_worker,
@@ -660,9 +664,10 @@ def main() -> None:
 
     Gst.init(None)
     if camera.camera_ready.is_set():
-        start_pipeline(ring, infer_q)
+        start_pipeline(ring, infer_q, reason="startup")
     else:
         log.info("Pipeline deferred — waiting for camera config")
+        app_state.mark_pipeline_idle("waiting_for_camera")
 
     loop = GLib.MainLoop()
     try:
@@ -673,6 +678,7 @@ def main() -> None:
         with _pipeline_lock:
             if _pipeline is not None:
                 _pipeline.set_state(Gst.State.NULL)
+        app_state.mark_pipeline_stopped("shutdown")
         log.info("Pipeline stopped")
 
 

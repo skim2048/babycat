@@ -344,7 +344,7 @@ class AppHandler(BaseHTTPRequestHandler):
     def _schedule_camera_restart(self) -> None:
         """Schedule a pipeline restart after a successful camera apply. @codex"""
         from main import restart_pipeline
-        threading.Thread(target=restart_pipeline, daemon=True).start()
+        threading.Thread(target=restart_pipeline, args=("camera_apply",), daemon=True).start()
 
     def _handle_camera(self):
         body = self._read_json_body()
