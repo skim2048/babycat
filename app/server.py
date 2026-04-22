@@ -341,13 +341,17 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _schedule_camera_restart(self) -> None:
+        """Schedule a pipeline restart after a successful camera apply. @codex"""
+        from main import restart_pipeline
+        threading.Thread(target=restart_pipeline, daemon=True).start()
+
     def _handle_camera(self):
         body = self._read_json_body()
         result = camera.apply(body)
-        # @claude Camera config change -> restart pipeline so rtspsrc attaches to the new source.
+        # @claude Camera apply succeeds before the pipeline restart finishes; restart stays async.
         if result.get("ok"):
-            from main import restart_pipeline
-            threading.Thread(target=restart_pipeline, daemon=True).start()
+            self._schedule_camera_restart()
         resp = json.dumps(result, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
