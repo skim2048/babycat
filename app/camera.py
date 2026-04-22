@@ -68,11 +68,9 @@ def apply(config: dict) -> dict:
 
     save(config)
 
-    onvif_url = _build_onvif_url(config)
-    ptz.configure(onvif_url, config["username"], config["password"])
+    _configure_ptz(config)
 
-    rtsp_url = _build_rtsp_url(config)
-    ok = _update_mediamtx(rtsp_url)
+    ok = _apply_mediamtx_source(config)
     if not ok:
         return {"ok": False, "error": "MediaMTX API connection failed"}
 
@@ -86,14 +84,12 @@ def startup_apply() -> None:
         log.info("No saved config — set via frontend")
         return
 
-    onvif_url = _build_onvif_url(config)
-    ptz.configure(onvif_url, config["username"], config["password"])
+    _configure_ptz(config)
 
     # @claude MediaMTX may not be ready yet; retry with exponential backoff.
-    rtsp_url = _build_rtsp_url(config)
     delay = 1.0
     for attempt in range(1, 11):
-        if _update_mediamtx(rtsp_url):
+        if _apply_mediamtx_source(config):
             log.info("MediaMTX source configured (attempt %d)", attempt)
             camera_ready.set()
             return
@@ -117,6 +113,14 @@ def _build_onvif_url(config: dict) -> str:
     ip = config["ip"]
     port = config.get("onvif_port", 2020)
     return f"http://{ip}:{port}/onvif/service"
+
+
+def _configure_ptz(config: dict) -> None:
+    ptz.configure(_build_onvif_url(config), config["username"], config["password"])
+
+
+def _apply_mediamtx_source(config: dict) -> bool:
+    return _update_mediamtx(_build_rtsp_url(config))
 
 
 def _update_mediamtx(rtsp_url: str) -> bool:
