@@ -41,13 +41,28 @@ const cameraViewState = computed(() => {
   return 'configured'
 })
 
+async function readCameraBody(res) {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+function cameraErrorMessage(body, fallback) {
+  return body?.error || body?.detail || fallback
+}
+
 async function load() {
   if (loaded) return
   loaded = true
   try {
     const res = await authFetch(APP_ENDPOINTS.camera)
-    if (!res.ok) return
-    const data = await res.json()
+    const data = await readCameraBody(res)
+    if (!res.ok) {
+      status.value = cameraErrorMessage(data, `카메라 설정을 불러오지 못했습니다. (${res.status})`)
+      return
+    }
     if (data.configured) {
       config.source_type = data.source_type || 'rtsp_camera'
       config.ip = data.ip || ''
@@ -59,9 +74,10 @@ async function load() {
       config.onvif_port = data.onvif_port || null
       config.stream_protocol = normalizeStreamProtocol(data.stream_protocol)
       configured.value = true
+      status.value = ''
     }
   } catch {
-    status.value = 'Failed to load config'
+    status.value = '카메라 설정을 불러오지 못했습니다.'
   }
 }
 
@@ -85,15 +101,20 @@ async function save() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const data = await res.json()
-    if (data.ok) {
+    const data = await readCameraBody(res)
+    if (!res.ok) {
+      status.value = cameraErrorMessage(data, `저장 실패 (${res.status})`)
+      return false
+    }
+    if (data?.ok) {
       configured.value = true
       config.password = ''
       config.password_set = true
+      status.value = ''
       reconnectKey.value += 1
       return true
     } else {
-      status.value = `Error: ${data.error || 'unknown'}`
+      status.value = cameraErrorMessage(data, '저장 실패')
     }
   } catch {
     status.value = '저장 실패'
