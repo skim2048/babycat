@@ -145,6 +145,28 @@ def test_get_camera_masks_password(monkeypatch):
     assert not hasattr(result, "password")
 
 
+def test_camera_profile_out_returns_unconfigured_when_upstream_is_empty():
+    result = api_main._camera_profile_out(None)
+    assert result.configured is False
+
+
+def test_set_camera_maps_upstream_server_error_to_502(monkeypatch):
+    class DummyRequest:
+        headers = {"Authorization": "Bearer token"}
+
+    class DummyBody:
+        def model_dump(self, exclude_none=True):
+            return {"ip": "192.168.0.10", "username": "admin"}
+
+    def fake_proxy(method, path, auth_header, body=None, timeout=10):
+        return 500, {"ok": False, "error": "boom"}
+
+    monkeypatch.setattr(api_main, "_proxy_app", fake_proxy)
+    with pytest.raises(HTTPException) as exc:
+        api_main.set_camera(DummyRequest(), DummyBody(), _={})
+    assert exc.value.status_code == 502
+
+
 def test_list_clips_filters_small_files_and_reads_metadata():
     clip = _clip_path("20260416_101234_567.mp4")
     clip.write_bytes(b"\x00" * 20480)

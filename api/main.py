@@ -115,13 +115,7 @@ def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
     result = authenticate(body.username, body.password, db, remember_me=body.remember_me)
     if not result:
         raise HTTPException(status_code=401, detail="invalid credentials")
-    return TokenOut(
-        token=result["token"],
-        expires_in=JWT_EXPIRY,
-        must_change_password=result["must_change_password"],
-        refresh_token=result["refresh_token"],
-        refresh_expires_in=REFRESH_EXPIRY if result["refresh_token"] else None,
-    )
+    return _token_out(result)
 
 
 @app.post("/api/refresh", response_model=RefreshOut)
@@ -130,12 +124,7 @@ def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
     if not rotated:
         raise HTTPException(status_code=401, detail="invalid or expired refresh token")
     username, new_refresh_token = rotated
-    return RefreshOut(
-        token=create_token(username),
-        expires_in=JWT_EXPIRY,
-        refresh_token=new_refresh_token,
-        refresh_expires_in=REFRESH_EXPIRY,
-    )
+    return _refresh_out(username, new_refresh_token)
 
 
 @app.post("/api/logout")
@@ -169,6 +158,32 @@ def health():
 # ── Camera profile (proxied to babycat-app) ──────────────────────────────────
 
 
+def _token_out(result: dict) -> TokenOut:
+    """Normalize the login result into the client-facing token contract. @codex"""
+    return TokenOut(
+        token=result["token"],
+        expires_in=JWT_EXPIRY,
+        must_change_password=result["must_change_password"],
+        refresh_token=result["refresh_token"],
+        refresh_expires_in=REFRESH_EXPIRY if result["refresh_token"] else None,
+    )
+
+
+def _refresh_out(username: str, refresh_token: str) -> RefreshOut:
+    """Normalize the refresh flow into the client-facing refresh contract. @codex"""
+    return RefreshOut(
+        token=create_token(username),
+        expires_in=JWT_EXPIRY,
+        refresh_token=refresh_token,
+        refresh_expires_in=REFRESH_EXPIRY,
+    )
+
+
+def _request_auth_header(request: Request) -> str | None:
+    """Preserve the inbound Authorization header for upstream app proxy calls. @codex"""
+    return request.headers.get("Authorization")
+
+
 def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | None = None, timeout: int = 10):
     """Proxy a request to babycat-app's internal HTTP server; returns (status, json). @claude"""
     url = f"{APP_INTERNAL_URL}{path}"
@@ -189,31 +204,37 @@ def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | Non
         raise HTTPException(status_code=502, detail=f"upstream error: {e}")
 
 
-@app.get("/camera", response_model=CameraProfileOut)
-def get_camera(request: Request, _=Depends(require_auth)):
-    """Return the current camera profile; configured=False when unset. @claude"""
-    auth = request.headers.get("Authorization")
-    _, data = _proxy_app("GET", "/camera", auth)
+def _camera_profile_out(data: dict | None) -> CameraProfileOut:
+    """Normalize the proxied camera profile for clients and mask stored secrets. @codex"""
     if not data:
         return CameraProfileOut(configured=False)
 
-    # @chatgpt Keep the UI informed that a password exists without exposing the
-    # @chatgpt stored camera secret back to the browser.
     sanitized = dict(data)
     password = sanitized.pop("password", None)
     sanitized["password_set"] = bool(password)
     return CameraProfileOut(**sanitized)
 
 
-@app.post("/camera", response_model=ApplyResultOut)
-def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
-    """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
-    auth = request.headers.get("Authorization")
-    payload = body.model_dump(exclude_none=True)
-    status, data = _proxy_app("POST", "/camera", auth, payload)
+def _camera_apply_out(status: int, data: dict | None) -> ApplyResultOut:
+    """Normalize proxied camera-apply responses into the public API contract. @codex"""
     if status >= 500:
         raise HTTPException(status_code=502, detail="upstream error")
     return ApplyResultOut(**(data or {"ok": False, "error": "no response"}))
+
+
+@app.get("/camera", response_model=CameraProfileOut)
+def get_camera(request: Request, _=Depends(require_auth)):
+    """Return the current camera profile; configured=False when unset. @claude"""
+    _, data = _proxy_app("GET", "/camera", _request_auth_header(request))
+    return _camera_profile_out(data)
+
+
+@app.post("/camera", response_model=ApplyResultOut)
+def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
+    """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
+    payload = body.model_dump(exclude_none=True)
+    status, data = _proxy_app("POST", "/camera", _request_auth_header(request), payload)
+    return _camera_apply_out(status, data)
 
 
 # ── Clips ────────────────────────────────────────────────────────────────────
