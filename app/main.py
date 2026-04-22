@@ -511,10 +511,19 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue) -> None:
         log.info("Pipeline PLAYING")
 
 
-def restart_pipeline() -> None:
-    """Used by external callers (e.g. server handlers) to request a pipeline restart. @claude"""
-    if _pipeline_refs is not None:
-        start_pipeline(_pipeline_refs['ring'], _pipeline_refs['infer_q'])
+def _pipeline_restart_args() -> tuple[RingBuffer, queue.Queue] | None:
+    if _pipeline_refs is None:
+        return None
+    return _pipeline_refs['ring'], _pipeline_refs['infer_q']
+
+
+def restart_pipeline() -> bool:
+    """Request a pipeline restart. Returns False when refs are not ready yet. @codex"""
+    args = _pipeline_restart_args()
+    if args is None:
+        return False
+    start_pipeline(*args)
+    return True
 
 
 def watchdog_worker() -> None:
