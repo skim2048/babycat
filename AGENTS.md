@@ -24,5 +24,6 @@
 
 - Prefer explaining responsibility, data flow, failure modes, and validation before implementation details.
 - If the request is ambiguous, confirm the target behavior, no-change boundaries, runtime environment, and verification goal before implementing.
+- Default to `app` and `api` as the primary refactor targets. Treat `web` mainly as a contract consumer and validation surface.
 - When changing one layer, check whether `app`, `api`, `web`, `config`, `tests`, and `docs` need follow-up updates.
 - If verification cannot be run in the current environment, say so and name the remaining risk.

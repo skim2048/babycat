@@ -4,10 +4,12 @@
 
 - `web/` owns the operator dashboard and consumes both `api` and `app`.
 - Do not assume the dashboard talks to a single backend.
+- Do not treat `web/` as the default refactor center when the real ownership sits in `app` or `api`.
 
 ## Change Checks
 
 - For every new request, identify whether the source of truth is `api` or `app` before editing UI code.
+- Change `web/` on its own only when it has a clear local problem, or when it is misreading backend state or contract.
 - Treat `/api/*` as API-server contract work.
 - Treat `/events`, `/prompt`, `/ptz`, `/camera`, and `/vlm/*` as app-server contract work.
 - Treat SSE, MJPEG, HLS, and WebRTC as stream flows with different auth and failure modes from normal REST.
