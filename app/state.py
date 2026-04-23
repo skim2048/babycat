@@ -112,6 +112,9 @@ class AppState:
         self.inference_prompt: str = ""
         self.trigger_keywords: list[str] = []
         self.event_triggered: bool = False
+        self.clip_storage_state: str = "ok"
+        self.clip_storage_reason: str = ""
+        self.clip_storage_free_mb: int | None = None
         self.pipeline_state: str = "idle"
         self.pipeline_status_reason: str = "waiting_for_vlm"
         self.pipeline_started_at: float = 0.0
@@ -186,6 +189,13 @@ class AppState:
         with self._lock:
             return list(self.trigger_keywords)
 
+    def set_clip_storage_status(self, state: str, reason: str = "", free_mb: int | None = None):
+        with self._lock:
+            self.clip_storage_state = state
+            self.clip_storage_reason = reason
+            self.clip_storage_free_mb = free_mb
+        self._sse_push()
+
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         transitioned = False
         with self._lock:
@@ -235,6 +245,9 @@ class AppState:
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
             "event_triggered": self.event_triggered,
+            "clip_storage_state": self.clip_storage_state,
+            "clip_storage_reason": self.clip_storage_reason,
+            "clip_storage_free_mb": self.clip_storage_free_mb,
             "vlm_state": self.vlm_state,
             "vlm_error": self.vlm_error,
             "vlm_models": list(self.vlm_models),

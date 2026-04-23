@@ -13,6 +13,7 @@ import gc
 import logging
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -30,6 +31,12 @@ from PIL import Image
 from nano_llm import NanoLLM, ChatHistory
 
 import camera
+from clip_storage import (
+    ClipStoragePolicy,
+    bytes_to_mb,
+    cleanup_partial_outputs,
+    ensure_clip_capacity,
+)
 from state import state as app_state
 from server import start_server
 from ptz import is_moving as ptz_is_moving
@@ -53,6 +60,9 @@ RING_SIZE = int(os.getenv("RING_SIZE", "30"))
 
 TRIGGER_COOLDOWN  = float(os.getenv("TRIGGER_COOLDOWN", "30"))
 TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
+CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "256"))
+CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "512"))
+CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "20"))
 
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
@@ -94,6 +104,11 @@ class RingBuffer:
 
 _trigger_last_save: float = 0.0
 _trigger_lock = threading.Lock()
+CLIP_STORAGE_POLICY = ClipStoragePolicy(
+    min_free_bytes=max(0, CLIP_MIN_FREE_MB) * 1024 * 1024,
+    target_free_bytes=max(CLIP_MIN_FREE_MB, CLIP_TARGET_FREE_MB) * 1024 * 1024,
+    prune_max_files=max(0, CLIP_PRUNE_MAX_FILES),
+)
 
 
 def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
@@ -115,6 +130,7 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     clip_dir = app_state.get_clip_dir()
     if not clip_dir:
         log.warning("No clip directory set — skipping trigger clip")
+        app_state.set_clip_storage_status("skipped", "clip_dir_unset")
         return
 
     lt = time.localtime(event_time)
@@ -125,6 +141,27 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     import json as _json
     dest_dir = Path(clip_dir) / time.strftime("%Y", lt) / time.strftime("%m", lt)
     dest_dir.mkdir(parents=True, exist_ok=True)
+
+    capacity = ensure_clip_capacity(clip_dir, CLIP_STORAGE_POLICY)
+    if capacity.deleted_files:
+        log.warning(
+            "trigger-clip pruned %d old clips to recover %.1f MB (free=%d MB)",
+            capacity.deleted_files,
+            capacity.deleted_bytes / (1024 * 1024),
+            bytes_to_mb(capacity.free_bytes) or 0,
+        )
+    if not capacity.ok:
+        free_mb = bytes_to_mb(capacity.free_bytes)
+        log.warning(
+            "trigger-clip skipped: low disk space (free=%d MB, min=%d MB, deleted=%d)",
+            free_mb or 0,
+            CLIP_MIN_FREE_MB,
+            capacity.deleted_files,
+        )
+        app_state.invalidate_clip_cache()
+        app_state.set_clip_storage_status("skipped", capacity.reason, free_mb)
+        return
+
     out_path = dest_dir / f"{base}.mp4"
     meta_path = dest_dir / f"{base}.json"
 
@@ -138,14 +175,29 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
     ]
     log.info("trigger-clip recording start: %s (%ds)", out_path.name, TRIGGER_CLIP_DUR)
     try:
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       timeout=TRIGGER_CLIP_DUR + 10)
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=TRIGGER_CLIP_DUR + 10,
+            check=False,
+        )
+        if result.returncode != 0:
+            cleanup_partial_outputs(out_path, meta_path)
+            free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
+            log.error("trigger-clip recording failed: %s (exit=%d)", out_path.name, result.returncode)
+            app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
+            return
         log.info("trigger-clip recording done: %s", out_path.name)
     except subprocess.TimeoutExpired:
         log.warning("trigger-clip recording timeout: %s", out_path.name)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_timeout", bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return
     except Exception as e:
         log.error("trigger-clip recording error: %s", e)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_error", bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return
 
     try:
@@ -160,6 +212,11 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         log.error("metadata save error: %s", e)
 
     app_state.invalidate_clip_cache()
+    app_state.set_clip_storage_status(
+        "ok",
+        capacity.reason if capacity.reason != "ok" else "",
+        bytes_to_mb(shutil.disk_usage(dest_dir).free),
+    )
 
 
 # ── VLM model holder (switch support) ────────────────────────────────────────

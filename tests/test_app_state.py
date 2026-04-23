@@ -24,6 +24,9 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     app_state.inference_prompt = "Describe what you see."
     app_state.trigger_keywords = ["person", "fire"]
     app_state.event_triggered = True
+    app_state.clip_storage_state = "ok"
+    app_state.clip_storage_reason = "pruned_old_clips"
+    app_state.clip_storage_free_mb = 512
     app_state.vlm_state = "ready"
     app_state.vlm_error = ""
     app_state.vlm_models = ["Efficient-Large-Model/VILA1.5-3b"]
@@ -60,6 +63,9 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     assert snap["trigger_keywords"] == "person,fire"
     assert snap["event_triggered"] is True
     assert snap["clip_count"] == 2
+    assert snap["clip_storage_state"] == "ok"
+    assert snap["clip_storage_reason"] == "pruned_old_clips"
+    assert snap["clip_storage_free_mb"] == 512
     assert snap["ptz_pan"] == 0.1
     assert snap["ptz_saved_tilt"] == 0.4
     assert snap["vlm_state"] == "ready"
@@ -83,6 +89,9 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     app_state.inference_prompt = "Prompt"
     app_state.trigger_keywords = ["a", "b"]
     app_state.event_triggered = False
+    app_state.clip_storage_state = "skipped"
+    app_state.clip_storage_reason = "low_disk_space"
+    app_state.clip_storage_free_mb = 42
     app_state.vlm_state = "switching"
     app_state.vlm_error = "none"
     app_state.vlm_models = ["m1", "m2"]
@@ -95,6 +104,9 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     assert snap["inference_prompt"] == "Prompt"
     assert snap["trigger_keywords"] == "a,b"
     assert snap["event_triggered"] is False
+    assert snap["clip_storage_state"] == "skipped"
+    assert snap["clip_storage_reason"] == "low_disk_space"
+    assert snap["clip_storage_free_mb"] == 42
     assert snap["vlm_state"] == "switching"
     assert snap["vlm_error"] == "none"
     assert snap["vlm_models"] == ["m1", "m2"]
@@ -148,3 +160,17 @@ def test_pipeline_transition_helpers_update_public_stream_state(monkeypatch):
     assert app_state.pipeline_status_reason == "shutdown"
 
     assert pushes == ["push", "push", "push", "push", "push"]
+
+
+def test_set_clip_storage_status_updates_public_snapshot_and_pushes(monkeypatch):
+    app_state = state_module.AppState()
+    pushes = []
+
+    monkeypatch.setattr(app_state, "_sse_push", lambda: pushes.append("push"))
+
+    app_state.set_clip_storage_status("error", "ffmpeg_failed", 17)
+
+    assert app_state.clip_storage_state == "error"
+    assert app_state.clip_storage_reason == "ffmpeg_failed"
+    assert app_state.clip_storage_free_mb == 17
+    assert pushes == ["push"]
