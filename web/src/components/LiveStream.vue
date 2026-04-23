@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { alternateStreamProtocol, normalizeStreamProtocol, useCamera } from '../composables/useCamera.js'
+import { useAuth } from '../composables/useAuth.js'
 import { useSSE } from '../composables/useSSE.js'
 import SystemOverlay from './SystemOverlay.vue'
 import PtzOverlay from './PtzOverlay.vue'
@@ -15,6 +16,7 @@ const {
   pipelineStatusTone,
 } = useSSE()
 
+const { accessToken } = useAuth()
 const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
 
 // @claude Auto-reconnect after a successful camera-profile save (recovers from timeout state too).
@@ -23,6 +25,12 @@ watch(reconnectKey, () => {
   stopCountdown()
   destroyAll()
   handleConnect()
+})
+
+watch(accessToken, (currentToken) => {
+  if (!currentToken) {
+    handleDisconnect()
+  }
 })
 
 const videoRef = ref(null)

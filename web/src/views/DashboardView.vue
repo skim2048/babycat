@@ -1,6 +1,5 @@
 <script setup>
 import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useTheme } from '../composables/useTheme.js'
@@ -11,7 +10,6 @@ const PromptPanel = defineAsyncComponent(() => import('../components/PromptPanel
 const ClipsPanel = defineAsyncComponent(() => import('../components/ClipsPanel.vue'))
 const LiveStream = defineAsyncComponent(() => import('../components/LiveStream.vue'))
 
-const router = useRouter()
 const { cameraViewState, load: loadCamera } = useCamera()
 const { logout } = useAuth()
 const { theme, setTheme } = useTheme()
@@ -92,8 +90,7 @@ onBeforeUnmount(() => document.removeEventListener('click', closeMenu))
 
 function handleLogout() {
   profileMenuOpen.value = false
-  logout()
-  router.push({ name: 'login' })
+  logout({ redirect: true })
 }
 </script>
 
