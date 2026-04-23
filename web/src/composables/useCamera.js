@@ -1,6 +1,6 @@
 import { computed, ref, reactive } from 'vue'
 import { authFetch } from './useFetch.js'
-import { APP_ENDPOINTS } from '../endpoints.js'
+import { API_ENDPOINTS } from '../endpoints.js'
 
 const config = reactive({
   source_type: 'rtsp_camera',
@@ -57,7 +57,7 @@ async function load() {
   if (loaded) return
   loaded = true
   try {
-    const res = await authFetch(APP_ENDPOINTS.camera)
+    const res = await authFetch(API_ENDPOINTS.camera)
     const data = await readCameraBody(res)
     if (!res.ok) {
       status.value = cameraErrorMessage(data, `카메라 설정을 불러오지 못했습니다. (${res.status})`)
@@ -96,7 +96,7 @@ async function save() {
       body.password = config.password
     }
     body.stream_protocol = normalizeStreamProtocol(config.stream_protocol)
-    const res = await authFetch(APP_ENDPOINTS.camera, {
+    const res = await authFetch(API_ENDPOINTS.camera, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

@@ -1,14 +1,15 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import CameraPanel from '../components/CameraPanel.vue'
-import ChangePasswordPanel from '../components/ChangePasswordPanel.vue'
-import PromptPanel from '../components/PromptPanel.vue'
-import ClipsPanel from '../components/ClipsPanel.vue'
-import LiveStream from '../components/LiveStream.vue'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useTheme } from '../composables/useTheme.js'
+
+const CameraPanel = defineAsyncComponent(() => import('../components/CameraPanel.vue'))
+const ChangePasswordPanel = defineAsyncComponent(() => import('../components/ChangePasswordPanel.vue'))
+const PromptPanel = defineAsyncComponent(() => import('../components/PromptPanel.vue'))
+const ClipsPanel = defineAsyncComponent(() => import('../components/ClipsPanel.vue'))
+const LiveStream = defineAsyncComponent(() => import('../components/LiveStream.vue'))
 
 const router = useRouter()
 const { cameraViewState, load: loadCamera } = useCamera()

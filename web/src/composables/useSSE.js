@@ -1,4 +1,4 @@
-import { reactive, readonly } from 'vue'
+import { computed, reactive, readonly, watch } from 'vue'
 import { useAuth } from './useAuth.js'
 import { getEventsUrl } from '../endpoints.js'
 
@@ -45,41 +45,151 @@ const state = reactive({
 
 let started = false
 const MAX_BACKOFF = 30000
+let eventSource = null
+let reconnectTimer = null
+let backoff = 1000
+const PIPELINE_STATE_LABELS = {
+  idle: '대기',
+  starting: '시작 중',
+  streaming: '프레임 수신 중',
+  stalled: '프레임 정지',
+  restarting: '재시작 중',
+  stopped: '중지됨',
+}
+const PIPELINE_REASON_LABELS = {
+  waiting_for_vlm: 'VLM 준비 대기',
+  waiting_for_camera: '카메라 설정 대기',
+  startup: '초기 시작',
+  camera_apply: '카메라 적용 후 재시작',
+  watchdog_timeout: '프레임 정지 감지',
+  shutdown: '종료',
+}
+
+function resetState() {
+  state.uptime = '-'
+  state.infer_raw = ''
+  state.infer_ms = 0
+  state.event_triggered = false
+  state.frame_w = 0
+  state.frame_h = 0
+  state.pipeline_state = 'idle'
+  state.pipeline_status_reason = 'waiting_for_vlm'
+  state.pipeline_source_protocol = ''
+  state.pipeline_source_transport = ''
+  state.pipeline_active_for_s = null
+  state.pipeline_last_frame_age_s = null
+  state.pipeline_restart_count = 0
+  state.cfg_n_frames = 0
+  state.cpu_percent = 0
+  state.ram_used_mb = 0
+  state.ram_total_mb = 0
+  state.gpu_load = 0
+  state.cpu_temp = 0
+  state.gpu_temp = 0
+  state.ptz_pan = null
+  state.ptz_tilt = null
+  state.ptz_saved_pan = null
+  state.ptz_saved_tilt = null
+  state.inference_prompt = ''
+  state.trigger_keywords = ''
+  state.clip_count = 0
+  state.vlm_state = 'initializing'
+  state.vlm_error = ''
+  state.vlm_models = []
+  state.vlm_current_model = ''
+}
+
+function closeConnection() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
+
+function scheduleReconnect(token) {
+  if (!token || reconnectTimer) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    openConnection(token)
+  }, backoff)
+  backoff = Math.min(backoff * 2, MAX_BACKOFF)
+}
+
+function openConnection(token) {
+  closeConnection()
+  if (!token) {
+    resetState()
+    return
+  }
+
+  eventSource = new EventSource(getEventsUrl(token))
+
+  eventSource.onopen = () => {
+    backoff = 1000
+  }
+
+  eventSource.onmessage = (e) => {
+    try {
+      Object.assign(state, JSON.parse(e.data))
+    } catch {
+      // @claude Malformed JSON — ignored.
+    }
+  }
+
+  eventSource.onerror = () => {
+    closeConnection()
+    scheduleReconnect(token)
+  }
+}
 
 function connect() {
   if (started) return
   started = true
 
-  let backoff = 1000
-
-  function open() {
-    const { getToken } = useAuth()
-    const token = getToken()
-    const es = new EventSource(getEventsUrl(token))
-
-    es.onopen = () => {
-      backoff = 1000
+  const { accessToken } = useAuth()
+  watch(accessToken, (token) => {
+    backoff = 1000
+    if (!token) {
+      closeConnection()
+      resetState()
+      return
     }
-
-    es.onmessage = (e) => {
-      try {
-        Object.assign(state, JSON.parse(e.data))
-      } catch {
-        // @claude Malformed JSON — ignored.
-      }
-    }
-
-    es.onerror = () => {
-      es.close()
-      setTimeout(open, backoff)
-      backoff = Math.min(backoff * 2, MAX_BACKOFF)
-    }
-  }
-
-  open()
+    openConnection(token)
+  }, { immediate: true })
 }
 
 export function useSSE() {
   connect()
-  return { state: readonly(state) }
+  const readonlyState = readonly(state)
+  const pipelineStateLabel = computed(() =>
+    PIPELINE_STATE_LABELS[readonlyState.pipeline_state] || readonlyState.pipeline_state || '알 수 없음',
+  )
+  const pipelineReasonLabel = computed(() => {
+    const reason = readonlyState.pipeline_status_reason
+    if (!reason) return ''
+    return PIPELINE_REASON_LABELS[reason] || reason
+  })
+  const pipelineStatusTone = computed(() => {
+    if (readonlyState.pipeline_state === 'streaming') return 'ok'
+    if (readonlyState.pipeline_state === 'stalled' || readonlyState.pipeline_state === 'restarting') return 'warn'
+    if (readonlyState.pipeline_state === 'stopped') return 'err'
+    return 'neutral'
+  })
+  const pipelineStatusText = computed(() => {
+    const parts = [pipelineStateLabel.value]
+    if (pipelineReasonLabel.value) parts.push(pipelineReasonLabel.value)
+    return parts.join(' · ')
+  })
+
+  return {
+    state: readonlyState,
+    pipelineStateLabel,
+    pipelineReasonLabel,
+    pipelineStatusText,
+    pipelineStatusTone,
+  }
 }

@@ -15,7 +15,7 @@ export default defineConfig({
       '/events':  'http://app:8080',   // @claude SSE — query-token auth.
       '/prompt':  'http://app:8080',
       '/ptz':     'http://app:8080',
-      '/camera':  'http://app:8080',
+      '/camera':  'http://api:8000',
       '/vlm':     'http://app:8080',
     },
   },

@@ -50,17 +50,33 @@ async function deleteSelected() {
 // @claude Only registered once while authenticated; prevents a 401 loop on the login page.
 const globalScope = effectScope(true)
 let watcherStarted = false
+function resetClipState() {
+  clips.value = []
+  checked.value = {}
+  knownCount = -1
+}
+
 function ensureWatcher() {
   if (watcherStarted) return
-  const { isAuthenticated } = useAuth()
-  if (!isAuthenticated.value) return
   watcherStarted = true
   globalScope.run(() => {
+    const { isAuthenticated } = useAuth()
     const { state: sseState } = useSSE()
-    fetchClips()
     watch(
-      () => sseState.clip_count,
+      isAuthenticated,
+      (authenticated) => {
+        if (!authenticated) {
+          resetClipState()
+          return
+        }
+        fetchClips()
+      },
+      { immediate: true },
+    )
+    watch(
+      () => (isAuthenticated.value ? sseState.clip_count : null),
       (count) => {
+        if (count == null) return
         if (count !== knownCount) {
           knownCount = count
           fetchClips()

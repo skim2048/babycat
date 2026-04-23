@@ -17,7 +17,8 @@
 
 - Existing request paths must remain unchanged
 - Auth routes must remain `api` owned
-- Camera, PTZ, prompt, SSE, and VLM switch routes must remain `app` owned
+- PTZ, prompt, SSE, and VLM switch routes must remain `app` owned
+- camera profile routes must target the `api` proxy contract consumed by the frontend
 - HLS and WHEP playback URLs must remain MediaMTX owned
 
 ## 4. Minimum Validation
@@ -31,7 +32,8 @@
 - What was validated:
   - all updated `web` request call sites now reference a shared owner map in `web/src/endpoints.js`
   - auth routes remain mapped to `api`
-  - camera, PTZ, prompt, SSE, and VLM switch routes remain mapped to `app`
+  - camera routes are mapped to `api`, which continues to proxy the upstream `app` camera contract
+  - PTZ, prompt, SSE, and VLM switch routes remain mapped to `app`
   - clip routes remain mapped to `api`
   - HLS and WHEP playback URLs remain mapped to MediaMTX ports `8888` and `8889`
   - `node --check` passed for the new endpoint module and the updated plain JavaScript composables

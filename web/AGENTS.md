@@ -11,7 +11,8 @@
 - For every new request, identify whether the source of truth is `api` or `app` before editing UI code.
 - Change `web/` on its own only when it has a clear local problem, or when it is misreading backend state or contract.
 - Treat `/api/*` as API-server contract work.
-- Treat `/events`, `/prompt`, `/ptz`, `/camera`, and `/vlm/*` as app-server contract work.
+- Treat `/camera` as API-server proxy contract work; check both `api` and upstream `app`.
+- Treat `/events`, `/prompt`, `/ptz`, and `/vlm/*` as app-server contract work.
 - Treat SSE, MJPEG, HLS, and WebRTC as stream flows with different auth and failure modes from normal REST.
 - Before changing clip UI, check token query usage, range download behavior, metadata display, and refresh timing.
 - Before changing login/session behavior, check refresh-token retry and 401/429 handling.

@@ -1,6 +1,5 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import Hls from 'hls.js'
 import { alternateStreamProtocol, normalizeStreamProtocol, useCamera } from '../composables/useCamera.js'
 import { useSSE } from '../composables/useSSE.js'
 import SystemOverlay from './SystemOverlay.vue'
@@ -8,7 +7,13 @@ import PtzOverlay from './PtzOverlay.vue'
 import InferenceOverlay from './InferenceOverlay.vue'
 import { getHlsUrl, getWhepUrl } from '../endpoints.js'
 
-const { state: sseState } = useSSE()
+const {
+  state: sseState,
+  pipelineStateLabel,
+  pipelineReasonLabel,
+  pipelineStatusText,
+  pipelineStatusTone,
+} = useSSE()
 
 const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
 
@@ -56,6 +61,7 @@ function onFullscreenChange() {
 }
 
 let hls = null
+let Hls = null
 let stallTimer = null
 let timeoutTimer = null
 let retryTimer = null
@@ -73,40 +79,6 @@ const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const preferredIsWebRTC = computed(() => preferredStreamProtocol.value === 'webrtc')
 const fallbackActive = computed(() => activeProtocol.value !== preferredStreamProtocol.value)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
-const pipelineStateMap = {
-  idle: '대기',
-  starting: '시작 중',
-  streaming: '프레임 수신 중',
-  stalled: '프레임 정지',
-  restarting: '재시작 중',
-  stopped: '중지됨',
-}
-const pipelineReasonMap = {
-  waiting_for_vlm: 'VLM 준비 대기',
-  waiting_for_camera: '카메라 설정 대기',
-  startup: '초기 시작',
-  camera_apply: '카메라 적용 후 재시작',
-  watchdog_timeout: '프레임 정지 감지',
-  shutdown: '종료',
-}
-const pipelineStateLabel = computed(() => pipelineStateMap[sseState.pipeline_state] || sseState.pipeline_state || '알 수 없음')
-const pipelineReasonLabel = computed(() => {
-  const reason = sseState.pipeline_status_reason
-  if (!reason) return ''
-  return pipelineReasonMap[reason] || reason
-})
-const pipelineStatusTone = computed(() => {
-  if (sseState.pipeline_state === 'streaming') return 'ok'
-  if (sseState.pipeline_state === 'stalled' || sseState.pipeline_state === 'restarting') return 'warn'
-  if (sseState.pipeline_state === 'stopped') return 'err'
-  return 'neutral'
-})
-const pipelineStatusText = computed(() => {
-  const parts = [pipelineStateLabel.value]
-  if (pipelineReasonLabel.value) parts.push(pipelineReasonLabel.value)
-  return parts.join(' · ')
-})
-
 function formatSeconds(value) {
   if (value == null || Number.isNaN(value)) return '-'
   return `${Number(value).toFixed(1)}초`
@@ -216,7 +188,14 @@ function tryFallback(mySession) {
 
 // ── HLS ──
 
-function initHls() {
+async function ensureHls() {
+  if (Hls) return Hls
+  const mod = await import('hls.js/light')
+  Hls = mod.default
+  return Hls
+}
+
+async function initHls() {
   const mySession = ++sessionId
   clearAllTimers()
   destroyHls()
@@ -227,19 +206,22 @@ function initHls() {
   const video = videoRef.value
   if (!video) return
 
-  if (Hls.isSupported()) {
-    hls = new Hls({
+  const HlsLib = await ensureHls().catch(() => null)
+  if (mySession !== sessionId) return
+
+  if (HlsLib && HlsLib.isSupported()) {
+    hls = new HlsLib({
       liveSyncDurationCount: 1,
       liveMaxLatencyDurationCount: 3,
       maxBufferLength: 3,
       maxMaxBufferLength: 6,
     })
-    hls.loadSource(getHlsUrl(window.location.hostname))
+    hls.loadSource(getHlsUrl())
     hls.attachMedia(video)
-    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    hls.on(HlsLib.Events.MANIFEST_PARSED, () => {
       video.play().catch(() => {})
     })
-    hls.on(Hls.Events.ERROR, (_, data) => {
+    hls.on(HlsLib.Events.ERROR, (_, data) => {
       if (data.fatal && mySession === sessionId && Date.now() < connectDeadline) {
         if (tryFallback(mySession)) return
         retryTimer = setTimeout(() => {
@@ -248,7 +230,7 @@ function initHls() {
       }
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = getHlsUrl(window.location.hostname)
+    video.src = getHlsUrl()
     video.addEventListener('loadedmetadata', () => {
       video.play().catch(() => {})
     })
@@ -332,8 +314,8 @@ async function initWebRTC() {
     await waitForIceGathering(pc)
     if (mySession !== sessionId) return
 
-    console.log('[WebRTC] sending WHEP offer to', getWhepUrl(window.location.hostname))
-    const res = await fetch(getWhepUrl(window.location.hostname), {
+    console.log('[WebRTC] sending WHEP offer to', getWhepUrl())
+    const res = await fetch(getWhepUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/sdp' },
       body: pc.localDescription.sdp,

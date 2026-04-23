@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { computed, readonly, ref } from 'vue'
 import { API_ENDPOINTS } from '../endpoints.js'
 
 const token = ref(localStorage.getItem('token') || '')
@@ -72,6 +72,8 @@ export function useAuth() {
   }
 
   return {
+    accessToken: readonly(token),
+    storedRefreshToken: readonly(refreshToken),
     isAuthenticated,
     login,
     logout,

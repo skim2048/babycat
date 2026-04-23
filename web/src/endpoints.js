@@ -7,6 +7,7 @@ export const API_ENDPOINTS = {
   login: '/api/login',
   refresh: '/api/refresh',
   changePassword: '/api/change-password',
+  camera: '/camera',
   clips: '/clips',
   clipFile(name) {
     return `/clips/${encodeURIComponent(name)}`
@@ -14,7 +15,6 @@ export const API_ENDPOINTS = {
 }
 
 export const APP_ENDPOINTS = {
-  camera: '/camera',
   prompt: '/prompt',
   ptz: '/ptz',
   events: '/events',
@@ -22,11 +22,15 @@ export const APP_ENDPOINTS = {
   vlmSwitch: '/vlm/switch',
 }
 
-export function getHlsUrl(host) {
+export function getBrowserHost() {
+  return window.location.hostname
+}
+
+export function getHlsUrl(host = getBrowserHost()) {
   return `http://${host}:8888/live/index.m3u8`
 }
 
-export function getWhepUrl(host) {
+export function getWhepUrl(host = getBrowserHost()) {
   return `http://${host}:8889/live/whep`
 }
 
