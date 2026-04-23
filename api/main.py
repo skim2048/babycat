@@ -211,7 +211,8 @@ def _camera_profile_out(data: dict | None) -> CameraProfileOut:
 
     sanitized = dict(data)
     password = sanitized.pop("password", None)
-    sanitized["password_set"] = bool(password)
+    upstream_password_set = sanitized.get("password_set")
+    sanitized["password_set"] = bool(upstream_password_set) or bool(password)
     return CameraProfileOut(**sanitized)
 
 

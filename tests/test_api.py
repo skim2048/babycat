@@ -147,6 +147,22 @@ def test_get_camera_masks_password(monkeypatch):
     assert not hasattr(result, "password")
 
 
+def test_camera_profile_out_preserves_upstream_password_set_and_ptz_home():
+    result = api_main._camera_profile_out({
+        "configured": True,
+        "source_type": "rtsp_camera",
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password_set": True,
+        "ptz_home": {"pan": 0.22, "tilt": -0.553},
+    })
+
+    assert result.password_set is True
+    assert result.ptz_home is not None
+    assert result.ptz_home.pan == 0.22
+    assert result.ptz_home.tilt == -0.553
+
+
 def test_camera_profile_out_returns_unconfigured_when_upstream_is_empty():
     result = api_main._camera_profile_out(None)
     assert result.configured is False

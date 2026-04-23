@@ -42,6 +42,10 @@ class ChangePasswordIn(BaseModel):
 
 # ── Camera Profile ──────────────────────────────────────────────────────────
 
+class PTZHomeOut(BaseModel):
+    pan: float
+    tilt: float
+
 class CameraProfileIn(BaseModel):
     source_type: Optional[str] = None
     ip: str
@@ -63,7 +67,7 @@ class CameraProfileOut(BaseModel):
     onvif_port: Optional[int] = None
     stream_path: Optional[str] = None
     stream_protocol: Optional[str] = None
-    ptz_home: Optional[str] = None
+    ptz_home: Optional[PTZHomeOut] = None
 
 
 class ApplyResultOut(BaseModel):
