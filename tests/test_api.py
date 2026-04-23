@@ -25,6 +25,7 @@ import sys  # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
 
 import auth as auth_module  # noqa: E402
+import app_proxy as app_proxy_module  # noqa: E402
 import main as api_main  # noqa: E402
 from auth import DEFAULT_PASS, DEFAULT_USER, authenticate, change_password, init_users, rotate_refresh_token, verify_token  # noqa: E402
 from database import init_db  # noqa: E402
@@ -139,7 +140,7 @@ def test_get_camera_masks_password(monkeypatch):
             "stream_path": "stream1",
         }
 
-    monkeypatch.setattr(api_main, "_proxy_app", fake_proxy)
+    monkeypatch.setattr(api_main, "proxy_app", lambda app_internal_url, method, path, auth_header, body=None, timeout=10: fake_proxy(method, path, auth_header, body, timeout))
     result = api_main.get_camera(DummyRequest(), _={})
     assert result.configured is True
     assert result.source_type == "rtsp_camera"
@@ -148,7 +149,7 @@ def test_get_camera_masks_password(monkeypatch):
 
 
 def test_camera_profile_out_preserves_upstream_password_set_and_ptz_home():
-    result = api_main._camera_profile_out({
+    result = app_proxy_module.camera_profile_out({
         "configured": True,
         "source_type": "rtsp_camera",
         "ip": "192.168.0.10",
@@ -164,7 +165,7 @@ def test_camera_profile_out_preserves_upstream_password_set_and_ptz_home():
 
 
 def test_camera_profile_out_returns_unconfigured_when_upstream_is_empty():
-    result = api_main._camera_profile_out(None)
+    result = app_proxy_module.camera_profile_out(None)
     assert result.configured is False
 
 
@@ -179,7 +180,7 @@ def test_set_camera_maps_upstream_server_error_to_502(monkeypatch):
     def fake_proxy(method, path, auth_header, body=None, timeout=10):
         return 500, {"ok": False, "error": "boom"}
 
-    monkeypatch.setattr(api_main, "_proxy_app", fake_proxy)
+    monkeypatch.setattr(api_main, "proxy_app", lambda app_internal_url, method, path, auth_header, body=None, timeout=10: fake_proxy(method, path, auth_header, body, timeout))
     with pytest.raises(HTTPException) as exc:
         api_main.set_camera(DummyRequest(), DummyBody(), _={})
     assert exc.value.status_code == 502

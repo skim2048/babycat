@@ -36,6 +36,12 @@ from auth import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
+from app_proxy import (
+    camera_apply_out,
+    camera_profile_out,
+    proxy_app,
+    request_auth_header,
+)
 from database import DB_PATH, get_db, init_db
 from clip_support import parse_byte_range, resolve_clip_path
 from schemas import (
@@ -60,8 +66,6 @@ from schemas import (
     TokenOut,
 )
 import json
-import urllib.error
-import urllib.request
 
 APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://babycat-app:8080")
 
@@ -179,63 +183,19 @@ def _refresh_out(username: str, refresh_token: str) -> RefreshOut:
     )
 
 
-def _request_auth_header(request: Request) -> str | None:
-    """Preserve the inbound Authorization header for upstream app proxy calls. @codex"""
-    return request.headers.get("Authorization")
-
-
-def _proxy_app(method: str, path: str, auth_header: str | None, body: dict | None = None, timeout: int = 10):
-    """Proxy a request to babycat-app's internal HTTP server; returns (status, json). @claude"""
-    url = f"{APP_INTERNAL_URL}{path}"
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    if data is not None:
-        req.add_header("Content-Type", "application/json")
-    if auth_header:
-        req.add_header("Authorization", auth_header)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            text = r.read().decode()
-            return r.status, (json.loads(text) if text else None)
-    except urllib.error.HTTPError as e:
-        text = e.read().decode()
-        return e.code, (json.loads(text) if text else None)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"upstream error: {e}")
-
-
-def _camera_profile_out(data: dict | None) -> CameraProfileOut:
-    """Normalize the proxied camera profile for clients and mask stored secrets. @codex"""
-    if not data:
-        return CameraProfileOut(configured=False)
-
-    sanitized = dict(data)
-    password = sanitized.pop("password", None)
-    upstream_password_set = sanitized.get("password_set")
-    sanitized["password_set"] = bool(upstream_password_set) or bool(password)
-    return CameraProfileOut(**sanitized)
-
-
-def _camera_apply_out(status: int, data: dict | None) -> ApplyResultOut:
-    """Normalize proxied camera-apply responses into the public API contract. @codex"""
-    if status >= 500:
-        raise HTTPException(status_code=502, detail="upstream error")
-    return ApplyResultOut(**(data or {"ok": False, "error": "no response"}))
-
-
 @app.get("/camera", response_model=CameraProfileOut)
 def get_camera(request: Request, _=Depends(require_auth)):
     """Return the current camera profile; configured=False when unset. @claude"""
-    _, data = _proxy_app("GET", "/camera", _request_auth_header(request))
-    return _camera_profile_out(data)
+    _, data = proxy_app(APP_INTERNAL_URL, "GET", "/camera", request_auth_header(request))
+    return camera_profile_out(data)
 
 
 @app.post("/camera", response_model=ApplyResultOut)
 def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
     """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
     payload = body.model_dump()
-    status, data = _proxy_app("POST", "/camera", _request_auth_header(request), payload)
-    return _camera_apply_out(status, data)
+    status, data = proxy_app(APP_INTERNAL_URL, "POST", "/camera", request_auth_header(request), payload)
+    return camera_apply_out(status, data)
 
 
 # ── Clips ────────────────────────────────────────────────────────────────────
