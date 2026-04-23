@@ -123,69 +123,61 @@ def _post(body: str) -> str:
         return resp.read().decode()
 
 
+def _issue_request(body: str, operation: str) -> Optional[str]:
+    if not is_configured():
+        return None
+    try:
+        return _post(body)
+    except Exception as e:
+        log.error("%s failed: %s", operation, e)
+        return None
+
+
 # ── PTZ commands ─────────────────────────────────────────────────────────────
 
 def move(pan: float, tilt: float) -> None:
-    if not is_configured():
-        return
     body = (
         f'<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
         f'<Velocity><PanTilt xmlns="http://www.onvif.org/ver10/schema" x="{pan:.2f}" y="{tilt:.2f}"/></Velocity>'
         f"</ContinuousMove>"
     )
-    try:
-        _post(body)
-    except Exception as e:
-        log.error("move failed: %s", e)
+    _issue_request(body, "move")
 
 
 def stop() -> None:
-    if not is_configured():
-        return
     body = (
         f'<Stop xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
         "<PanTilt>true</PanTilt><Zoom>false</Zoom>"
         "</Stop>"
     )
-    try:
-        _post(body)
-    except Exception as e:
-        log.error("stop failed: %s", e)
+    _issue_request(body, "stop")
 
 
 def absolute_move(pan: float, tilt: float) -> None:
-    if not is_configured():
-        return
     body = (
         f'<AbsoluteMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
         f'<Position><PanTilt xmlns="http://www.onvif.org/ver10/schema" x="{pan:.3f}" y="{tilt:.3f}"/></Position>'
         f"</AbsoluteMove>"
     )
-    try:
-        _post(body)
-    except Exception as e:
-        log.error("absolute move failed: %s", e)
+    _issue_request(body, "absolute move")
 
 
 def get_status() -> Optional[dict]:
-    if not is_configured():
-        return None
     body = (
         f'<GetStatus xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
         f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
         "</GetStatus>"
     )
-    try:
-        text = _post(body)
-        m = re.search(r'PanTilt[^/]* x="([^"]*)"[^/]* y="([^"]*)"', text)
-        if m:
-            return {"pan": round(float(m.group(1)), 3),
-                    "tilt": round(float(m.group(2)), 3)}
-    except Exception as e:
-        log.error("GetStatus failed: %s", e)
+    text = _issue_request(body, "GetStatus")
+    if not text:
+        return None
+    m = re.search(r'PanTilt[^/]* x="([^"]*)"[^/]* y="([^"]*)"', text)
+    if m:
+        return {"pan": round(float(m.group(1)), 3),
+                "tilt": round(float(m.group(2)), 3)}
     return None
 
 
@@ -224,9 +216,13 @@ def save_home() -> Optional[dict]:
 def poll_loop() -> None:
     """Background thread: poll the current PTZ position every 2 seconds. @claude"""
     while True:
-        if is_configured():
-            status = get_status()
-            if status:
-                with _lock:
-                    _current.update(status)
+        poll_once()
         time.sleep(2)
+
+
+def poll_once() -> None:
+    """Poll PTZ status once and update the current position when available."""
+    status = get_status()
+    if status:
+        with _lock:
+            _current.update(status)
