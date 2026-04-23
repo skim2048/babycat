@@ -16,49 +16,25 @@ Endpoints:
 @claude
 """
 
-import hashlib
-import hmac
 import json
 import logging
 import os
 import queue
-import re
 import threading
 import time
 import urllib.parse
-from base64 import urlsafe_b64decode
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import camera
 import ptz
 from state import state as app_state
+from server_support import parse_range_header, resolve_clip_file, verify_jwt
 
 log = logging.getLogger(__name__)
 
 MAX_BODY = 65536  # @claude 64KB cap on request bodies.
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
-
-
-def _verify_jwt(token: str) -> bool:
-    """Verify JWT (HMAC-SHA256) signature and expiry. @claude"""
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            return False
-        header, payload, sig = parts
-        expected = hmac.new(
-            JWT_SECRET.encode(), f"{header}.{payload}".encode(), hashlib.sha256
-        ).digest()
-        padding = 4 - len(sig) % 4
-        actual = urlsafe_b64decode(sig + "=" * padding)
-        if not hmac.compare_digest(actual, expected):
-            return False
-        padding = 4 - len(payload) % 4
-        data = json.loads(urlsafe_b64decode(payload + "=" * padding))
-        return data.get("exp", 0) >= time.time()
-    except Exception:
-        return False
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -70,13 +46,13 @@ class AppHandler(BaseHTTPRequestHandler):
         """Validate a token from the Authorization header or the ?token= query param; 401 on failure. @claude"""
         # @claude 1) Authorization: Bearer <token>
         auth = self.headers.get("Authorization", "")
-        if auth.startswith("Bearer ") and _verify_jwt(auth[7:]):
+        if auth.startswith("Bearer ") and verify_jwt(auth[7:], JWT_SECRET):
             return True
         # @claude 2) ?token=<token> for clients that can't set headers (EventSource, etc.).
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
         token_list = qs.get("token", [])
-        if token_list and _verify_jwt(token_list[0]):
+        if token_list and verify_jwt(token_list[0], JWT_SECRET):
             return True
         self.send_response(401)
         self.send_header("Content-Type", "application/json")
@@ -224,27 +200,15 @@ class AppHandler(BaseHTTPRequestHandler):
     def _serve_clip_file(self):
         raw = self.path[len("/clip/"):]
         name = urllib.parse.unquote(raw.split("?", 1)[0])
-        if "/" in name or "\\" in name or ".." in name:
+        clip_dir = app_state.get_clip_dir()
+        if any(sep in name for sep in ("/", "\\", "..")):
             self.send_error(400)
             return
-        clip_dir = app_state.get_clip_dir()
-        if not clip_dir:
+        fpath = resolve_clip_file(clip_dir, name)
+        if clip_dir and fpath is None:
             self.send_error(404)
             return
-        # @claude Filenames start with {YYYYMMDD}_, so infer the year/month directory first.
-        fpath = None
-        if len(name) >= 8 and name[:8].isdigit():
-            yyyy, mm = name[:4], name[4:6]
-            candidate = Path(clip_dir) / yyyy / mm / name
-            if candidate.exists() and candidate.is_file():
-                fpath = candidate
-        # @claude Fallback: recursive search across the clip directory.
-        if fpath is None:
-            for p in Path(clip_dir).rglob(name):
-                if p.is_file():
-                    fpath = p
-                    break
-        if fpath is None:
+        if not clip_dir or fpath is None:
             self.send_error(404)
             return
 
@@ -252,13 +216,11 @@ class AppHandler(BaseHTTPRequestHandler):
         range_header = self.headers.get("Range")
 
         if range_header:
-            m = re.match(r"bytes=(\d+)-(\d*)", range_header)
-            if not m:
+            byte_range = parse_range_header(range_header, file_size)
+            if byte_range is None:
                 self.send_error(416)
                 return
-            start = int(m.group(1))
-            end = int(m.group(2)) if m.group(2) else file_size - 1
-            end = min(end, file_size - 1)
+            start, end = byte_range
             length = end - start + 1
 
             self.send_response(206)
@@ -390,20 +352,8 @@ class AppHandler(BaseHTTPRequestHandler):
         clip_dir = app_state.get_clip_dir()
         deleted = 0
         if clip_dir:
-            base = Path(clip_dir)
             for name in names:
-                if "/" in name or "\\" in name or ".." in name:
-                    continue
-                fpath = None
-                if len(name) >= 8 and name[:8].isdigit():
-                    candidate = base / name[:4] / name[4:6] / name
-                    if candidate.exists() and candidate.is_file():
-                        fpath = candidate
-                if fpath is None:
-                    for p in base.rglob(name):
-                        if p.is_file():
-                            fpath = p
-                            break
+                fpath = resolve_clip_file(clip_dir, name)
                 if fpath is not None:
                     fpath.unlink()
                     deleted += 1
