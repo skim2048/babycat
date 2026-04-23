@@ -15,7 +15,6 @@ Clip storage architecture:
 """
 
 import os
-import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +37,7 @@ from auth import (
     rotate_refresh_token,
 )
 from database import DB_PATH, get_db, init_db
+from clip_support import parse_byte_range, resolve_clip_path
 from schemas import (
     ApplyResultOut,
     CameraProfileIn,
@@ -290,16 +290,12 @@ def _list_clips(q: str | None = None) -> list[ClipOut]:
 
 def _resolve_clip(name: str) -> Path:
     """Extract YYYYMMDD from the name -> {CAM_DIR}/YYYY/MM/{name}. Falls back to rglob. @claude"""
-    if "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(400, "invalid clip name")
     base = Path(CAM_DIR)
-    if len(name) >= 8 and name[:8].isdigit():
-        candidate = base / name[:4] / name[4:6] / name
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    for p in base.rglob(name):
-        if p.is_file():
-            return p
+    resolved = resolve_clip_path(base, name)
+    if resolved is None and any(sep in name for sep in ("/", "\\", "..")):
+        raise HTTPException(400, "invalid clip name")
+    if resolved is not None:
+        return resolved
     raise HTTPException(404, "clip not found")
 
 
@@ -323,13 +319,10 @@ def get_clip(name: str, request: Request, _=Depends(require_auth)):
     if not range_header:
         return FileResponse(fpath, media_type="video/mp4")
 
-    m = re.match(r"bytes=(\d+)-(\d*)", range_header)
-    if not m:
+    byte_range = parse_byte_range(range_header, file_size)
+    if byte_range is None:
         raise HTTPException(416, "invalid range")
-
-    start = int(m.group(1))
-    end = int(m.group(2)) if m.group(2) else file_size - 1
-    end = min(end, file_size - 1)
+    start, end = byte_range
     length = end - start + 1
 
     def iter_range():
@@ -361,18 +354,7 @@ def delete_clips(body: ClipDeleteIn, _=Depends(require_auth)):
     deleted = 0
     base = Path(CAM_DIR)
     for name in body.names:
-        if "/" in name or "\\" in name or ".." in name:
-            continue
-        fpath: Path | None = None
-        if len(name) >= 8 and name[:8].isdigit():
-            candidate = base / name[:4] / name[4:6] / name
-            if candidate.exists() and candidate.is_file():
-                fpath = candidate
-        if fpath is None:
-            for p in base.rglob(name):
-                if p.is_file():
-                    fpath = p
-                    break
+        fpath = resolve_clip_path(base, name)
         if fpath is not None:
             fpath.unlink()
             meta_path = fpath.with_suffix(".json")
