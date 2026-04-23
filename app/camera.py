@@ -56,12 +56,7 @@ def profile_view() -> dict:
     config = load()
     if not config:
         return {"configured": False}
-    return {
-        "configured": True,
-        "source_type": _source_type(config),
-        **{k: v for k, v in config.items() if k != "password"},
-        "password_set": bool(config.get("password")),
-    }
+    return _profile_view(config)
 
 
 def apply(config: dict) -> dict:
@@ -132,8 +127,9 @@ def _source_type(config: dict | None, existing: dict | None = None) -> str:
 
 def _normalize_profile(config: dict, existing: dict) -> tuple[dict | None, str | None]:
     source_type = _source_type(config, existing)
-    if source_type == DEFAULT_SOURCE_TYPE:
-        return _normalize_rtsp_camera_profile(config, existing, source_type)
+    normalizer = _source_normalizer(source_type)
+    if normalizer is not None:
+        return normalizer(config, existing, source_type)
     return None, f"unsupported source_type: {source_type}"
 
 
@@ -184,6 +180,23 @@ def _normalize_stream_protocol(value) -> str:
     return protocol
 
 
+def _profile_view(config: dict) -> dict:
+    source_type = _source_type(config)
+    viewer = _source_profile_viewer(source_type)
+    if viewer is None:
+        return {"configured": False, "source_type": source_type}
+    return viewer(config, source_type)
+
+
+def _profile_view_rtsp_camera(config: dict, source_type: str) -> dict:
+    return {
+        "configured": True,
+        "source_type": source_type,
+        **{k: v for k, v in config.items() if k != "password"},
+        "password_set": bool(config.get("password")),
+    }
+
+
 def _configure_ptz(config: dict) -> None:
     if not config.get("onvif_port"):
         ptz.clear_config()
@@ -196,12 +209,37 @@ def _apply_mediamtx_source(config: dict) -> bool:
 
 
 def _activate_runtime(config: dict, configure_ptz: bool = True) -> bool:
+    activator = _source_runtime_activator(_source_type(config))
+    if activator is None:
+        return False
+    return activator(config, configure_ptz=configure_ptz)
+
+
+def _activate_rtsp_camera_runtime(config: dict, configure_ptz: bool = True) -> bool:
     if configure_ptz:
         _configure_ptz(config)
     if not _apply_mediamtx_source(config):
         return False
     camera_ready.set()
     return True
+
+
+def _source_profile_viewer(source_type: str):
+    if source_type == DEFAULT_SOURCE_TYPE:
+        return _profile_view_rtsp_camera
+    return None
+
+
+def _source_normalizer(source_type: str):
+    if source_type == DEFAULT_SOURCE_TYPE:
+        return _normalize_rtsp_camera_profile
+    return None
+
+
+def _source_runtime_activator(source_type: str):
+    if source_type == DEFAULT_SOURCE_TYPE:
+        return _activate_rtsp_camera_runtime
+    return None
 
 
 def _update_mediamtx(rtsp_url: str) -> bool:

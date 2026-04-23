@@ -23,6 +23,20 @@ def test_profile_view_masks_password_and_marks_configured(monkeypatch):
     assert "password" not in result
 
 
+def test_profile_view_returns_unconfigured_for_unsupported_source_type(monkeypatch):
+    monkeypatch.setattr(camera_module, "load", lambda: {
+        "source_type": "local_video",
+        "path": "/tmp/demo.mp4",
+    })
+
+    result = camera_module.profile_view()
+
+    assert result == {
+        "configured": False,
+        "source_type": "local_video",
+    }
+
+
 def test_normalize_profile_defaults_to_rtsp_camera_and_keeps_onvif_optional():
     normalized, error = camera_module._normalize_profile({
         "ip": "192.168.0.10",
@@ -184,3 +198,11 @@ def test_activate_runtime_configures_ptz_then_marks_camera_ready(monkeypatch):
 
     assert ok is True
     assert calls == [("ptz", "192.168.0.10"), ("mediamtx", "192.168.0.10"), ("ready", None)]
+
+
+def test_activate_runtime_rejects_unsupported_source_type():
+    ok = camera_module._activate_runtime({
+        "source_type": "local_video",
+    })
+
+    assert ok is False
