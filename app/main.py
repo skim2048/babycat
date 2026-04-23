@@ -33,6 +33,7 @@ import camera
 from state import state as app_state
 from server import start_server
 from ptz import is_moving as ptz_is_moving
+from pipeline_lifecycle import PipelineLifecycle
 
 log = logging.getLogger(__name__)
 
@@ -478,9 +479,7 @@ _pipeline_lock = threading.Lock()
 _pipeline_started_at: float = 0.0
 _last_frame_time: float = 0.0
 
-# @claude Pipeline refs (ring/infer_q). None until main() initializes them; any
-# @claude restart_pipeline() call before that is a safe no-op (safe during boot).
-_pipeline_refs: dict | None = None
+_pipeline_lifecycle = PipelineLifecycle(app_state, lambda: camera.camera_ready.is_set())
 
 # @claude Watchdog parameters.
 WATCHDOG_GRACE    = 15.0   # @claude Grace period after PLAYING before we complain about missing frames (initial RTSP handshake).
@@ -512,19 +511,9 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startu
         log.info("Pipeline PLAYING")
 
 
-def _pipeline_restart_args() -> tuple[RingBuffer, queue.Queue] | None:
-    if _pipeline_refs is None:
-        return None
-    return _pipeline_refs['ring'], _pipeline_refs['infer_q']
-
-
 def restart_pipeline(reason: str = "manual_restart") -> bool:
     """Request a pipeline restart. Returns False when refs are not ready yet. @codex"""
-    args = _pipeline_restart_args()
-    if args is None:
-        return False
-    start_pipeline(*args, reason=reason, restart=True)
-    return True
+    return _pipeline_lifecycle.request_restart(start_pipeline, reason)
 
 
 def watchdog_worker() -> None:
@@ -553,8 +542,7 @@ def watchdog_worker() -> None:
                 "Watchdog: no frames for %.0fs — restarting pipeline",
                 now - last,
             )
-            app_state.mark_pipeline_stalled("watchdog_timeout")
-            restart_pipeline("watchdog_timeout")
+            _pipeline_lifecycle.handle_watchdog_timeout(start_pipeline)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -576,7 +564,7 @@ def main() -> None:
 
     app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     app_state.set_clip_dir(camera.DATA_DIR)
-    app_state.mark_pipeline_idle("waiting_for_vlm")
+    _pipeline_lifecycle.mark_waiting_for_vlm()
 
     # @claude Start the debug/web server immediately so the web UI can save a camera profile
     # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes
@@ -633,9 +621,8 @@ def main() -> None:
     ring    = RingBuffer(maxlen=RING_SIZE)
     infer_q = queue.Queue(maxsize=1)
 
-    # @claude Publish refs for restart_pipeline (before this point, early calls are a no-op).
-    global _pipeline_refs
-    _pipeline_refs = {'ring': ring, 'infer_q': infer_q}
+    # @claude Publish refs for restart_pipeline (before this point, early calls are a safe no-op).
+    _pipeline_lifecycle.set_refs(ring, infer_q)
 
     # @claude Hand the ring ref to AppState so the SSE snapshot can expose ring fill level.
     app_state.set_refs(ring, RING_SIZE, {
@@ -651,7 +638,7 @@ def main() -> None:
             log.info("Camera config applied")
         else:
             log.info("Camera not configured — pipeline will start when camera is set")
-            app_state.mark_pipeline_idle("waiting_for_camera")
+            _pipeline_lifecycle.mark_waiting_for_camera()
 
     worker = threading.Thread(
         target=inference_worker,
@@ -663,11 +650,8 @@ def main() -> None:
     threading.Thread(target=watchdog_worker, daemon=True).start()
 
     Gst.init(None)
-    if camera.camera_ready.is_set():
-        start_pipeline(ring, infer_q, reason="startup")
-    else:
+    if not _pipeline_lifecycle.ensure_startup_started(start_pipeline):
         log.info("Pipeline deferred — waiting for camera config")
-        app_state.mark_pipeline_idle("waiting_for_camera")
 
     loop = GLib.MainLoop()
     try:
