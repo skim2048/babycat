@@ -88,7 +88,7 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     app_state.vlm_models = ["m1", "m2"]
     app_state.vlm_current_model = "m2"
 
-    snap = app_state._runtime_snapshot_locked()
+    snap = app_state._owned_runtime_snapshot_locked()
 
     assert snap["ring_len"] == 3
     assert snap["ring_size"] == 5
@@ -100,6 +100,20 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     assert snap["vlm_models"] == ["m1", "m2"]
     assert snap["vlm_current_model"] == "m2"
     assert snap["cfg_TARGET_FPS"] == 2
+
+
+def test_clip_cache_helper_preserves_dir_and_invalidation(monkeypatch):
+    cache = state_module.ClipIndexCache()
+    cache.set_dir("/tmp/clips")
+
+    assert cache.get_dir() == "/tmp/clips"
+
+    monkeypatch.setattr(state_module.Path, "exists", lambda self: False)
+    assert cache.list() == []
+
+    cache._entries = [{"name": "a.mp4"}]
+    cache.invalidate()
+    assert cache.list() == []
 
 
 def test_pipeline_transition_helpers_update_public_stream_state(monkeypatch):
