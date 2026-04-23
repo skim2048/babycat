@@ -81,6 +81,7 @@ services:
       - CAM_DIR=/data
       - DB_PATH=/data/db/babycat.db
       - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
+      - JWT_EXPIRY=${JWT_EXPIRY:-600}
       - DEFAULT_USER=${DEFAULT_USER:-admin}
       - DEFAULT_PASS=${DEFAULT_PASS:-admin}
     volumes:

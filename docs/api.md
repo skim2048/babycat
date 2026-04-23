@@ -82,7 +82,7 @@
 ```json
 {
   "token": "eyJhbGciOi...",
-  "expires_in": 3600,
+  "expires_in": 600,
   "must_change_password": false,
   "refresh_token": "r_abc...",
   "refresh_expires_in": 2592000
@@ -110,7 +110,7 @@
 ```json
 {
   "token": "eyJhbGciOi...",
-  "expires_in": 3600,
+  "expires_in": 600,
   "refresh_token": "r_xyz...",
   "refresh_expires_in": 2592000
 }

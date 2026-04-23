@@ -14,7 +14,7 @@ from fastapi import Depends, HTTPException, Request
 from database import get_db
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
-JWT_EXPIRY = int(os.environ.get("JWT_EXPIRY", "3600"))  # @claude 1h default.
+JWT_EXPIRY = int(os.environ.get("JWT_EXPIRY", "600"))  # @claude 10m default.
 REFRESH_EXPIRY = int(os.environ.get("REFRESH_EXPIRY", str(60 * 60 * 24 * 30)))  # @claude 30d default.
 
 DEFAULT_USER = os.environ.get("DEFAULT_USER", "admin")

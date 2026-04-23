@@ -49,7 +49,7 @@ In the Camera panel, enter the IP, port and credentials. The settings are applie
 Every endpoint on both `app:8080` and `api:8000` requires a JWT Bearer token. Unauthenticated requests return `401`.
 
 - Login throttle: **10 consecutive failures → 30-minute lockout**
-- Token lifetime: 1 hour (configurable via the `JWT_EXPIRY` environment variable)
+- Token lifetime: 10 minutes (configurable via the `JWT_EXPIRY` environment variable)
 
 ## Directory Layout
 
@@ -164,7 +164,7 @@ Internal refactoring boundary guide: [docs/architecture-boundaries.md](docs/arch
 |---|---|---|
 | `CAM_DIR` | `/data` | Clip lookup base (shares the same volume as App's `DATA_DIR`) |
 | `DB_PATH` | `/data/db/babycat.db` | SQLite database path |
-| `JWT_EXPIRY` | `3600` | Token lifetime (seconds) |
+| `JWT_EXPIRY` | `600` | Token lifetime (seconds) |
 | `DEFAULT_USER` | `admin` | Initial admin username |
 | `DEFAULT_PASS` | `admin` | Initial admin password |
 
