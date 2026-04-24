@@ -57,7 +57,7 @@ Internal reference for developers and Codex. Use this document before refactorin
 ### Auth
 
 - Owner: `api/`
-- Flow: `web` logs in through `/api/login`, stores access token and optional refresh token, retries through `/api/refresh`, then calls both `api` and `app` with the shared JWT.
+- Flow: `web` logs in through `/api/login` and chooses either a persistent session (`remember_me=true`) or a non-persistent session (`remember_me=false`). Persistent sessions must not show a session-expiry warning modal and should stay signed in through automatic renewal. Non-persistent sessions must warn before expiry, provide at least `extend` and `logout` actions, and should not restore after the browser closes. `web` then calls both `api` and `app` with the shared JWT, and any session-renewal path must keep `api` and `web` behavior aligned.
 - Watch for: token transport differences, 401/429 behavior, shared `JWT_SECRET`, query-token support for headerless clients.
 
 ### Camera Apply

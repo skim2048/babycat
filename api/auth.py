@@ -228,10 +228,11 @@ def authenticate(
     result = {
         "token": create_token(username),
         "must_change_password": not row["password_changed"],
-        "refresh_token": None,
+        # `remember_me` selects the client session policy. Both policies still
+        # need a server-side renewal token so the web app can support either
+        # automatic renewal or an explicit "extend session" action.
+        "refresh_token": issue_refresh_token(username, db),
     }
-    if remember_me:
-        result["refresh_token"] = issue_refresh_token(username, db)
     return result
 
 

@@ -3,6 +3,7 @@ import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { alternateStreamProtocol, normalizeStreamProtocol, useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useSSE } from '../composables/useSSE.js'
+import { useAuth } from '../composables/useAuth.js'
 import SystemOverlay from './SystemOverlay.vue'
 import PtzOverlay from './PtzOverlay.vue'
 import InferenceOverlay from './InferenceOverlay.vue'
@@ -15,6 +16,7 @@ const {
   pipelineStatusText,
   pipelineStatusTone,
 } = useSSE()
+const { isAuthenticated, isPersistentSession, sessionRemainingSeconds } = useAuth()
 
 const { accessToken } = useAuth()
 const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
@@ -87,6 +89,15 @@ const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const preferredIsWebRTC = computed(() => preferredStreamProtocol.value === 'webrtc')
 const fallbackActive = computed(() => activeProtocol.value !== preferredStreamProtocol.value)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
+const showSessionRemaining = computed(() =>
+  isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
+)
+const sessionRemainingText = computed(() => {
+  const total = sessionRemainingSeconds.value
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+})
 function formatSeconds(value) {
   if (value == null || Number.isNaN(value)) return '-'
   return `${Number(value).toFixed(1)}초`
@@ -529,6 +540,10 @@ onBeforeUnmount(() => {
     <div class="video-wrap" ref="videoWrapRef">
       <video ref="videoRef" muted playsinline />
 
+      <div v-if="showSessionRemaining" class="session-remaining-badge">
+        세션 남은 시간 {{ sessionRemainingText }}
+      </div>
+
       <!-- @claude Awaiting connection: click the play icon to connect. -->
       <div v-if="stopped" class="video-overlay clickable" @click="handleConnect">
         <div class="play-icon">
@@ -801,6 +816,25 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 0;
   box-shadow: none;
+}
+.session-remaining-badge {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  min-width: 132px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .protocol-badge {
   position: absolute;

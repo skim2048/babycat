@@ -81,12 +81,12 @@ def test_health_direct():
     assert api_main.health() == {"status": "ok"}
 
 
-def test_authenticate_without_remember_me_has_no_refresh_token():
+def test_authenticate_without_remember_me_still_has_refresh_token():
     conn = _conn()
     try:
         result = authenticate(DEFAULT_USER, DEFAULT_PASS, conn, remember_me=False)
         assert result is not None
-        assert result["refresh_token"] is None
+        assert result["refresh_token"] is not None
         assert verify_token(result["token"]) is not None
     finally:
         conn.close()

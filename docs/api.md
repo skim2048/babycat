@@ -59,7 +59,7 @@
 
 ### `POST http://<host>:8000/api/login`
 
-사용자명/비밀번호로 액세스 토큰과 리프레시 토큰을 발급한다. 기본 자격증명은 `docker-compose.yml`의 `DEFAULT_USER`/`DEFAULT_PASS` 환경변수로 설정된다.
+사용자명/비밀번호로 로그인한다. 세션 정책은 `remember_me`에 따라 갈린다. 기본 자격증명은 `docker-compose.yml`의 `DEFAULT_USER`/`DEFAULT_PASS` 환경변수로 설정된다.
 
 **Request Body**:
 
@@ -75,7 +75,7 @@
 |---|---|---|---|
 | `username` | string | 필수 | |
 | `password` | string | 필수 | |
-| `remember_me` | bool | 선택 | `true`일 때 리프레시 토큰을 함께 발급. 기본값 `false` |
+| `remember_me` | bool | 선택 | `true`면 영속 세션, `false`면 비영속 세션. 기본값 `false` |
 
 **Response `200`**:
 
@@ -94,14 +94,19 @@
 | `token` | string | 액세스 토큰 (Bearer) |
 | `expires_in` | int | 액세스 토큰 유효 시간 (초) |
 | `must_change_password` | bool | 초기 비밀번호 상태. `true`면 로그인 직후 `/api/change-password` 호출 유도 |
-| `refresh_token` | string \| null | `remember_me=true`일 때만 발급 |
-| `refresh_expires_in` | int \| null | 리프레시 토큰 유효 시간 (초) |
+| `refresh_token` | string | 영속 세션 자동 유지와 비영속 세션의 명시적 `연장`에 공통으로 사용되는 토큰 |
+| `refresh_expires_in` | int | 위 토큰의 유효 시간 (초) |
+
+세션 정책:
+
+- `remember_me=true`: 영속 세션. `web`은 토큰을 `localStorage`에 저장하고, 세션 만료 경고 모달을 띄우지 않으며, 만료 전에 자동 갱신을 시도한다.
+- `remember_me=false`: 비영속 세션. `web`은 토큰을 `sessionStorage`에 저장하고, 세션 만료 전에 경고 모달을 띄우며, 사용자가 `연장`을 눌렀을 때만 세션을 연장한다.
 
 **Response `401`**: `{"detail": "invalid credentials"}`
 
 ### `POST http://<host>:8000/api/refresh`
 
-리프레시 토큰을 회전시키고 새 액세스 토큰을 발급한다 (rotation 방식 — 기존 리프레시 토큰은 무효화).
+세션 유지 또는 세션 연장 시 새 인증 정보를 발급한다. 현재 구현은 리프레시 토큰 회전 방식이지만, 최종 동작은 위 세션 정책을 만족해야 한다.
 
 **Request Body**: `{ "refresh_token": "r_abc..." }`
 
@@ -120,7 +125,7 @@
 
 ### `POST http://<host>:8000/api/logout`
 
-리프레시 토큰을 서버에서 폐기한다. 액세스 토큰 검증은 건너뛰므로 이미 만료된 상태에서도 호출 가능.
+세션 유지 또는 연장에 사용되는 서버측 인증 수단을 폐기한다. 수동 로그아웃과 자동 로그아웃 모두 같은 정리 절차를 따르는 것을 정책 기준으로 본다. 액세스 토큰 검증은 건너뛰므로 이미 만료된 상태에서도 호출 가능하다.
 
 **Request Body**: `{ "refresh_token": "r_abc..." }` 또는 `{}`. `refresh_token` 필드는 선택이지만 요청 바디 자체는 JSON 객체로 보내는 것이 안전하다.
 

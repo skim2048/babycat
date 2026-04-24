@@ -6,6 +6,7 @@
 export const API_ENDPOINTS = {
   login: '/api/login',
   refresh: '/api/refresh',
+  logout: '/api/logout',
   changePassword: '/api/change-password',
   camera: '/camera',
   clips: '/clips',

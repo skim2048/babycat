@@ -23,12 +23,7 @@ defineEmits(['extend', 'logout'])
           <p class="session-modal-label">세션 안내</p>
           <h2 id="session-expiry-title" class="session-modal-title">로그인 세션이 곧 만료됩니다.</h2>
           <p id="session-expiry-description" class="session-modal-copy">
-            <template v-if="canExtend">
-              {{ remainingSeconds }}초 후 자동 로그아웃됩니다. 계속 사용하려면 세션을 연장하세요.
-            </template>
-            <template v-else>
-              {{ remainingSeconds }}초 후 자동 로그아웃됩니다. 이 세션은 연장할 수 없어 다시 로그인해야 합니다.
-            </template>
+            {{ remainingSeconds }}초 후 자동 로그아웃됩니다. 계속 사용하려면 세션을 연장하세요.
           </p>
           <div class="session-modal-actions">
             <button
@@ -43,10 +38,9 @@ defineEmits(['extend', 'logout'])
             <button
               type="button"
               class="session-modal-btn"
-              :class="{ 'session-modal-btn-danger': !canExtend }"
               @click="$emit('logout')"
             >
-              {{ canExtend ? '로그아웃' : '다시 로그인' }}
+              로그아웃
             </button>
           </div>
         </div>
@@ -125,12 +119,6 @@ defineEmits(['extend', 'logout'])
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-}
-
-.session-modal-btn-danger {
-  border-color: var(--danger-border);
-  background: var(--danger-bg-soft);
-  color: var(--danger);
 }
 
 .session-modal-enter-active,
