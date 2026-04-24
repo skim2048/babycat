@@ -113,6 +113,7 @@ def test_apply_mediamtx_source_builds_rtsp_url_before_update(monkeypatch):
 
 def test_startup_apply_uses_shared_runtime_activation_helper(monkeypatch):
     calls = []
+    ready_calls = []
 
     monkeypatch.setattr(camera_module, "load", lambda: {
         "ip": "192.168.0.10",
@@ -121,6 +122,7 @@ def test_startup_apply_uses_shared_runtime_activation_helper(monkeypatch):
         "onvif_port": 2020,
     })
     monkeypatch.setattr(camera_module.ptz, "configure", lambda *args: None)
+    monkeypatch.setattr(camera_module.camera_ready, "clear", lambda: ready_calls.append("clear"))
     monkeypatch.setattr(
         camera_module,
         "_activate_runtime",
@@ -138,6 +140,43 @@ def test_startup_apply_uses_shared_runtime_activation_helper(monkeypatch):
     assert config["password"] == "secret"
     assert config["onvif_port"] == 2020
     assert config["rtsp_port"] == 554
+    assert ready_calls == ["clear"]
+
+
+def test_apply_clears_ready_and_saves_only_after_runtime_success(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(camera_module, "load", lambda: {})
+    monkeypatch.setattr(camera_module.camera_ready, "clear", lambda: calls.append("clear"))
+    monkeypatch.setattr(camera_module, "_activate_runtime", lambda config: calls.append(("activate", config["ip"])) or True)
+    monkeypatch.setattr(camera_module, "save", lambda config: calls.append(("save", config["ip"])))
+
+    result = camera_module.apply({
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+    })
+
+    assert result == {"ok": True}
+    assert calls == ["clear", ("activate", "192.168.0.10"), ("save", "192.168.0.10")]
+
+
+def test_apply_failure_does_not_persist_profile_and_leaves_ready_cleared(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(camera_module, "load", lambda: {})
+    monkeypatch.setattr(camera_module.camera_ready, "clear", lambda: calls.append("clear"))
+    monkeypatch.setattr(camera_module, "_activate_runtime", lambda config: calls.append(("activate", config["ip"])) or False)
+    monkeypatch.setattr(camera_module, "save", lambda config: calls.append(("save", config["ip"])))
+
+    result = camera_module.apply({
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+    })
+
+    assert result == {"ok": False, "error": "MediaMTX API connection failed"}
+    assert calls == ["clear", ("activate", "192.168.0.10")]
 
 
 def test_configure_ptz_builds_onvif_url_from_config(monkeypatch):

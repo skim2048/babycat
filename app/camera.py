@@ -66,11 +66,15 @@ def apply(config: dict) -> dict:
     if error:
         return {"ok": False, "error": error}
 
-    save(normalized)
+    # Runtime readiness must track the currently active camera source, not the
+    # last persisted profile. Clear first so failed applies do not leave a stale
+    # "camera ready" state behind.
+    camera_ready.clear()
 
     if not _activate_runtime(normalized):
         return {"ok": False, "error": "MediaMTX API connection failed"}
 
+    save(normalized)
     return {"ok": True}
 
 
@@ -88,6 +92,7 @@ def startup_apply() -> None:
     _configure_ptz(config)
 
     # @claude MediaMTX may not be ready yet; retry with exponential backoff.
+    camera_ready.clear()
     delay = 1.0
     for attempt in range(1, 11):
         if _activate_runtime(config, configure_ptz=False):

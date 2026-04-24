@@ -38,7 +38,7 @@ from clip_storage import (
     ensure_clip_capacity,
 )
 from state import state as app_state
-from server import start_server
+from server import set_restart_pipeline_callback, start_server
 from ptz import is_moving as ptz_is_moving
 from pipeline_lifecycle import PipelineLifecycle
 
@@ -622,6 +622,7 @@ def main() -> None:
     app_state.set_prompt(INFERENCE_PROMPT_DEFAULT)
     app_state.set_clip_dir(camera.DATA_DIR)
     _pipeline_lifecycle.mark_waiting_for_vlm()
+    set_restart_pipeline_callback(restart_pipeline)
 
     # @claude Start the debug/web server immediately so the web UI can save a camera profile
     # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes

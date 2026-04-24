@@ -25,6 +25,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 
 import camera
 import ptz
@@ -32,6 +33,14 @@ from state import state as app_state
 from server_support import parse_range_header, resolve_clip_file, verify_jwt
 
 log = logging.getLogger(__name__)
+
+_restart_pipeline_callback: Callable[[str], bool] | None = None
+
+
+def set_restart_pipeline_callback(callback: Callable[[str], bool]) -> None:
+    """Register the app-runtime pipeline restart callback from the live main module."""
+    global _restart_pipeline_callback
+    _restart_pipeline_callback = callback
 
 MAX_BODY = 65536  # @claude 64KB cap on request bodies.
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
@@ -305,8 +314,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def _schedule_camera_restart(self) -> None:
         """Schedule a pipeline restart after a successful camera apply. @codex"""
-        from main import restart_pipeline
-        threading.Thread(target=restart_pipeline, args=("camera_apply",), daemon=True).start()
+        if _restart_pipeline_callback is None:
+            log.warning("Camera apply succeeded but restart callback is not registered")
+            return
+        threading.Thread(target=_restart_pipeline_callback, args=("camera_apply",), daemon=True).start()
 
     def _handle_camera(self):
         body = self._read_json_body()
