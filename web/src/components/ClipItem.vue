@@ -8,6 +8,10 @@ const { getToken } = useAuth()
 const props = defineProps({
   clip: Object,
   isChecked: Boolean,
+  viewMode: {
+    type: String,
+    default: 'gallery',
+  },
 })
 const emit = defineEmits(['check', 'delete'])
 
@@ -36,6 +40,7 @@ const timeLabel = computed(() => {
 })
 
 const keywords = computed(() => props.clip.keywords || [])
+const keywordLabel = computed(() => keywords.value.join(', '))
 const vlmText = computed(() => props.clip.vlm_text || '')
 
 function togglePlay() {
@@ -72,7 +77,70 @@ function onFullscreenChange() {
 </script>
 
 <template>
-  <div class="clip-card" :class="{ checked: isChecked }">
+  <div v-if="viewMode === 'list'" class="clip-card list" :class="{ checked: isChecked }">
+    <div ref="wrapEl" class="clip-video-wrap" @fullscreenchange="onFullscreenChange" @click="togglePlay">
+      <video
+        ref="videoEl"
+        :src="clipSrc"
+        preload="metadata"
+        muted
+        playsinline
+        @play="onPlay"
+        @pause="onPause"
+        @ended="onEnded"
+      ></video>
+      <div class="clip-overlay" :class="{ hidden: playing }">
+        <div class="clip-play-icon"></div>
+      </div>
+      <label class="clip-check-float" @click.stop>
+        <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
+      </label>
+      <button class="clip-fs-btn" @click="toggleFullscreen">
+        <svg v-if="!isFullscreen" width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="11,1 17,1 17,7" />
+          <polyline points="7,17 1,17 1,11" />
+        </svg>
+        <svg v-else width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17,7 11,7 11,1" />
+          <polyline points="1,11 7,11 7,17" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="clip-content">
+      <div class="clip-header list-header">
+        <span class="clip-time">{{ timeLabel }}</span>
+        <div class="clip-list-keywords">{{ keywordLabel || '-' }}</div>
+        <button class="clip-delete-btn" @click="emit('delete')" aria-label="클립 삭제">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2.5 4h11" />
+            <path d="M6 2h4" />
+            <path d="M5 4v8" />
+            <path d="M8 4v8" />
+            <path d="M11 4v8" />
+            <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="clip-vlm">
+        <div class="clip-vlm-text" :class="{ expanded }">{{ vlmText || '-' }}</div>
+        <button
+          v-if="vlmText"
+          class="clip-expand-btn"
+          @click="expanded = !expanded"
+          :class="{ open: expanded }"
+          aria-label="펼치기"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4,6 8,10 12,6" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="clip-card" :class="{ checked: isChecked }">
     <div class="clip-header">
       <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
       <span class="clip-time">{{ timeLabel }}</span>
@@ -138,11 +206,27 @@ function onFullscreenChange() {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
+.list {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
+  min-height: 148px;
+  max-height: 148px;
+  padding: 0;
+  overflow: hidden;
+}
 
 .clip-header {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.list-header {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) auto;
+  gap: 0;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
 }
 .clip-chk {
   width: 15px;
@@ -156,6 +240,27 @@ function onFullscreenChange() {
   font-family: var(--font-mono);
   color: var(--text-2);
   font-weight: 500;
+}
+.list .clip-time,
+.list .clip-list-keywords {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 0 16px;
+}
+.list .clip-time {
+  border-right: 1px solid var(--border);
+}
+.clip-list-keywords {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.list .clip-list-keywords {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
 }
 .clip-video-wrap {
   position: relative;
@@ -177,6 +282,13 @@ function onFullscreenChange() {
 }
 .clip-video-wrap:fullscreen video {
   object-fit: contain;
+}
+.list .clip-video-wrap {
+  aspect-ratio: auto;
+  min-height: 148px;
+  height: 100%;
+  border-radius: 0;
+  border-right: 1px solid var(--border);
 }
 .clip-overlay {
   position: absolute;
@@ -231,6 +343,32 @@ function onFullscreenChange() {
 .clip-fs-btn:hover {
   background: rgba(0, 0, 0, 0.75);
 }
+.clip-check-float {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  cursor: pointer;
+}
+
+.clip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.list .clip-content {
+  flex: 1;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+}
 
 .clip-badges {
   display: flex;
@@ -252,6 +390,12 @@ function onFullscreenChange() {
   align-items: flex-start;
   gap: 4px;
 }
+.list .clip-vlm {
+  flex: 1;
+  align-items: stretch;
+  min-height: 0;
+  padding: 14px 16px;
+}
 .clip-vlm-text {
   flex: 1;
   font-size: 12px;
@@ -260,6 +404,14 @@ function onFullscreenChange() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.list .clip-vlm-text {
+  min-width: 0;
+  overflow: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  scrollbar-width: thin;
 }
 .clip-vlm-text.expanded {
   white-space: normal;
@@ -282,5 +434,44 @@ function onFullscreenChange() {
 }
 .clip-expand-btn.open {
   transform: rotate(180deg);
+}
+.clip-delete-btn {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-3);
+  min-width: 48px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.clip-delete-btn:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+@media (max-width: 760px) {
+  .list {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    max-height: none;
+  }
+  .list .clip-video-wrap {
+    min-height: 0;
+    aspect-ratio: 16 / 9;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .list-header {
+    grid-template-columns: 1fr auto;
+  }
+  .list .clip-time {
+    border-right: none;
+    min-height: 48px;
+  }
+  .list .clip-list-keywords {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    border-top: 1px solid var(--border);
+  }
 }
 </style>

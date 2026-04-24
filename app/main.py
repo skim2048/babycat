@@ -67,9 +67,9 @@ CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "20"))
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
 
-INFERENCE_PROMPT_DEFAULT = "Describe what the person is doing in one sentence."
+INFERENCE_PROMPT_DEFAULT = "What is the person doing? Answer in one sentence."
 
-
+ 
 # ── Ring buffer ──────────────────────────────────────────────────────────────
 
 class RingBuffer:

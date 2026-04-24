@@ -235,7 +235,12 @@ def _list_clips(q: str | None = None) -> list[ClipOut]:
     for fpath, size, mtime in entries:
         if q and q.lower() not in fpath.name.lower():
             continue
+        meta_path = fpath.with_suffix(".json")
+        if not meta_path.exists():
+            continue
         meta = _read_clip_meta(fpath)
+        if not meta:
+            continue
         clips.append(ClipOut(
             name=fpath.name,
             size=size,

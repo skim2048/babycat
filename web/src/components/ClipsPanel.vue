@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useClips } from '../composables/useClips.js'
 import ClipItem from './ClipItem.vue'
 
 const { clips, checked, searchQuery, deleteSelected, deleteClips, toggleCheck } = useClips()
+const viewMode = ref('gallery')
 
 const filteredClips = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
@@ -30,6 +31,22 @@ function toggleSelectAll() {
   <div class="clips-panel">
     <div class="clips-toolbar">
       <input type="text" class="clip-search" v-model="searchQuery" placeholder="검색..." />
+      <div class="view-mode-group" role="group" aria-label="보기 모드">
+        <button
+          class="clip-action-btn"
+          :class="{ active: viewMode === 'gallery' }"
+          @click="viewMode = 'gallery'"
+        >
+          갤러리
+        </button>
+        <button
+          class="clip-action-btn"
+          :class="{ active: viewMode === 'list' }"
+          @click="viewMode = 'list'"
+        >
+          리스트
+        </button>
+      </div>
       <button
         class="clip-action-btn"
         :disabled="filteredClips.length === 0"
@@ -42,13 +59,14 @@ function toggleSelectAll() {
       </button>
     </div>
 
-    <div class="clips-gallery">
+    <div class="clips-gallery" :class="{ 'clips-list': viewMode === 'list' }">
       <template v-if="filteredClips.length > 0">
         <ClipItem
           v-for="clip in filteredClips"
           :key="clip.name"
           :clip="clip"
           :is-checked="!!checked[clip.name]"
+          :view-mode="viewMode"
           @check="(val) => toggleCheck(clip.name, val)"
           @delete="deleteClips([clip.name])"
         />
@@ -73,6 +91,14 @@ function toggleSelectAll() {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+.view-mode-group {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid var(--border-input);
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--bg-surface-secondary);
+}
 .clips-gallery {
   flex: 1;
   display: grid;
@@ -82,12 +108,22 @@ function toggleSelectAll() {
   padding: 2px;
   align-content: start;
 }
+.clips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .clip-empty {
   grid-column: 1 / -1;
   font-size: 12px;
   color: var(--text-4);
   padding: 40px 0;
   text-align: center;
+}
+.clip-action-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 .clips-gallery::-webkit-scrollbar { width: 6px; }
 .clips-gallery::-webkit-scrollbar-track { background: transparent; }

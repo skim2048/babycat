@@ -63,22 +63,23 @@ class ClipIndexCache:
             st = f.stat()
             if st.st_size < 10240:
                 continue
+            meta_path = f.with_suffix(".json")
+            if not meta_path.exists():
+                continue
             entry = {
                 "name": f.name,
                 "size": st.st_size,
                 "mtime": int(st.st_mtime),
                 "_mtime": st.st_mtime,
             }
-            meta_path = f.with_suffix(".json")
-            if meta_path.exists():
-                try:
-                    with open(meta_path, encoding="utf-8") as mf:
-                        meta = json.load(mf)
-                    entry["timestamp"] = meta.get("timestamp", int(st.st_mtime))
-                    entry["keywords"] = meta.get("keywords", [])
-                    entry["vlm_text"] = meta.get("vlm_text", "")
-                except Exception:
-                    pass
+            try:
+                with open(meta_path, encoding="utf-8") as mf:
+                    meta = json.load(mf)
+            except Exception:
+                continue
+            entry["timestamp"] = meta.get("timestamp", int(st.st_mtime))
+            entry["keywords"] = meta.get("keywords", [])
+            entry["vlm_text"] = meta.get("vlm_text", "")
             result.append(entry)
 
         result.sort(key=lambda x: x["_mtime"], reverse=True)

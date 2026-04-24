@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
@@ -126,6 +127,33 @@ def test_clip_cache_helper_preserves_dir_and_invalidation(monkeypatch):
     cache._entries = [{"name": "a.mp4"}]
     cache.invalidate()
     assert cache.list() == []
+
+
+def test_clip_cache_lists_only_completed_clips(tmp_path: Path):
+    cache = state_module.ClipIndexCache()
+    cache.set_dir(str(tmp_path))
+
+    complete = tmp_path / "2026" / "04" / "complete.mp4"
+    complete.parent.mkdir(parents=True)
+    complete.write_bytes(b"\x00" * 20480)
+    complete.with_suffix(".json").write_text(
+        '{"timestamp": 111, "keywords": ["person"], "vlm_text": "standing"}',
+        encoding="utf-8",
+    )
+
+    pending = tmp_path / "2026" / "04" / "pending.mp4"
+    pending.write_bytes(b"\x00" * 20480)
+
+    broken = tmp_path / "2026" / "04" / "broken.mp4"
+    broken.write_bytes(b"\x00" * 20480)
+    broken.with_suffix(".json").write_text("{", encoding="utf-8")
+
+    clips = cache.list()
+
+    assert [clip["name"] for clip in clips] == ["complete.mp4"]
+    assert clips[0]["timestamp"] == 111
+    assert clips[0]["keywords"] == ["person"]
+    assert clips[0]["vlm_text"] == "standing"
 
 
 def test_pipeline_transition_helpers_update_public_stream_state(monkeypatch):

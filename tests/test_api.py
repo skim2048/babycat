@@ -204,6 +204,19 @@ def test_list_clips_filters_small_files_and_reads_metadata():
     assert clips[0].vlm_text == "standing"
 
 
+def test_list_clips_excludes_pending_or_invalid_metadata():
+    pending = _clip_path("20260416_101234_567.mp4")
+    pending.write_bytes(b"\x00" * 20480)
+
+    broken = _clip_path("20260416_101235_000.mp4")
+    broken.write_bytes(b"\x00" * 20480)
+    broken.with_suffix(".json").write_text("{", encoding="utf-8")
+
+    clips = api_main._list_clips()
+
+    assert clips == []
+
+
 def test_resolve_clip_prefers_year_month_path():
     clip = _clip_path("20260416_101234_567.mp4")
     clip.write_bytes(b"\x00" * 20480)
