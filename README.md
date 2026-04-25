@@ -11,9 +11,9 @@ An edge-AI backend that analyzes RTSP camera streams in real time with a Visual 
 
 | Container | Ports | Responsibility |
 |---|---|---|
-| **App** | 8080 | GStreamer pipeline (with watchdog), VLM inference, trigger detection → ffmpeg clip recording, FCM notifications, PTZ control |
+| **App** | 8080 | GStreamer pipeline (with watchdog), VLM inference, trigger detection → ffmpeg clip recording, runtime camera apply, PTZ control, VLM model switching |
 | **MediaMTX** | 8554 / 8888 / 8889 / 8890 | RTSP / HLS / WebRTC streaming. Source is configured at runtime by App via the internal API on :9997 |
-| **API Server** | 8000 | Authentication and clips / events / device-token REST API (FastAPI + SQLite WAL) |
+| **API Server** | 8000 | Authentication, session refresh/logout, camera-profile proxy, and clips / events / device-token REST API (FastAPI + SQLite WAL) |
 
 ## Requirements
 
@@ -34,7 +34,8 @@ $EDITOR .env   # HOST_IP=<젯슨 IP> 채우기
 
 docker compose up -d --build
 
-cd web && docker compose up -d --build
+cd web
+docker compose up -d --build
 ```
 
 On first launch, open `http://<host>:5173` in a browser. You are redirected to the login page.
@@ -42,14 +43,25 @@ On first launch, open `http://<host>:5173` in a browser. You are redirected to t
 - **Default credentials**: `admin` / `admin`
 - After signing in, use the **Change Password** button in the dashboard header to set a new password.
 
+The `web` stack expects the main stack to be running first because it joins the external Docker network `babycat`.
+
 In the Camera panel, enter the IP, port and credentials. The settings are applied to MediaMTX and the PTZ module automatically and persisted to `config/cam_profile.json` so they are reloaded on restart.
 
 ### Authentication
 
-Every endpoint on both `app:8080` and `api:8000` requires a JWT Bearer token. Unauthenticated requests return `401`.
+Protected endpoints on `app:8080` and `api:8000` require a JWT Bearer token. Unauthenticated requests return `401`.
+
+Unauthenticated exceptions:
+
+- `GET app:8080/`
+- `GET api:8000/health`
+- `POST api:8000/api/login`
+- `POST api:8000/api/refresh`
+- `POST api:8000/api/logout`
 
 - Login throttle: **10 consecutive failures → 30-minute lockout**
-- Token lifetime: 10 minutes (configurable via the `JWT_EXPIRY` environment variable)
+- Access-token lifetime: 10 minutes (configurable via `JWT_EXPIRY`)
+- Refresh-token lifetime: 30 days by default (configurable via `REFRESH_EXPIRY`)
 
 ## Directory Layout
 
@@ -64,7 +76,8 @@ babycat/
 │   └── hardware.py        # Jetson hardware monitor (tegrastats parser)
 ├── api/                   # API server sources
 │   ├── main.py            # FastAPI endpoints
-│   ├── auth.py            # JWT auth + login throttle
+│   ├── auth.py            # JWT auth + login throttle + refresh-token lifecycle
+│   ├── app_proxy.py       # Proxy helpers for camera-profile calls to App
 │   ├── database.py        # SQLite (WAL) init
 │   └── schemas.py         # Pydantic schemas
 ├── web/                   # Web dashboard (Vue 3 + Vite)
@@ -92,7 +105,7 @@ babycat/
 | Streaming | MediaMTX (RTSP / HLS / WebRTC) |
 | Notifications | FCM HTTP v1 API (OAuth 2.0) |
 | API server | FastAPI + SQLite (WAL) |
-| Authentication | JWT (HMAC-SHA256, PBKDF2 password hashing) |
+| Authentication | JWT access token + refresh token (HMAC-SHA256, PBKDF2 password hashing) |
 | Web dashboard | Vue 3 + Vite + Vue Router |
 | PTZ control | ONVIF SOAP (WS-Security) |
 
@@ -109,6 +122,7 @@ babycat/
 | POST | `/camera` | Apply camera config (restarts GStreamer pipeline on change) |
 | POST | `/prompt` | Update VLM prompt / trigger keywords |
 | POST | `/ptz` | PTZ control (move / stop / save / goto) |
+| POST | `/vlm/switch` | Request VLM model switch |
 | GET | `/clips` | List clips |
 | GET | `/clip/{name}` | Download clip (Range supported) |
 | DELETE | `/clips` | Delete selected clips (removes the matching `.json` sidecar too) |
@@ -120,8 +134,12 @@ babycat/
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | POST | `/api/login` | No | Login (returns JWT) |
+| POST | `/api/refresh` | No | Rotate refresh token and issue a new access token |
+| POST | `/api/logout` | No | Revoke refresh token |
 | POST | `/api/change-password` | Yes | Change password |
 | GET | `/health` | No | Health check |
+| GET | `/camera` | Yes | Read persisted camera profile (proxied to App) |
+| POST | `/camera` | Yes | Apply camera profile (proxied to App) |
 | GET | `/clips` | Yes | List clips |
 | GET | `/clips/{name}` | Yes | Download clip (Range supported) |
 | DELETE | `/clips` | Yes | Delete selected clips |
@@ -141,18 +159,22 @@ Internal refactoring boundary guide: [docs/architecture-boundaries.md](docs/arch
 | Variable | Default | Description |
 |---|---|---|
 | `JWT_SECRET` | `babycat-default-secret` | JWT signing secret (must match between App and API) |
+| `HOST_IP` | — | Host IP advertised by MediaMTX as a WebRTC ICE candidate (`.env` / Compose input) |
 
 ### App
 
 | Variable | Default | Description |
 |---|---|---|
 | `MEDIAMTX_URL` | `rtsp://babycat-mediamtx:8554/live` | MediaMTX RTSP URL |
-| `VLM_MODEL` | `Efficient-Large-Model/VILA1.5-3b` | VLM model ID |
+| `VLM_MODELS` | `Efficient-Large-Model/VILA1.5-3b` | Comma-separated candidate VLM model IDs; the first entry is the boot default |
 | `TARGET_FPS` | `1.0` | Frame sampling FPS |
 | `N_FRAMES` | `4` | Frames per inference |
 | `RING_SIZE` | `30` | Ring buffer size (frames) |
 | `TRIGGER_COOLDOWN` | `30` | Minimum gap between trigger clips (seconds) |
 | `TRIGGER_CLIP_DUR` | `5` | Trigger clip duration (seconds) |
+| `CLIP_MIN_FREE_MB` | `256` | Minimum free disk required before recording a trigger clip |
+| `CLIP_TARGET_FREE_MB` | `512` | Prune target when freeing clip-storage space |
+| `CLIP_PRUNE_MAX_FILES` | `20` | Maximum number of old clips pruned in one cleanup pass |
 | `CONFIG_PATH` | `/config/cam_profile.json` | Camera profile file path |
 | `DATA_DIR` | `/data` | Base dir for trigger clips (`{YYYY}/{MM}/` created underneath) |
 | `FCM_CREDENTIALS` | — | Path to FCM service-account JSON |
@@ -165,8 +187,11 @@ Internal refactoring boundary guide: [docs/architecture-boundaries.md](docs/arch
 | `CAM_DIR` | `/data` | Clip lookup base (shares the same volume as App's `DATA_DIR`) |
 | `DB_PATH` | `/data/db/babycat.db` | SQLite database path |
 | `JWT_EXPIRY` | `600` | Token lifetime (seconds) |
+| `REFRESH_EXPIRY` | `2592000` | Refresh-token lifetime (seconds) |
 | `DEFAULT_USER` | `admin` | Initial admin username |
 | `DEFAULT_PASS` | `admin` | Initial admin password |
+| `BABYCAT_APP_URL` | `http://babycat-app:8080` | Internal App base URL used by the camera proxy |
+| `CORS_EXTRA_ORIGINS` | — | Additional allowed origins for the API server |
 
 ## Known Limitations
 
