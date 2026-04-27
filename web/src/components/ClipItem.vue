@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick, watch } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { getClipUrl } from '../endpoints.js'
 
@@ -15,10 +15,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['check', 'delete'])
 
-const videoEl = ref(null)
-const wrapEl = ref(null)
-const playing = ref(false)
-const isFullscreen = ref(false)
 const expanded = ref(false)
 
 const clipSrc = computed(() =>
@@ -43,133 +39,135 @@ const keywords = computed(() => props.clip.keywords || [])
 const keywordLabel = computed(() => keywords.value.join(', '))
 const vlmText = computed(() => props.clip.vlm_text || '')
 
-function togglePlay() {
-  const vid = videoEl.value
-  if (vid.paused) {
-    vid.muted = false
+// ── Modal player ──────────────────────────────────────────
+const playerOpen = ref(false)
+const playerEl = ref(null)
+const playerPlaying = ref(false)
+const playerCurrentTime = ref(0)
+const playerDuration = ref(0)
+const playerVolume = ref(1)
+
+watch(playerOpen, (val) => {
+  if (val) document.addEventListener('keydown', onKeydown)
+  else document.removeEventListener('keydown', onKeydown)
+})
+
+function openPlayer() {
+  playerOpen.value = true
+  nextTick(() => {
+    const vid = playerEl.value
+    if (!vid) return
+    vid.volume = playerVolume.value
+    vid.currentTime = 0
     vid.play()
-  } else {
-    vid.pause()
-  }
+  })
 }
 
-function onPlay() { playing.value = true }
-function onPause() { playing.value = false }
-function onEnded() {
-  const vid = videoEl.value
-  vid.muted = true
-  vid.currentTime = 0
-  playing.value = false
+function closePlayer() {
+  const vid = playerEl.value
+  if (vid) { vid.pause(); vid.currentTime = 0 }
+  playerOpen.value = false
+  playerPlaying.value = false
+  playerCurrentTime.value = 0
 }
-function toggleFullscreen(e) {
-  e.stopPropagation()
-  const el = wrapEl.value
-  if (!el) return
-  if (!document.fullscreenElement) {
-    el.requestFullscreen()
-  } else {
-    document.exitFullscreen()
-  }
+
+function togglePlayerPlay() {
+  const vid = playerEl.value
+  if (!vid) return
+  vid.paused ? vid.play() : vid.pause()
 }
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement
+
+function onPlayerPlay() { playerPlaying.value = true }
+function onPlayerPause() { playerPlaying.value = false }
+function onPlayerEnded() {
+  playerPlaying.value = false
+  playerCurrentTime.value = 0
+  if (playerEl.value) playerEl.value.currentTime = 0
+}
+function onLoadedMetadata() {
+  playerDuration.value = playerEl.value?.duration ?? 0
+}
+function onTimeUpdate() {
+  playerCurrentTime.value = playerEl.value?.currentTime ?? 0
+}
+
+function seekTo(e) {
+  const vid = playerEl.value
+  if (vid) vid.currentTime = Number(e.target.value)
+}
+
+function setVolume(e) {
+  const v = Number(e.target.value)
+  playerVolume.value = v
+  if (playerEl.value) playerEl.value.volume = v
+}
+
+function formatTime(s) {
+  if (!s || isNaN(s)) return '00:00'
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+function onKeydown(e) {
+  if (!playerOpen.value) return
+  if (e.key === 'Escape') { closePlayer(); return }
+  if (e.key === ' ') { e.preventDefault(); togglePlayerPlay(); return }
+  const vid = playerEl.value
+  if (!vid) return
+  if (e.key === 'ArrowLeft') vid.currentTime = Math.max(0, vid.currentTime - 5)
+  if (e.key === 'ArrowRight') vid.currentTime = Math.min(vid.duration, vid.currentTime + 5)
 }
 </script>
 
 <template>
+  <!-- List view -->
   <div v-if="viewMode === 'list'" class="clip-card list" :class="{ checked: isChecked }">
-    <div ref="wrapEl" class="clip-video-wrap" @fullscreenchange="onFullscreenChange" @click="togglePlay">
-      <video
-        ref="videoEl"
-        :src="clipSrc"
-        preload="metadata"
-        muted
-        playsinline
-        @play="onPlay"
-        @pause="onPause"
-        @ended="onEnded"
-      ></video>
-      <div class="clip-overlay" :class="{ hidden: playing }">
+    <label class="list-check" @click.stop>
+      <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
+    </label>
+
+    <div class="list-thumb" @click="openPlayer">
+      <video :src="clipSrc" preload="metadata" muted playsinline></video>
+      <div class="clip-overlay">
         <div class="clip-play-icon"></div>
       </div>
-      <label class="clip-check-float" @click.stop>
-        <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
-      </label>
-      <button class="clip-fs-btn" @click="toggleFullscreen">
-        <svg v-if="!isFullscreen" width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="11,1 17,1 17,7" />
-          <polyline points="7,17 1,17 1,11" />
-        </svg>
-        <svg v-else width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="17,7 11,7 11,1" />
-          <polyline points="1,11 7,11 7,17" />
-        </svg>
-      </button>
     </div>
 
-    <div class="clip-content">
-      <div class="clip-header list-header">
-        <span class="clip-time">{{ timeLabel }}</span>
-        <div class="clip-list-keywords">{{ keywordLabel || '-' }}</div>
-        <button class="clip-delete-btn" @click="emit('delete')" aria-label="클립 삭제">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2.5 4h11" />
-            <path d="M6 2h4" />
-            <path d="M5 4v8" />
-            <path d="M8 4v8" />
-            <path d="M11 4v8" />
-            <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
-          </svg>
-        </button>
-      </div>
-
-      <div class="clip-vlm">
-        <div class="clip-vlm-text" :class="{ expanded }">{{ vlmText || '-' }}</div>
-        <button
-          v-if="vlmText"
-          class="clip-expand-btn"
-          @click="expanded = !expanded"
-          :class="{ open: expanded }"
-          aria-label="펼치기"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="4,6 8,10 12,6" />
-          </svg>
-        </button>
+    <div class="list-meta">
+      <span class="list-time">{{ timeLabel }}</span>
+      <div class="list-info">
+        <span class="list-kw">{{ keywordLabel || '—' }}</span>
+        <span class="list-vlm">{{ vlmText || '—' }}</span>
       </div>
     </div>
+
+    <button class="clip-delete-btn" @click="emit('delete')" aria-label="클립 삭제">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.5 4h11" /><path d="M6 2h4" /><path d="M5 4v8" /><path d="M8 4v8" /><path d="M11 4v8" />
+        <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
+      </svg>
+    </button>
   </div>
 
+  <!-- Gallery view -->
   <div v-else class="clip-card" :class="{ checked: isChecked }">
     <div class="clip-header">
       <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
       <span class="clip-time">{{ timeLabel }}</span>
-    </div>
-
-    <div ref="wrapEl" class="clip-video-wrap" @fullscreenchange="onFullscreenChange" @click="togglePlay">
-      <video
-        ref="videoEl"
-        :src="clipSrc"
-        preload="metadata"
-        muted
-        playsinline
-        @play="onPlay"
-        @pause="onPause"
-        @ended="onEnded"
-      ></video>
-      <div class="clip-overlay" :class="{ hidden: playing }">
-        <div class="clip-play-icon"></div>
-      </div>
-      <button class="clip-fs-btn" @click="toggleFullscreen">
-        <svg v-if="!isFullscreen" width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="11,1 17,1 17,7" />
-          <polyline points="7,17 1,17 1,11" />
-        </svg>
-        <svg v-else width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="17,7 11,7 11,1" />
-          <polyline points="1,11 7,11 7,17" />
+      <button class="clip-delete-btn" @click="emit('delete')" aria-label="클립 삭제">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2.5 4h11" /><path d="M6 2h4" /><path d="M5 4v8" /><path d="M8 4v8" /><path d="M11 4v8" />
+          <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
         </svg>
       </button>
+    </div>
+
+    <div class="clip-video-wrap" @click="openPlayer">
+      <video :src="clipSrc" preload="metadata" muted playsinline></video>
+      <div class="clip-overlay">
+        <div class="clip-play-icon"></div>
+      </div>
     </div>
 
     <div v-if="keywords.length > 0" class="clip-badges">
@@ -185,6 +183,71 @@ function onFullscreenChange() {
       </button>
     </div>
   </div>
+
+  <!-- Modal player (both modes) -->
+  <teleport to="body">
+    <div v-if="playerOpen" class="player-backdrop" @click.self="closePlayer">
+      <div class="player-dialog">
+        <video
+          ref="playerEl"
+          :src="clipSrc"
+          class="player-video"
+          playsinline
+          @play="onPlayerPlay"
+          @pause="onPlayerPause"
+          @ended="onPlayerEnded"
+          @loadedmetadata="onLoadedMetadata"
+          @timeupdate="onTimeUpdate"
+        ></video>
+
+        <div class="player-controls">
+          <button class="player-btn" @click="togglePlayerPlay" :aria-label="playerPlaying ? '일시정지' : '재생'">
+            <svg v-if="!playerPlaying" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <polygon points="3,1 14,8 3,15" />
+            </svg>
+            <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <rect x="2" y="1" width="5" height="14" rx="1" />
+              <rect x="9" y="1" width="5" height="14" rx="1" />
+            </svg>
+          </button>
+
+          <span class="player-time">{{ formatTime(playerCurrentTime) }}</span>
+
+          <input
+            type="range"
+            class="player-seek"
+            min="0"
+            :max="playerDuration || 0"
+            step="0.1"
+            :value="playerCurrentTime"
+            @input="seekTo"
+          />
+
+          <span class="player-time player-time-total">{{ formatTime(playerDuration) }}</span>
+
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="flex-shrink:0;opacity:0.6">
+            <path d="M2 5h3l4-3v12l-4-3H2z" />
+            <path d="M11 4a5 5 0 0 1 0 8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
+          </svg>
+          <input
+            type="range"
+            class="player-volume"
+            min="0"
+            max="1"
+            step="0.05"
+            :value="playerVolume"
+            @input="setVolume"
+          />
+
+          <button class="player-btn" @click="closePlayer" aria-label="닫기">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="2" y1="2" x2="14" y2="14" /><line x1="14" y1="2" x2="2" y2="14" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
 </template>
 
 <style scoped>
@@ -206,27 +269,102 @@ function onFullscreenChange() {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
+
+/* ── List mode ────────────────────────────────────────────── */
 .list {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  flex-direction: row;
+  align-items: center;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
   gap: 0;
-  min-height: 148px;
-  max-height: 148px;
   padding: 0;
   overflow: hidden;
 }
+.list-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.list-thumb {
+  position: relative;
+  width: 88px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--clip-bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  overflow: hidden;
+}
+.list-thumb video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.list-thumb .clip-play-icon {
+  width: 22px;
+  height: 22px;
+}
+.list-thumb .clip-play-icon::after {
+  border-width: 5px 0 5px 8px;
+  margin-left: 2px;
+}
+.list-meta {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  height: 100%;
+}
+.list-time {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0 14px;
+  border-right: 1px solid var(--border);
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.list-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+.list-kw {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.list-vlm {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
+/* ── Gallery mode ─────────────────────────────────────────── */
 .clip-header {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.list-header {
-  display: grid;
-  grid-template-columns: minmax(140px, 180px) minmax(0, 1fr) auto;
-  gap: 0;
-  align-items: stretch;
-  border-bottom: 1px solid var(--border);
 }
 .clip-chk {
   width: 15px;
@@ -240,27 +378,6 @@ function onFullscreenChange() {
   font-family: var(--font-mono);
   color: var(--text-2);
   font-weight: 500;
-}
-.list .clip-time,
-.list .clip-list-keywords {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  padding: 0 16px;
-}
-.list .clip-time {
-  border-right: 1px solid var(--border);
-}
-.clip-list-keywords {
-  font-size: 13px;
-  color: var(--text-2);
-}
-.list .clip-list-keywords {
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  scrollbar-width: thin;
 }
 .clip-video-wrap {
   position: relative;
@@ -277,19 +394,6 @@ function onFullscreenChange() {
   display: block;
   object-fit: contain;
 }
-.clip-video-wrap:fullscreen {
-  background: #000;
-}
-.clip-video-wrap:fullscreen video {
-  object-fit: contain;
-}
-.list .clip-video-wrap {
-  aspect-ratio: auto;
-  min-height: 148px;
-  height: 100%;
-  border-radius: 0;
-  border-right: 1px solid var(--border);
-}
 .clip-overlay {
   position: absolute;
   inset: 0;
@@ -297,11 +401,7 @@ function onFullscreenChange() {
   align-items: center;
   justify-content: center;
   background: var(--overlay);
-  transition: opacity 0.2s;
   pointer-events: none;
-}
-.clip-overlay.hidden {
-  opacity: 0;
 }
 .clip-play-icon {
   width: 40px;
@@ -323,53 +423,11 @@ function onFullscreenChange() {
   border-color: transparent transparent transparent var(--play-icon-arrow);
   margin-left: 3px;
 }
-
-.clip-fs-btn {
-  position: absolute;
-  bottom: 6px;
-  right: 6px;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s;
-  z-index: 2;
-}
-.clip-fs-btn:hover {
-  background: rgba(0, 0, 0, 0.75);
-}
-.clip-check-float {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  cursor: pointer;
-}
-
 .clip-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.list .clip-content {
-  flex: 1;
-  gap: 0;
-  min-width: 0;
-  min-height: 0;
-}
-
 .clip-badges {
   display: flex;
   flex-wrap: wrap;
@@ -384,17 +442,10 @@ function onFullscreenChange() {
   background: var(--bg-surface-secondary);
   color: var(--text-2);
 }
-
 .clip-vlm {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-}
-.list .clip-vlm {
-  flex: 1;
-  align-items: stretch;
-  min-height: 0;
-  padding: 14px 16px;
 }
 .clip-vlm-text {
   flex: 1;
@@ -404,14 +455,6 @@ function onFullscreenChange() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.list .clip-vlm-text {
-  min-width: 0;
-  overflow: auto;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  scrollbar-width: thin;
 }
 .clip-vlm-text.expanded {
   white-space: normal;
@@ -436,42 +479,149 @@ function onFullscreenChange() {
   transform: rotate(180deg);
 }
 .clip-delete-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
   border: none;
   border-left: 1px solid var(--border);
   background: transparent;
   color: var(--text-3);
-  min-width: 48px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+}
+.clip-header .clip-delete-btn {
+  width: auto;
+  border-left: none;
 }
 .clip-delete-btn:hover {
-  background: var(--danger-bg);
+  background: transparent;
   color: var(--danger);
 }
+.clip-delete-btn svg {
+  padding: 7px;
+  border-radius: 8px;
+  transition: background 0.15s, color 0.15s;
+  box-sizing: content-box;
+}
+.clip-delete-btn:hover svg {
+  background: var(--danger-bg);
+}
 
-@media (max-width: 760px) {
+/* ── Modal player ─────────────────────────────────────────── */
+.player-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.player-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 90vw;
+  max-width: 1000px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+.player-video {
+  width: 100%;
+  max-height: 75vh;
+  display: block;
+  object-fit: contain;
+  background: #000;
+}
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #1a1a1a;
+}
+.player-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: background 0.12s;
+}
+.player-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.player-time {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.player-time-total {
+  color: rgba(255, 255, 255, 0.4);
+}
+.player-seek {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+.player-volume {
+  width: 72px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  height: 4px;
+}
+
+/* ── Mobile ───────────────────────────────────────────────── */
+@media (max-width: 600px) {
   .list {
-    grid-template-columns: 1fr;
+    height: auto;
     min-height: auto;
     max-height: none;
+    flex-direction: column;
+    align-items: stretch;
   }
-  .list .clip-video-wrap {
-    min-height: 0;
+  .list-check {
+    display: none;
+  }
+  .list-thumb {
+    width: 100%;
+    height: auto;
     aspect-ratio: 16 / 9;
+    border-left: none;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
-  .list-header {
-    grid-template-columns: 1fr auto;
+  .list-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    height: auto;
   }
-  .list .clip-time {
+  .list-time {
     border-right: none;
-    min-height: 48px;
+    border-bottom: 1px solid var(--border);
+    height: auto;
+    min-height: 36px;
+    width: 100%;
   }
-  .list .clip-list-keywords {
-    grid-column: 1 / -1;
-    min-height: 44px;
-    border-top: 1px solid var(--border);
+  .list-info {
+    padding: 10px 14px;
+  }
+  .list-vlm {
+    white-space: normal;
+    overflow: visible;
+  }
+  .player-volume {
+    display: none;
   }
 }
 </style>
