@@ -33,18 +33,31 @@ function toggleSelectAll() {
       <input type="text" class="clip-search" v-model="searchQuery" placeholder="검색..." />
       <div class="view-mode-group" role="group" aria-label="보기 모드">
         <button
-          class="clip-action-btn"
+          class="view-mode-btn"
           :class="{ active: viewMode === 'gallery' }"
           @click="viewMode = 'gallery'"
+          aria-label="갤러리 보기"
+          :aria-pressed="viewMode === 'gallery'"
         >
-          갤러리
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="1" width="6" height="6" rx="1" />
+            <rect x="9" y="1" width="6" height="6" rx="1" />
+            <rect x="1" y="9" width="6" height="6" rx="1" />
+            <rect x="9" y="9" width="6" height="6" rx="1" />
+          </svg>
         </button>
         <button
-          class="clip-action-btn"
+          class="view-mode-btn"
           :class="{ active: viewMode === 'list' }"
           @click="viewMode = 'list'"
+          aria-label="리스트 보기"
+          :aria-pressed="viewMode === 'list'"
         >
-          리스트
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="2" width="14" height="2" rx="1" />
+            <rect x="1" y="7" width="14" height="2" rx="1" />
+            <rect x="1" y="12" width="14" height="2" rx="1" />
+          </svg>
         </button>
       </div>
       <button
@@ -93,11 +106,32 @@ function toggleSelectAll() {
 }
 .view-mode-group {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
   padding: 2px;
   border: 1px solid var(--border-input);
   border-radius: calc(var(--radius) + 2px);
   background: var(--bg-surface-secondary);
+}
+.view-mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.view-mode-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-1);
+}
+.view-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
 }
 .clips-gallery {
   flex: 1;
