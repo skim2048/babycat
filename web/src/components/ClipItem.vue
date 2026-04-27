@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed, nextTick, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
 import { getClipUrl } from '../endpoints.js'
+import ClipPlayerModal from './ClipPlayerModal.vue'
 
 const { getToken } = useAuth()
 
@@ -16,6 +17,7 @@ const props = defineProps({
 const emit = defineEmits(['check', 'delete'])
 
 const expanded = ref(false)
+const playerOpen = ref(false)
 
 const clipSrc = computed(() =>
   getClipUrl(props.clip.name, props.clip.size, getToken()),
@@ -39,89 +41,12 @@ const keywords = computed(() => props.clip.keywords || [])
 const keywordLabel = computed(() => keywords.value.join(', '))
 const vlmText = computed(() => props.clip.vlm_text || '')
 
-// ── Modal player ──────────────────────────────────────────
-const playerOpen = ref(false)
-const playerEl = ref(null)
-const playerPlaying = ref(false)
-const playerCurrentTime = ref(0)
-const playerDuration = ref(0)
-const playerVolume = ref(1)
-
-watch(playerOpen, (val) => {
-  if (val) document.addEventListener('keydown', onKeydown)
-  else document.removeEventListener('keydown', onKeydown)
-})
-
 function openPlayer() {
   playerOpen.value = true
-  nextTick(() => {
-    const vid = playerEl.value
-    if (!vid) return
-    vid.volume = playerVolume.value
-    vid.currentTime = 0
-    vid.play()
-  })
-}
-
-function closePlayer() {
-  const vid = playerEl.value
-  if (vid) { vid.pause(); vid.currentTime = 0 }
-  playerOpen.value = false
-  playerPlaying.value = false
-  playerCurrentTime.value = 0
-}
-
-function togglePlayerPlay() {
-  const vid = playerEl.value
-  if (!vid) return
-  vid.paused ? vid.play() : vid.pause()
-}
-
-function onPlayerPlay() { playerPlaying.value = true }
-function onPlayerPause() { playerPlaying.value = false }
-function onPlayerEnded() {
-  playerPlaying.value = false
-  playerCurrentTime.value = 0
-  if (playerEl.value) playerEl.value.currentTime = 0
-}
-function onLoadedMetadata() {
-  playerDuration.value = playerEl.value?.duration ?? 0
-}
-function onTimeUpdate() {
-  playerCurrentTime.value = playerEl.value?.currentTime ?? 0
-}
-
-function seekTo(e) {
-  const vid = playerEl.value
-  if (vid) vid.currentTime = Number(e.target.value)
-}
-
-function setVolume(e) {
-  const v = Number(e.target.value)
-  playerVolume.value = v
-  if (playerEl.value) playerEl.value.volume = v
-}
-
-function formatTime(s) {
-  if (!s || isNaN(s)) return '00:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60)
-  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
-}
-
-function onKeydown(e) {
-  if (!playerOpen.value) return
-  if (e.key === 'Escape') { closePlayer(); return }
-  if (e.key === ' ') { e.preventDefault(); togglePlayerPlay(); return }
-  const vid = playerEl.value
-  if (!vid) return
-  if (e.key === 'ArrowLeft') vid.currentTime = Math.max(0, vid.currentTime - 5)
-  if (e.key === 'ArrowRight') vid.currentTime = Math.min(vid.duration, vid.currentTime + 5)
 }
 </script>
 
 <template>
-  <!-- List view -->
   <div v-if="viewMode === 'list'" class="clip-card list" :class="{ checked: isChecked }">
     <label class="list-check" @click.stop>
       <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
@@ -150,7 +75,6 @@ function onKeydown(e) {
     </button>
   </div>
 
-  <!-- Gallery view -->
   <div v-else class="clip-card" :class="{ checked: isChecked }">
     <div class="clip-header">
       <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
@@ -184,70 +108,11 @@ function onKeydown(e) {
     </div>
   </div>
 
-  <!-- Modal player (both modes) -->
-  <teleport to="body">
-    <div v-if="playerOpen" class="player-backdrop" @click.self="closePlayer">
-      <div class="player-dialog">
-        <video
-          ref="playerEl"
-          :src="clipSrc"
-          class="player-video"
-          playsinline
-          @play="onPlayerPlay"
-          @pause="onPlayerPause"
-          @ended="onPlayerEnded"
-          @loadedmetadata="onLoadedMetadata"
-          @timeupdate="onTimeUpdate"
-        ></video>
-
-        <div class="player-controls">
-          <button class="player-btn" @click="togglePlayerPlay" :aria-label="playerPlaying ? '일시정지' : '재생'">
-            <svg v-if="!playerPlaying" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <polygon points="3,1 14,8 3,15" />
-            </svg>
-            <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect x="2" y="1" width="5" height="14" rx="1" />
-              <rect x="9" y="1" width="5" height="14" rx="1" />
-            </svg>
-          </button>
-
-          <span class="player-time">{{ formatTime(playerCurrentTime) }}</span>
-
-          <input
-            type="range"
-            class="player-seek"
-            min="0"
-            :max="playerDuration || 0"
-            step="0.1"
-            :value="playerCurrentTime"
-            @input="seekTo"
-          />
-
-          <span class="player-time player-time-total">{{ formatTime(playerDuration) }}</span>
-
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="flex-shrink:0;opacity:0.6">
-            <path d="M2 5h3l4-3v12l-4-3H2z" />
-            <path d="M11 4a5 5 0 0 1 0 8" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" />
-          </svg>
-          <input
-            type="range"
-            class="player-volume"
-            min="0"
-            max="1"
-            step="0.05"
-            :value="playerVolume"
-            @input="setVolume"
-          />
-
-          <button class="player-btn" @click="closePlayer" aria-label="닫기">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="2" y1="2" x2="14" y2="14" /><line x1="14" y1="2" x2="2" y2="14" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  </teleport>
+  <ClipPlayerModal
+    :open="playerOpen"
+    :src="clipSrc"
+    @close="playerOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -269,8 +134,6 @@ function onKeydown(e) {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-shadow);
 }
-
-/* ── List mode ────────────────────────────────────────────── */
 .list {
   flex-direction: row;
   align-items: center;
@@ -359,8 +222,6 @@ function onKeydown(e) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* ── Gallery mode ─────────────────────────────────────────── */
 .clip-header {
   display: flex;
   align-items: center;
@@ -422,11 +283,6 @@ function onKeydown(e) {
   border-width: 8px 0 8px 14px;
   border-color: transparent transparent transparent var(--play-icon-arrow);
   margin-left: 3px;
-}
-.clip-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 .clip-badges {
   display: flex;
@@ -508,80 +364,6 @@ function onKeydown(e) {
   background: var(--danger-bg);
 }
 
-/* ── Modal player ─────────────────────────────────────────── */
-.player-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0, 0, 0, 0.92);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.player-dialog {
-  display: flex;
-  flex-direction: column;
-  width: 90vw;
-  max-width: 1000px;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
-}
-.player-video {
-  width: 100%;
-  max-height: 75vh;
-  display: block;
-  object-fit: contain;
-  background: #000;
-}
-.player-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #1a1a1a;
-}
-.player-btn {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: background 0.12s;
-}
-.player-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-.player-time {
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: rgba(255, 255, 255, 0.75);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.player-time-total {
-  color: rgba(255, 255, 255, 0.4);
-}
-.player-seek {
-  flex: 1;
-  accent-color: var(--accent);
-  cursor: pointer;
-  height: 4px;
-}
-.player-volume {
-  width: 72px;
-  accent-color: var(--accent);
-  cursor: pointer;
-  height: 4px;
-}
-
-/* ── Mobile ───────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .list {
     height: auto;
@@ -619,9 +401,6 @@ function onKeydown(e) {
   .list-vlm {
     white-space: normal;
     overflow: visible;
-  }
-  .player-volume {
-    display: none;
   }
 }
 </style>
