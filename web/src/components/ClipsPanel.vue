@@ -6,10 +6,101 @@ import ClipItem from './ClipItem.vue'
 const { clips, checked, searchQuery, deleteSelected, deleteClips, toggleCheck } = useClips()
 const viewMode = ref('gallery')
 
+const dateFrom = ref('')
+const dateTo = ref('')
+const datePopoverOpen = ref(false)
+const dateFilterBtnRef = ref(null)
+const datePopoverPos = ref({ top: 0, left: 0 })
+
+function openDatePopover() {
+  if (datePopoverOpen.value) {
+    datePopoverOpen.value = false
+    return
+  }
+  if (dateFilterBtnRef.value) {
+    const rect = dateFilterBtnRef.value.getBoundingClientRect()
+    const popoverWidth = 300
+    const left = Math.min(rect.left, window.innerWidth - popoverWidth - 8)
+    datePopoverPos.value = { top: rect.bottom + 4, left: Math.max(8, left) }
+  }
+  datePopoverOpen.value = true
+}
+
+function localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function setPreset(preset) {
+  const today = localDateStr()
+  if (preset === 'today') {
+    dateFrom.value = today
+    dateTo.value = today
+  } else if (preset === 'yesterday') {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const y = localDateStr(d)
+    dateFrom.value = y
+    dateTo.value = y
+  } else if (preset === 'week') {
+    const d = new Date()
+    const day = d.getDay()
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
+    dateFrom.value = localDateStr(d)
+    dateTo.value = today
+  } else if (preset === 'month') {
+    const d = new Date()
+    dateFrom.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+    dateTo.value = today
+  }
+}
+
+function clearDateFilter() {
+  dateFrom.value = ''
+  dateTo.value = ''
+}
+
+const hasDateFilter = computed(() => !!(dateFrom.value || dateTo.value))
+
+const activePreset = computed(() => {
+  if (!hasDateFilter.value) return null
+  const today = localDateStr()
+  if (dateFrom.value === today && dateTo.value === today) return 'today'
+  const dy = new Date()
+  dy.setDate(dy.getDate() - 1)
+  const yesterday = localDateStr(dy)
+  if (dateFrom.value === yesterday && dateTo.value === yesterday) return 'yesterday'
+  const dw = new Date()
+  const day = dw.getDay()
+  dw.setDate(dw.getDate() - (day === 0 ? 6 : day - 1))
+  if (dateFrom.value === localDateStr(dw) && dateTo.value === today) return 'week'
+  const dm = new Date()
+  const monthStart = `${dm.getFullYear()}-${String(dm.getMonth() + 1).padStart(2, '0')}-01`
+  if (dateFrom.value === monthStart && dateTo.value === today) return 'month'
+  return 'custom'
+})
+
+const dateFilterLabel = computed(() => {
+  if (!hasDateFilter.value) return '날짜'
+  const fmt = (s) => s.slice(5).replace('-', '/')
+  if (dateFrom.value && dateTo.value) {
+    return dateFrom.value === dateTo.value
+      ? fmt(dateFrom.value)
+      : `${fmt(dateFrom.value)} ~ ${fmt(dateTo.value)}`
+  }
+  return dateFrom.value ? `${fmt(dateFrom.value)} ~` : `~ ${fmt(dateTo.value)}`
+})
+
 const filteredClips = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return clips.value
-  return clips.value.filter((c) => c.name.toLowerCase().includes(q))
+  return clips.value.filter((c) => {
+    if (q && !(c.vlm_text && c.vlm_text.toLowerCase().includes(q))) return false
+    if (dateFrom.value || dateTo.value) {
+      const clipDate = localDateStr(new Date((c.timestamp ?? 0) * 1000))
+      if (dateFrom.value && clipDate < dateFrom.value) return false
+      if (dateTo.value && clipDate > dateTo.value) return false
+    }
+    return true
+  })
 })
 
 const PAGE_SIZE = 10
@@ -43,6 +134,57 @@ function toggleSelectAll() {
   <div class="clips-panel">
     <div class="clips-toolbar">
       <input type="text" class="clip-search" v-model="searchQuery" placeholder="검색..." />
+
+      <div class="date-filter-wrap">
+        <button
+          ref="dateFilterBtnRef"
+          class="clip-action-btn date-filter-btn"
+          :class="{ active: hasDateFilter }"
+          @click="openDatePopover"
+          aria-label="날짜 필터"
+          :aria-expanded="datePopoverOpen"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="1.5" y="2.5" width="13" height="12" rx="1.5" />
+            <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+            <line x1="5" y1="1" x2="5" y2="4" />
+            <line x1="11" y1="1" x2="11" y2="4" />
+          </svg>
+          {{ dateFilterLabel }}
+        </button>
+      </div>
+
+      <Teleport to="body">
+        <template v-if="datePopoverOpen">
+          <div class="date-popover-backdrop" @click="datePopoverOpen = false"></div>
+          <div
+            class="date-popover"
+            role="dialog"
+            aria-label="날짜 필터"
+            :style="{ top: datePopoverPos.top + 'px', left: datePopoverPos.left + 'px' }"
+          >
+            <div class="date-presets">
+              <button
+                v-for="(label, key) in { today: '오늘', yesterday: '어제', week: '이번 주', month: '이번 달' }"
+                :key="key"
+                class="date-preset-btn"
+                :class="{ active: activePreset === key }"
+                @click="setPreset(key)"
+              >{{ label }}</button>
+            </div>
+            <div class="date-range">
+              <input type="date" class="date-input" v-model="dateFrom" :max="dateTo || undefined" />
+              <span class="date-sep">~</span>
+              <input type="date" class="date-input" v-model="dateTo" :min="dateFrom || undefined" />
+            </div>
+            <div class="date-popover-footer">
+              <button class="clip-action-btn" :disabled="!hasDateFilter" @click="clearDateFilter">초기화</button>
+              <button class="clip-action-btn" @click="datePopoverOpen = false">닫기</button>
+            </div>
+          </div>
+        </template>
+      </Teleport>
+
       <div class="view-mode-group" role="group" aria-label="보기 모드">
         <button
           class="view-mode-btn"
@@ -131,6 +273,7 @@ function toggleSelectAll() {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
+
 .view-mode-group {
   display: inline-flex;
   gap: 2px;
@@ -160,6 +303,7 @@ function toggleSelectAll() {
   background: var(--accent);
   color: #fff;
 }
+
 .clips-gallery {
   flex: 1;
   display: grid;
@@ -181,6 +325,7 @@ function toggleSelectAll() {
   padding: 40px 0;
   text-align: center;
 }
+
 .clips-pagination {
   display: flex;
   align-items: center;
@@ -222,6 +367,7 @@ function toggleSelectAll() {
   color: var(--text-4);
   margin-left: 4px;
 }
+
 .clip-action-btn.active {
   background: var(--accent);
   border-color: var(--accent);
