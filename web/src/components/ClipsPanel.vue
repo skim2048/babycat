@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useClips } from '../composables/useClips.js'
 import ClipItem from './ClipItem.vue'
 
@@ -10,6 +10,18 @@ const filteredClips = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return clips.value
   return clips.value.filter((c) => c.name.toLowerCase().includes(q))
+})
+
+const PAGE_SIZE = 20
+const currentPage = ref(1)
+
+watch(filteredClips, () => { currentPage.value = 1 })
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredClips.value.length / PAGE_SIZE)))
+
+const pagedClips = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredClips.value.slice(start, start + PAGE_SIZE)
 })
 
 const selectedCount = computed(() =>
@@ -73,9 +85,9 @@ function toggleSelectAll() {
     </div>
 
     <div class="clips-gallery" :class="{ 'clips-list': viewMode === 'list' }">
-      <template v-if="filteredClips.length > 0">
+      <template v-if="pagedClips.length > 0">
         <ClipItem
-          v-for="clip in filteredClips"
+          v-for="clip in pagedClips"
           :key="clip.name"
           :clip="clip"
           :is-checked="!!checked[clip.name]"
@@ -85,6 +97,21 @@ function toggleSelectAll() {
         />
       </template>
       <div v-else class="clip-empty">녹화된 클립 없음</div>
+    </div>
+
+    <div v-if="totalPages > 1" class="clips-pagination">
+      <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--" aria-label="이전 페이지">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="10,2 4,8 10,14" />
+        </svg>
+      </button>
+      <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
+      <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++" aria-label="다음 페이지">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6,2 12,8 6,14" />
+        </svg>
+      </button>
+      <span class="page-count">{{ filteredClips.length }}개 중 {{ (currentPage - 1) * PAGE_SIZE + 1 }}–{{ Math.min(currentPage * PAGE_SIZE, filteredClips.length) }}</span>
     </div>
   </div>
 </template>
@@ -153,6 +180,47 @@ function toggleSelectAll() {
   color: var(--text-4);
   padding: 40px 0;
   text-align: center;
+}
+.clips-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 0;
+}
+.page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.page-btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  color: var(--text-1);
+}
+.page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.page-info {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  min-width: 52px;
+  text-align: center;
+}
+.page-count {
+  font-size: 11px;
+  color: var(--text-4);
+  margin-left: 4px;
 }
 .clip-action-btn.active {
   background: var(--accent);
