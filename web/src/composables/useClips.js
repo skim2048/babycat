@@ -4,22 +4,10 @@ import { useSSE } from './useSSE.js'
 import { useAuth } from './useAuth.js'
 import { API_ENDPOINTS } from '../endpoints.js'
 
-const clips = ref([])
-const checked = ref({})
-const searchQuery = ref('')
+// Increments whenever server clip state may have changed (auth, SSE, delete).
+// Components watch this to know when to re-fetch.
+const clipVersion = ref(0)
 let knownCount = -1
-
-async function fetchClips() {
-  try {
-    const res = await authFetch(API_ENDPOINTS.clips)
-    if (!res.ok) return
-    const data = await res.json()
-    clips.value = data.clips || []
-    checked.value = {}
-  } catch {
-    // @claude Network error — ignored; the next SSE tick will retry.
-  }
-}
 
 async function deleteClips(names) {
   try {
@@ -28,33 +16,14 @@ async function deleteClips(names) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ names }),
     })
-    if (res.ok) await fetchClips()
+    if (res.ok) clipVersion.value++
   } catch {
-    // @claude Network error — ignored.
+    // @claude Network error — ignored; clipVersion not incremented so caller retains stale data.
   }
 }
 
-function toggleCheck(name, val) {
-  checked.value = { ...checked.value, [name]: val }
-}
-
-async function deleteSelected() {
-  const names = Object.entries(checked.value)
-    .filter(([, v]) => v)
-    .map(([k]) => k)
-  if (names.length === 0) return
-  await deleteClips(names)
-}
-
-// @claude Register the watcher in a global effectScope, detached from component lifetimes.
-// @claude Only registered once while authenticated; prevents a 401 loop on the login page.
 const globalScope = effectScope(true)
 let watcherStarted = false
-function resetClipState() {
-  clips.value = []
-  checked.value = {}
-  knownCount = -1
-}
 
 function ensureWatcher() {
   if (watcherStarted) return
@@ -65,11 +34,8 @@ function ensureWatcher() {
     watch(
       isAuthenticated,
       (authenticated) => {
-        if (!authenticated) {
-          resetClipState()
-          return
-        }
-        fetchClips()
+        if (!authenticated) knownCount = -1
+        clipVersion.value++
       },
       { immediate: true },
     )
@@ -79,7 +45,7 @@ function ensureWatcher() {
         if (count == null) return
         if (count !== knownCount) {
           knownCount = count
-          fetchClips()
+          clipVersion.value++
         }
       },
     )
@@ -88,12 +54,5 @@ function ensureWatcher() {
 
 export function useClips() {
   ensureWatcher()
-  return {
-    clips,
-    checked,
-    searchQuery,
-    deleteClips,
-    deleteSelected,
-    toggleCheck,
-  }
+  return { clipVersion, deleteClips }
 }

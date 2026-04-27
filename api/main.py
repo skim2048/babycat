@@ -213,10 +213,15 @@ def _read_clip_meta(mp4_path: Path) -> dict:
         return {}
 
 
-def _list_clips(q: str | None = None) -> list[ClipOut]:
-    """Recursively scan {CAM_DIR}/{YYYY}/{MM}/*.mp4 and return the clip list.
-    If a same-name .json metadata file exists, its timestamp/keywords/vlm_text
-    fields are populated on the result.
+def _list_clips(
+    q: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[ClipOut]:
+    """Recursively scan {CAM_DIR}/{YYYY}/{MM}/*.mp4 and return filtered clips.
+
+    q filters vlm_text (partial, case-insensitive).
+    date_from / date_to are YYYY-MM-DD strings in server local time.
 
     @claude
     """
@@ -233,14 +238,23 @@ def _list_clips(q: str | None = None) -> list[ClipOut]:
     entries.sort(key=lambda e: e[2], reverse=True)
     clips = []
     for fpath, size, mtime in entries:
-        if q and q.lower() not in fpath.name.lower():
-            continue
         meta_path = fpath.with_suffix(".json")
         if not meta_path.exists():
             continue
         meta = _read_clip_meta(fpath)
         if not meta:
             continue
+        if q:
+            vlm_text = meta.get("vlm_text")
+            if not isinstance(vlm_text, str) or q.lower() not in vlm_text.lower():
+                continue
+        if date_from or date_to:
+            ts = meta.get("timestamp", int(mtime))
+            clip_date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            if date_from and clip_date < date_from:
+                continue
+            if date_to and clip_date > date_to:
+                continue
         clips.append(ClipOut(
             name=fpath.name,
             size=size,
@@ -267,11 +281,13 @@ def _resolve_clip(name: str) -> Path:
 @app.get("/clips", response_model=ClipListOut)
 def list_clips(
     q: str | None = Query(None),
-    limit: int = Query(100, ge=1),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    limit: int = Query(10, ge=1),
     offset: int = Query(0, ge=0),
     _=Depends(require_auth),
 ):
-    all_clips = _list_clips(q)
+    all_clips = _list_clips(q, date_from, date_to)
     return ClipListOut(clips=all_clips[offset:offset + limit], total=len(all_clips))
 
 

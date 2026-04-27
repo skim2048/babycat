@@ -1,22 +1,118 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useClips } from '../composables/useClips.js'
+import { useAuth } from '../composables/useAuth.js'
+import { authFetch } from '../composables/useFetch.js'
+import { API_ENDPOINTS } from '../endpoints.js'
 import ClipItem from './ClipItem.vue'
 
-const { clips, checked, searchQuery, deleteSelected, deleteClips, toggleCheck } = useClips()
+const { clipVersion, deleteClips } = useClips()
+const { isAuthenticated } = useAuth()
+
+// ── View state ───────────────────────────────────────────────────────────────
 const viewMode = ref('gallery')
 
+// ── Filter state ─────────────────────────────────────────────────────────────
+const searchQuery = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
+
+// ── Pagination state ─────────────────────────────────────────────────────────
+const PAGE_SIZES = [10, 25, 50, 100]
+const pageSize = ref(10)
+const currentPage = ref(1)
+
+// ── Server data ───────────────────────────────────────────────────────────────
+const clips = ref([])
+const total = ref(0)
+const checked = ref({})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
+const selectedCount = computed(() => Object.values(checked.value).filter(Boolean).length)
+
+// ── Fetch ─────────────────────────────────────────────────────────────────────
+async function fetchClips() {
+  if (!isAuthenticated.value) return
+  const params = new URLSearchParams()
+  if (searchQuery.value) params.set('q', searchQuery.value)
+  if (dateFrom.value) params.set('date_from', dateFrom.value)
+  if (dateTo.value) params.set('date_to', dateTo.value)
+  params.set('limit', String(pageSize.value))
+  params.set('offset', String((currentPage.value - 1) * pageSize.value))
+  try {
+    const res = await authFetch(`${API_ENDPOINTS.clips}?${params}`)
+    if (!res.ok) return
+    const data = await res.json()
+    clips.value = data.clips || []
+    total.value = data.total ?? 0
+    // Keep only checked items still present on the current page
+    const names = new Set(clips.value.map((c) => c.name))
+    checked.value = Object.fromEntries(Object.entries(checked.value).filter(([k]) => names.has(k)))
+  } catch {}
+}
+
+// Batch concurrent reactive changes into a single fetch per tick
+let fetchScheduled = false
+function scheduleFetch(resetPage = false) {
+  if (resetPage) {
+    currentPage.value = 1
+    checked.value = {}
+  }
+  if (fetchScheduled) return
+  fetchScheduled = true
+  nextTick(() => {
+    fetchScheduled = false
+    fetchClips()
+  })
+}
+
+// SSE / auth change
+watch(clipVersion, () => scheduleFetch(false), { immediate: true })
+
+// Search (debounced 300 ms)
+let searchTimer = null
+watch(searchQuery, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => scheduleFetch(true), 300)
+})
+
+// Date filters
+watch([dateFrom, dateTo], () => scheduleFetch(true))
+
+// Page size
+watch(pageSize, () => scheduleFetch(true))
+
+// Page navigation (currentPage watcher also fires when scheduleFetch resets it;
+// fetchScheduled guard ensures only one fetch per batch)
+watch(currentPage, () => scheduleFetch(false))
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function toggleCheck(name, val) {
+  checked.value = { ...checked.value, [name]: val }
+}
+
+function toggleSelectAll() {
+  const next = { ...checked.value }
+  if (selectedCount.value > 0) {
+    for (const c of clips.value) delete next[c.name]
+  } else {
+    for (const c of clips.value) next[c.name] = true
+  }
+  checked.value = next
+}
+
+async function deleteSelected() {
+  const names = Object.entries(checked.value).filter(([, v]) => v).map(([k]) => k)
+  if (names.length > 0) await deleteClips(names)
+}
+
+// ── Date filter popover ───────────────────────────────────────────────────────
 const datePopoverOpen = ref(false)
 const dateFilterBtnRef = ref(null)
 const datePopoverPos = ref({ top: 0, left: 0 })
 
 function openDatePopover() {
-  if (datePopoverOpen.value) {
-    datePopoverOpen.value = false
-    return
-  }
+  if (datePopoverOpen.value) { datePopoverOpen.value = false; return }
   if (dateFilterBtnRef.value) {
     const rect = dateFilterBtnRef.value.getBoundingClientRect()
     const popoverWidth = 300
@@ -33,20 +129,14 @@ function localDateStr(d = new Date()) {
 function setPreset(preset) {
   const today = localDateStr()
   if (preset === 'today') {
-    dateFrom.value = today
-    dateTo.value = today
+    dateFrom.value = today; dateTo.value = today
   } else if (preset === 'yesterday') {
-    const d = new Date()
-    d.setDate(d.getDate() - 1)
-    const y = localDateStr(d)
-    dateFrom.value = y
-    dateTo.value = y
+    const d = new Date(); d.setDate(d.getDate() - 1)
+    dateFrom.value = dateTo.value = localDateStr(d)
   } else if (preset === 'week') {
-    const d = new Date()
-    const day = d.getDay()
+    const d = new Date(); const day = d.getDay()
     d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
-    dateFrom.value = localDateStr(d)
-    dateTo.value = today
+    dateFrom.value = localDateStr(d); dateTo.value = today
   } else if (preset === 'month') {
     const d = new Date()
     dateFrom.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
@@ -54,10 +144,7 @@ function setPreset(preset) {
   }
 }
 
-function clearDateFilter() {
-  dateFrom.value = ''
-  dateTo.value = ''
-}
+function clearDateFilter() { dateFrom.value = ''; dateTo.value = '' }
 
 const hasDateFilter = computed(() => !!(dateFrom.value || dateTo.value))
 
@@ -65,12 +152,9 @@ const activePreset = computed(() => {
   if (!hasDateFilter.value) return null
   const today = localDateStr()
   if (dateFrom.value === today && dateTo.value === today) return 'today'
-  const dy = new Date()
-  dy.setDate(dy.getDate() - 1)
-  const yesterday = localDateStr(dy)
-  if (dateFrom.value === yesterday && dateTo.value === yesterday) return 'yesterday'
-  const dw = new Date()
-  const day = dw.getDay()
+  const dy = new Date(); dy.setDate(dy.getDate() - 1)
+  if (dateFrom.value === localDateStr(dy) && dateTo.value === localDateStr(dy)) return 'yesterday'
+  const dw = new Date(); const day = dw.getDay()
   dw.setDate(dw.getDate() - (day === 0 ? 6 : day - 1))
   if (dateFrom.value === localDateStr(dw) && dateTo.value === today) return 'week'
   const dm = new Date()
@@ -83,51 +167,10 @@ const dateFilterLabel = computed(() => {
   if (!hasDateFilter.value) return '날짜'
   const fmt = (s) => s.slice(5).replace('-', '/')
   if (dateFrom.value && dateTo.value) {
-    return dateFrom.value === dateTo.value
-      ? fmt(dateFrom.value)
-      : `${fmt(dateFrom.value)} ~ ${fmt(dateTo.value)}`
+    return dateFrom.value === dateTo.value ? fmt(dateFrom.value) : `${fmt(dateFrom.value)} ~ ${fmt(dateTo.value)}`
   }
   return dateFrom.value ? `${fmt(dateFrom.value)} ~` : `~ ${fmt(dateTo.value)}`
 })
-
-const filteredClips = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  return clips.value.filter((c) => {
-    if (q && !(c.vlm_text && c.vlm_text.toLowerCase().includes(q))) return false
-    if (dateFrom.value || dateTo.value) {
-      const clipDate = localDateStr(new Date((c.timestamp ?? 0) * 1000))
-      if (dateFrom.value && clipDate < dateFrom.value) return false
-      if (dateTo.value && clipDate > dateTo.value) return false
-    }
-    return true
-  })
-})
-
-const PAGE_SIZE = 10
-const currentPage = ref(1)
-
-watch(filteredClips, () => { currentPage.value = 1 })
-
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredClips.value.length / PAGE_SIZE)))
-
-const pagedClips = computed(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE
-  return filteredClips.value.slice(start, start + PAGE_SIZE)
-})
-
-const selectedCount = computed(() =>
-  filteredClips.value.filter((c) => checked.value[c.name]).length,
-)
-
-function toggleSelectAll() {
-  const next = { ...checked.value }
-  if (selectedCount.value > 0) {
-    for (const c of filteredClips.value) delete next[c.name]
-  } else {
-    for (const c of filteredClips.value) next[c.name] = true
-  }
-  checked.value = next
-}
 </script>
 
 <template>
@@ -215,11 +258,7 @@ function toggleSelectAll() {
         </template>
       </Teleport>
 
-      <button
-        class="clip-action-btn"
-        :disabled="filteredClips.length === 0"
-        @click="toggleSelectAll"
-      >
+      <button class="clip-action-btn" :disabled="clips.length === 0" @click="toggleSelectAll">
         {{ selectedCount > 0 ? '선택 해제' : '모두 선택' }}
       </button>
       <button class="clip-action-btn danger" :disabled="selectedCount === 0" @click="deleteSelected">
@@ -228,9 +267,9 @@ function toggleSelectAll() {
     </div>
 
     <div class="clips-gallery" :class="{ 'clips-list': viewMode === 'list' }">
-      <template v-if="pagedClips.length > 0">
+      <template v-if="clips.length > 0">
         <ClipItem
-          v-for="clip in pagedClips"
+          v-for="clip in clips"
           :key="clip.name"
           :clip="clip"
           :is-checked="!!checked[clip.name]"
@@ -242,7 +281,7 @@ function toggleSelectAll() {
       <div v-else class="clip-empty">녹화된 클립 없음</div>
     </div>
 
-    <div v-if="totalPages > 1" class="clips-pagination">
+    <div v-if="total > 0" class="clips-pagination">
       <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--" aria-label="이전 페이지">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="10,2 4,8 10,14" />
@@ -254,7 +293,10 @@ function toggleSelectAll() {
           <polyline points="6,2 12,8 6,14" />
         </svg>
       </button>
-      <span class="page-count">{{ filteredClips.length }}개 중 {{ (currentPage - 1) * PAGE_SIZE + 1 }}–{{ Math.min(currentPage * PAGE_SIZE, filteredClips.length) }}</span>
+      <span class="page-count">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, total) }} / {{ total }}개</span>
+      <select class="page-size-select" v-model="pageSize" aria-label="페이지 크기">
+        <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}개</option>
+      </select>
     </div>
   </div>
 </template>
@@ -274,8 +316,6 @@ function toggleSelectAll() {
   flex-wrap: wrap;
   flex-shrink: 0;
 }
-
-/* ── Date filter ─────────────────────────────────────────────────────────── */
 
 /* ── View mode toggle ────────────────────────────────────────────────────── */
 
@@ -336,6 +376,7 @@ function toggleSelectAll() {
 /* ── Pagination ──────────────────────────────────────────────────────────── */
 
 .clips-pagination {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -374,7 +415,24 @@ function toggleSelectAll() {
 .page-count {
   font-size: 11px;
   color: var(--text-4);
-  margin-left: 4px;
+}
+.page-size-select {
+  position: absolute;
+  right: 0;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-2);
+  cursor: pointer;
+  outline: none;
+}
+.page-size-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-shadow);
 }
 
 /* ── Misc ────────────────────────────────────────────────────────────────── */

@@ -217,6 +217,26 @@ def test_list_clips_excludes_pending_or_invalid_metadata():
     assert clips == []
 
 
+def test_list_clips_q_filters_by_vlm_text_only():
+    first = _clip_path("20260416_101234_567.mp4")
+    first.write_bytes(b"\x00" * 20480)
+    first.with_suffix(".json").write_text(
+        '{"timestamp": 123, "keywords": ["writing"], "vlm_text": "A person is writing on paper."}',
+        encoding="utf-8",
+    )
+
+    second = _clip_path("writing_in_filename_only.mp4")
+    second.write_bytes(b"\x00" * 20480)
+    second.with_suffix(".json").write_text(
+        '{"timestamp": 124, "keywords": ["person"], "vlm_text": "A person is standing still."}',
+        encoding="utf-8",
+    )
+
+    clips = api_main._list_clips("writing")
+
+    assert [clip.name for clip in clips] == [first.name]
+
+
 def test_resolve_clip_prefers_year_month_path():
     clip = _clip_path("20260416_101234_567.mp4")
     clip.write_bytes(b"\x00" * 20480)
