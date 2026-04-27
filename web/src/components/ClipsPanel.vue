@@ -133,6 +133,36 @@ function toggleSelectAll() {
 <template>
   <div class="clips-panel">
     <div class="clips-toolbar">
+      <div class="view-mode-group" role="group" aria-label="보기 모드">
+        <button
+          class="view-mode-btn"
+          :class="{ active: viewMode === 'gallery' }"
+          @click="viewMode = 'gallery'"
+          aria-label="갤러리 보기"
+          :aria-pressed="viewMode === 'gallery'"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="1" width="6" height="6" rx="1" />
+            <rect x="9" y="1" width="6" height="6" rx="1" />
+            <rect x="1" y="9" width="6" height="6" rx="1" />
+            <rect x="9" y="9" width="6" height="6" rx="1" />
+          </svg>
+        </button>
+        <button
+          class="view-mode-btn"
+          :class="{ active: viewMode === 'list' }"
+          @click="viewMode = 'list'"
+          aria-label="리스트 보기"
+          :aria-pressed="viewMode === 'list'"
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1" y="2" width="14" height="2" rx="1" />
+            <rect x="1" y="7" width="14" height="2" rx="1" />
+            <rect x="1" y="12" width="14" height="2" rx="1" />
+          </svg>
+        </button>
+      </div>
+
       <input type="text" class="clip-search" v-model="searchQuery" placeholder="검색..." />
 
       <div class="date-filter-wrap">
@@ -185,35 +215,6 @@ function toggleSelectAll() {
         </template>
       </Teleport>
 
-      <div class="view-mode-group" role="group" aria-label="보기 모드">
-        <button
-          class="view-mode-btn"
-          :class="{ active: viewMode === 'gallery' }"
-          @click="viewMode = 'gallery'"
-          aria-label="갤러리 보기"
-          :aria-pressed="viewMode === 'gallery'"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="1" y="1" width="6" height="6" rx="1" />
-            <rect x="9" y="1" width="6" height="6" rx="1" />
-            <rect x="1" y="9" width="6" height="6" rx="1" />
-            <rect x="9" y="9" width="6" height="6" rx="1" />
-          </svg>
-        </button>
-        <button
-          class="view-mode-btn"
-          :class="{ active: viewMode === 'list' }"
-          @click="viewMode = 'list'"
-          aria-label="리스트 보기"
-          :aria-pressed="viewMode === 'list'"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="1" y="2" width="14" height="2" rx="1" />
-            <rect x="1" y="7" width="14" height="2" rx="1" />
-            <rect x="1" y="12" width="14" height="2" rx="1" />
-          </svg>
-        </button>
-      </div>
       <button
         class="clip-action-btn"
         :disabled="filteredClips.length === 0"
@@ -274,6 +275,10 @@ function toggleSelectAll() {
   flex-shrink: 0;
 }
 
+/* ── Date filter ─────────────────────────────────────────────────────────── */
+
+/* ── View mode toggle ────────────────────────────────────────────────────── */
+
 .view-mode-group {
   display: inline-flex;
   gap: 2px;
@@ -286,8 +291,8 @@ function toggleSelectAll() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: var(--radius);
   background: transparent;
@@ -303,6 +308,8 @@ function toggleSelectAll() {
   background: var(--accent);
   color: #fff;
 }
+
+/* ── Clip grid / list ────────────────────────────────────────────────────── */
 
 .clips-gallery {
   flex: 1;
@@ -325,6 +332,8 @@ function toggleSelectAll() {
   padding: 40px 0;
   text-align: center;
 }
+
+/* ── Pagination ──────────────────────────────────────────────────────────── */
 
 .clips-pagination {
   display: flex;
@@ -367,6 +376,8 @@ function toggleSelectAll() {
   color: var(--text-4);
   margin-left: 4px;
 }
+
+/* ── Misc ────────────────────────────────────────────────────────────────── */
 
 .clip-action-btn.active {
   background: var(--accent);

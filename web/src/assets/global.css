@@ -339,7 +339,8 @@ body {
 }
 .clip-search {
   flex: 1; min-width: 80px; font-family: var(--font-ui); font-size: 12px;
-  padding: 6px 10px; border: 1px solid var(--border-input);
+  height: 30px; box-sizing: border-box; padding: 0 10px;
+  border: 1px solid var(--border-input);
   border-radius: var(--radius); outline: none;
   background: var(--input-bg); color: var(--text-1);
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -350,10 +351,12 @@ body {
   box-shadow: 0 0 0 3px var(--accent-shadow);
 }
 .clip-action-btn {
-  font-size: 11px; padding: 5px 10px; border-radius: var(--radius);
-  border: 1px solid var(--border-input); background: var(--bg-surface);
-  color: var(--text-2); cursor: pointer; white-space: nowrap;
-  font-weight: 500; transition: background 0.15s, color 0.15s;
+  font-size: 11px; height: 30px; box-sizing: border-box; padding: 0 10px;
+  border-radius: var(--radius); border: 1px solid var(--border-input);
+  background: var(--bg-surface); color: var(--text-2); cursor: pointer;
+  white-space: nowrap; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 5px;
+  transition: background 0.15s, color 0.15s;
 }
 .clip-action-btn:hover { background: var(--bg-surface-hover); }
 .clip-action-btn.danger { border-color: var(--danger-border); color: var(--danger); }
