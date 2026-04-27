@@ -213,6 +213,16 @@ def _read_clip_meta(mp4_path: Path) -> dict:
         return {}
 
 
+def _normalize_clip_date_query(name: str, value: str | None) -> str | None:
+    """Validate YYYY-MM-DD query params for clip date filtering. @codex"""
+    if value is None:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid {name}") from exc
+
+
 def _list_clips(
     q: str | None = None,
     date_from: str | None = None,
@@ -287,6 +297,8 @@ def list_clips(
     offset: int = Query(0, ge=0),
     _=Depends(require_auth),
 ):
+    date_from = _normalize_clip_date_query("date_from", date_from)
+    date_to = _normalize_clip_date_query("date_to", date_to)
     all_clips = _list_clips(q, date_from, date_to)
     return ClipListOut(clips=all_clips[offset:offset + limit], total=len(all_clips))
 

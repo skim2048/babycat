@@ -45,6 +45,12 @@ async function fetchClips() {
     const data = await res.json()
     clips.value = data.clips || []
     total.value = data.total ?? 0
+    const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
+    if (currentPage.value > maxPage) {
+      checked.value = {}
+      currentPage.value = maxPage
+      return
+    }
     // Keep only checked items still present on the current page
     const names = new Set(clips.value.map((c) => c.name))
     checked.value = Object.fromEntries(Object.entries(checked.value).filter(([k]) => names.has(k)))
@@ -84,7 +90,10 @@ watch(pageSize, () => scheduleFetch(true))
 
 // Page navigation (currentPage watcher also fires when scheduleFetch resets it;
 // fetchScheduled guard ensures only one fetch per batch)
-watch(currentPage, () => scheduleFetch(false))
+watch(currentPage, () => {
+  checked.value = {}
+  scheduleFetch(false)
+})
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 function toggleCheck(name, val) {

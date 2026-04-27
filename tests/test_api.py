@@ -237,6 +237,34 @@ def test_list_clips_q_filters_by_vlm_text_only():
     assert [clip.name for clip in clips] == [first.name]
 
 
+def test_list_clips_filters_by_inclusive_date_range():
+    first = _clip_path("20260416_101234_567.mp4")
+    first.write_bytes(b"\x00" * 20480)
+    first.with_suffix(".json").write_text(
+        '{"timestamp": 1713225600, "keywords": ["person"], "vlm_text": "A person is standing."}',
+        encoding="utf-8",
+    )
+
+    second = _clip_path("20260417_101234_568.mp4")
+    second.write_bytes(b"\x00" * 20480)
+    second.with_suffix(".json").write_text(
+        '{"timestamp": 1713312000, "keywords": ["person"], "vlm_text": "A person is walking."}',
+        encoding="utf-8",
+    )
+
+    clips = api_main._list_clips(date_from="2024-04-17", date_to="2024-04-17")
+
+    assert [clip.name for clip in clips] == [second.name]
+
+
+def test_list_clips_rejects_invalid_date_query():
+    with pytest.raises(HTTPException) as exc:
+        api_main.list_clips(date_from="2024-99-99", _={})
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "invalid date_from"
+
+
 def test_resolve_clip_prefers_year_month_path():
     clip = _clip_path("20260416_101234_567.mp4")
     clip.write_bytes(b"\x00" * 20480)
