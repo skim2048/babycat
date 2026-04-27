@@ -12,7 +12,7 @@ const filteredClips = computed(() => {
   return clips.value.filter((c) => c.name.toLowerCase().includes(q))
 })
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 10
 const currentPage = ref(1)
 
 watch(filteredClips, () => { currentPage.value = 1 })
