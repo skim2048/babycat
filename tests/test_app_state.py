@@ -33,7 +33,7 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     app_state.vlm_models = ["Efficient-Large-Model/VILA1.5-3b"]
     app_state.vlm_current_model = "Efficient-Large-Model/VILA1.5-3b"
     app_state.pipeline_state = "streaming"
-    app_state.pipeline_status_reason = ""
+    app_state.pipeline_state_detail = ""
     app_state.pipeline_started_at = 100.0
     app_state.pipeline_last_frame_at = 195.0
     app_state.pipeline_restart_count = 2
@@ -72,7 +72,7 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     assert snap["vlm_state"] == "ready"
     assert snap["vlm_models"] == ["Efficient-Large-Model/VILA1.5-3b"]
     assert snap["pipeline_state"] == "streaming"
-    assert snap["pipeline_status_reason"] == ""
+    assert snap["pipeline_state_detail"] == ""
     assert snap["pipeline_source_protocol"] == "rtsp"
     assert snap["pipeline_source_transport"] == "tcp"
     assert snap["pipeline_active_for_s"] == 100.0
@@ -165,29 +165,57 @@ def test_pipeline_transition_helpers_update_public_stream_state(monkeypatch):
 
     app_state.mark_pipeline_idle("waiting_for_camera")
     assert app_state.pipeline_state == "idle"
-    assert app_state.pipeline_status_reason == "waiting_for_camera"
+    assert app_state.pipeline_state_detail == "waiting_for_camera"
 
     app_state.mark_pipeline_starting("startup", restart=False, started_at=60.0)
     assert app_state.pipeline_state == "starting"
-    assert app_state.pipeline_status_reason == "startup"
+    assert app_state.pipeline_state_detail == "startup"
     assert app_state.pipeline_started_at == 60.0
     assert app_state.pipeline_restart_count == 0
 
     app_state.mark_pipeline_starting("watchdog_timeout", restart=True, started_at=70.0)
     assert app_state.pipeline_state == "restarting"
-    assert app_state.pipeline_status_reason == "watchdog_timeout"
+    assert app_state.pipeline_state_detail == "watchdog_timeout"
     assert app_state.pipeline_started_at == 70.0
     assert app_state.pipeline_restart_count == 1
 
     app_state.mark_pipeline_stalled("watchdog_timeout")
     assert app_state.pipeline_state == "stalled"
-    assert app_state.pipeline_status_reason == "watchdog_timeout"
+    assert app_state.pipeline_state_detail == "watchdog_timeout"
 
     app_state.mark_pipeline_stopped("shutdown")
     assert app_state.pipeline_state == "stopped"
-    assert app_state.pipeline_status_reason == "shutdown"
+    assert app_state.pipeline_state_detail == "shutdown"
 
     assert pushes == ["push", "push", "push", "push", "push"]
+
+
+def test_set_vlm_state_ready_clears_stale_waiting_for_vlm_detail(monkeypatch):
+    app_state = state_module.AppState()
+    pushes = []
+
+    app_state.pipeline_state = "streaming"
+    app_state.pipeline_state_detail = "waiting_for_vlm"
+    monkeypatch.setattr(app_state, "_sse_push", lambda: pushes.append("push"))
+
+    app_state.set_vlm_state("ready")
+
+    assert app_state.vlm_state == "ready"
+    assert app_state.pipeline_state_detail == ""
+    assert pushes == ["push"]
+
+
+def test_stream_snapshot_hides_waiting_for_vlm_when_vlm_ready(monkeypatch):
+    app_state = state_module.AppState()
+    app_state.pipeline_state = "streaming"
+    app_state.pipeline_state_detail = "waiting_for_vlm"
+    app_state.vlm_state = "ready"
+    monkeypatch.setattr(state_module.time, "time", lambda: 200.0)
+
+    snap = app_state._stream_snapshot_locked()
+
+    assert snap["pipeline_state"] == "streaming"
+    assert snap["pipeline_state_detail"] == ""
 
 
 def test_set_clip_storage_status_updates_public_snapshot_and_pushes(monkeypatch):

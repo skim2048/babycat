@@ -117,7 +117,7 @@ class AppState:
         self.clip_storage_reason: str = ""
         self.clip_storage_free_mb: int | None = None
         self.pipeline_state: str = "idle"
-        self.pipeline_status_reason: str = "waiting_for_vlm"
+        self.pipeline_state_detail: str = "waiting_for_vlm"
         self.pipeline_started_at: float = 0.0
         self.pipeline_last_frame_at: float = 0.0
         self.pipeline_restart_count: int = 0
@@ -135,6 +135,7 @@ class AppState:
         with self._lock:
             self.vlm_state = state
             self.vlm_error = error
+            self._normalize_pipeline_state_detail_locked()
         self._sse_push()
 
     def set_vlm_models(self, models: list[str], current: str):
@@ -209,7 +210,7 @@ class AppState:
                 self.pipeline_started_at = now
             transitioned = self.pipeline_state != "streaming"
             self.pipeline_state = "streaming"
-            self.pipeline_status_reason = ""
+            self.pipeline_state_detail = ""
         if transitioned:
             self._sse_push()
 
@@ -268,7 +269,7 @@ class AppState:
 
         return {
             "pipeline_state": self.pipeline_state,
-            "pipeline_status_reason": self.pipeline_status_reason,
+            "pipeline_state_detail": self._current_pipeline_state_detail_locked(),
             "pipeline_source_protocol": "rtsp",
             "pipeline_source_transport": "tcp",
             "pipeline_active_for_s": active_for,
@@ -286,7 +287,7 @@ class AppState:
     def mark_pipeline_starting(self, reason: str, restart: bool = False, started_at: float | None = None):
         with self._lock:
             self.pipeline_state = "restarting" if restart else "starting"
-            self.pipeline_status_reason = reason
+            self.pipeline_state_detail = reason
             self.pipeline_started_at = started_at or time.time()
             self.pipeline_last_frame_at = 0.0
             if restart:
@@ -296,7 +297,7 @@ class AppState:
     def mark_pipeline_idle(self, reason: str):
         with self._lock:
             self.pipeline_state = "idle"
-            self.pipeline_status_reason = reason
+            self.pipeline_state_detail = reason
             self.pipeline_started_at = 0.0
             self.pipeline_last_frame_at = 0.0
         self._sse_push()
@@ -304,15 +305,24 @@ class AppState:
     def mark_pipeline_stalled(self, reason: str):
         with self._lock:
             self.pipeline_state = "stalled"
-            self.pipeline_status_reason = reason
+            self.pipeline_state_detail = reason
         self._sse_push()
 
     def mark_pipeline_stopped(self, reason: str):
         with self._lock:
             self.pipeline_state = "stopped"
-            self.pipeline_status_reason = reason
+            self.pipeline_state_detail = reason
             self.pipeline_started_at = 0.0
         self._sse_push()
+
+    def _current_pipeline_state_detail_locked(self) -> str:
+        detail = self.pipeline_state_detail
+        if detail == "waiting_for_vlm" and self.vlm_state == "ready":
+            return ""
+        return detail
+
+    def _normalize_pipeline_state_detail_locked(self) -> None:
+        self.pipeline_state_detail = self._current_pipeline_state_detail_locked()
 
     def _uptime_text(self) -> str:
         uptime_s = int(time.time() - self._start_time)

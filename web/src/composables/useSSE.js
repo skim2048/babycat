@@ -12,7 +12,7 @@ const state = reactive({
   frame_w: 0,
   frame_h: 0,
   pipeline_state: 'idle',
-  pipeline_status_reason: 'waiting_for_vlm',
+  pipeline_state_detail: 'waiting_for_vlm',
   pipeline_source_protocol: '',
   pipeline_source_transport: '',
   pipeline_active_for_s: null,
@@ -49,19 +49,19 @@ let eventSource = null
 let reconnectTimer = null
 let backoff = 1000
 const PIPELINE_STATE_LABELS = {
-  idle: '대기',
+  idle: '유휴',
   starting: '시작 중',
-  streaming: '프레임 수신 중',
-  stalled: '프레임 정지',
+  streaming: '스트리밍 중',
+  stalled: '멈춤',
   restarting: '재시작 중',
-  stopped: '중지됨',
+  stopped: '종료됨',
 }
-const PIPELINE_REASON_LABELS = {
-  waiting_for_vlm: 'VLM 준비 대기',
-  waiting_for_camera: '카메라 설정 대기',
+const PIPELINE_DETAIL_LABELS = {
+  waiting_for_vlm: 'VLM 대기',
+  waiting_for_camera: '카메라 대기',
   startup: '초기 시작',
-  camera_apply: '카메라 적용 후 재시작',
-  watchdog_timeout: '프레임 정지 감지',
+  camera_apply: '카메라 재설정',
+  watchdog_timeout: '카메라 응답시간 초과',
   shutdown: '종료',
 }
 
@@ -73,7 +73,7 @@ function resetState() {
   state.frame_w = 0
   state.frame_h = 0
   state.pipeline_state = 'idle'
-  state.pipeline_status_reason = 'waiting_for_vlm'
+  state.pipeline_state_detail = 'waiting_for_vlm'
   state.pipeline_source_protocol = ''
   state.pipeline_source_transport = ''
   state.pipeline_active_for_s = null
@@ -168,28 +168,14 @@ export function useSSE() {
   const pipelineStateLabel = computed(() =>
     PIPELINE_STATE_LABELS[readonlyState.pipeline_state] || readonlyState.pipeline_state || '알 수 없음',
   )
-  const pipelineReasonLabel = computed(() => {
-    const reason = readonlyState.pipeline_status_reason
-    if (!reason) return ''
-    return PIPELINE_REASON_LABELS[reason] || reason
+  const pipelineDetailLabel = computed(() => {
+    const detail = readonlyState.pipeline_state_detail
+    if (!detail) return ''
+    return PIPELINE_DETAIL_LABELS[detail] || detail
   })
-  const pipelineStatusTone = computed(() => {
-    if (readonlyState.pipeline_state === 'streaming') return 'ok'
-    if (readonlyState.pipeline_state === 'stalled' || readonlyState.pipeline_state === 'restarting') return 'warn'
-    if (readonlyState.pipeline_state === 'stopped') return 'err'
-    return 'neutral'
-  })
-  const pipelineStatusText = computed(() => {
-    const parts = [pipelineStateLabel.value]
-    if (pipelineReasonLabel.value) parts.push(pipelineReasonLabel.value)
-    return parts.join(' · ')
-  })
-
   return {
     state: readonlyState,
     pipelineStateLabel,
-    pipelineReasonLabel,
-    pipelineStatusText,
-    pipelineStatusTone,
+    pipelineDetailLabel,
   }
 }

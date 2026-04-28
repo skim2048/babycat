@@ -15,6 +15,7 @@ const { logout } = useAuth()
 const { theme, setTheme } = useTheme()
 
 function toggleTheme() {
+  menuOpen.value = false
   setTheme(theme.value === 'light' ? 'dark' : 'light')
 }
 
