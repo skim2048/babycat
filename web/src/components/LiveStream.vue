@@ -34,6 +34,18 @@ watch(accessToken, (currentToken) => {
   }
 })
 
+watch(() => sseState.pipeline_state, (nextState, prevState) => {
+  if (!configured.value || stopped.value) return
+  if (nextState !== 'streaming' || !prevState || prevState === 'streaming') return
+  if (loading.value) return
+  if (pipelineRecoveryTimer) clearTimeout(pipelineRecoveryTimer)
+  pipelineRecoveryTimer = setTimeout(() => {
+    pipelineRecoveryTimer = null
+    if (!configured.value || stopped.value || loading.value) return
+    restartStream()
+  }, 1000)
+})
+
 const videoRef = ref(null)
 const videoWrapRef = ref(null)
 const loading = ref(false)
@@ -74,6 +86,7 @@ let Hls = null
 let stallTimer = null
 let timeoutTimer = null
 let retryTimer = null
+let pipelineRecoveryTimer = null
 let countdownTimer = null
 let pc = null
 let sessionId = 0
@@ -192,6 +205,7 @@ function clearAllTimers() {
   if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
   if (stallTimer) { clearInterval(stallTimer); stallTimer = null }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
+  if (pipelineRecoveryTimer) { clearTimeout(pipelineRecoveryTimer); pipelineRecoveryTimer = null }
 }
 
 function tryFallback(mySession) {
