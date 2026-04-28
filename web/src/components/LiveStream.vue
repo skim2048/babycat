@@ -812,23 +812,29 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   position: relative;
-}
-.video-wrap video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   border: 1px solid var(--border);
-  background: #000;
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
 }
+.video-wrap video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  border-radius: var(--radius);
+  /* letterbox 하단 sub-pixel 반올림 artifact 제거 */
+  clip-path: inset(0 0 1px 0 round var(--radius));
+}
 .video-wrap:fullscreen {
   background: #000;
-}
-.video-wrap:fullscreen video {
   border: none;
   border-radius: 0;
   box-shadow: none;
+}
+.video-wrap:fullscreen video {
+  clip-path: none;
+  border-radius: 0;
 }
 .session-remaining-badge {
   position: absolute;
