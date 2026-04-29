@@ -21,13 +21,13 @@ async function post(body) {
 }
 
 function startMove(pan, tilt) {
-  const p = pan * PTZ_SPEED
-  const t = tilt * PTZ_SPEED
+  const panSpeed = pan * PTZ_SPEED
+  const tiltSpeed = tilt * PTZ_SPEED
   status.value =
-    p > 0 ? t('ptz.move.right') :
-    p < 0 ? t('ptz.move.left') :
-    t > 0 ? t('ptz.move.up') : t('ptz.move.down')
-  post({ action: 'move', pan: p, tilt: t })
+    panSpeed > 0 ? t('ptz.move.right') :
+    panSpeed < 0 ? t('ptz.move.left') :
+    tiltSpeed > 0 ? t('ptz.move.up') : t('ptz.move.down')
+  post({ action: 'move', pan: panSpeed, tilt: tiltSpeed })
 }
 
 function stopMove() {

@@ -17,10 +17,10 @@ let loaded = false
 
 watch(
   () => [state.inference_prompt, state.trigger_keywords],
-  ([p, t]) => {
-    if (!loaded && (p || t)) {
-      if (p) prompt.value = p
-      if (t) triggers.value = t
+  ([promptText, triggerText]) => {
+    if (!loaded && (promptText || triggerText)) {
+      if (promptText) prompt.value = promptText
+      if (triggerText) triggers.value = triggerText
       loaded = true
     }
   },
