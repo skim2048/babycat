@@ -481,13 +481,6 @@ onBeforeUnmount(() => {
           {{ t('live.fallback', { protocol: activeProtocol.toUpperCase() }) }}
         </div>
 
-        <button v-if="!stopped" class="disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-            <line x1="3" y1="3" x2="13" y2="13" />
-            <line x1="13" y1="3" x2="3" y2="13" />
-          </svg>
-        </button>
-
         <InferenceOverlay :open="inferOpen && isPlaying" />
 
         <!-- Bottom-right toolbar -->
@@ -512,6 +505,14 @@ onBeforeUnmount(() => {
               <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
               <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
               <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+            </svg>
+          </button>
+
+          <!-- Disconnect -->
+          <button v-if="!stopped" class="toolbar-btn disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="3" y1="3" x2="13" y2="13" />
+              <line x1="13" y1="3" x2="3" y2="13" />
             </svg>
           </button>
 
@@ -689,27 +690,8 @@ onBeforeUnmount(() => {
   background: rgba(255,255,255,0.15);
   color: rgba(255,255,255,0.95);
 }
-.disconnect-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 4;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(0,0,0,0.55);
-  color: rgba(255,255,255,0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
 .disconnect-btn:hover {
-  background: rgba(208,56,56,0.7);
+  background: rgba(255,255,255,0.16);
   color: #fff;
 }
 .protocol-badge {
@@ -758,7 +740,7 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(4px);
 }
 .stop-btn:hover {
-  background: rgba(208,56,56,0.45);
+  background: rgba(255,255,255,0.16);
   border-color: rgba(255,255,255,0.7);
   transform: scale(1.06);
 }
