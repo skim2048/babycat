@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
         <div v-else-if="loading" class="video-overlay">
           <button class="stop-btn" @click="handleDisconnect" :title="t('live.disconnect')">
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <rect x="5" y="5" width="12" height="12" rx="2.5" fill="currentColor"/>
+              <rect x="4" y="4" width="14" height="14" fill="currentColor"/>
             </svg>
           </button>
           <span class="overlay-text">
@@ -720,9 +720,9 @@ onBeforeUnmount(() => {
   background: rgba(0,0,0,0.6);
 }
 .video-overlay.clickable { cursor: pointer; }
-.video-overlay.clickable:hover .play-icon svg circle { stroke: rgba(255,255,255,0.7); }
-.video-overlay.clickable:hover .play-icon { transform: scale(1.08); }
-.play-icon { transition: transform 0.15s; }
+.play-icon { transition: transform 0.15s; cursor: pointer; }
+.play-icon:hover svg circle { stroke: rgba(255,255,255,0.7); }
+.play-icon:hover { transform: scale(1.08); }
 
 .stop-btn {
   width: 52px;
