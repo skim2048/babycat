@@ -460,8 +460,16 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else-if="loading" class="video-overlay">
-          <div class="spinner" />
-          <span class="overlay-text">{{ t('live.connecting', { protocol: activeProtocol.toUpperCase(), seconds: remainingSec }) }}</span>
+          <button class="stop-btn" @click="handleDisconnect" :title="t('live.disconnect')">
+            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+              <rect x="5" y="5" width="12" height="12" rx="2.5" fill="currentColor"/>
+            </svg>
+          </button>
+          <span class="overlay-text">
+            {{ t('live.connectingPrefix', { protocol: activeProtocol.toUpperCase() }) }}
+            <span class="inline-spinner" />
+            {{ t('live.connectingSuffix', { seconds: remainingSec }) }}
+          </span>
         </div>
 
         <div v-else-if="timedOut" class="video-overlay">
@@ -734,17 +742,43 @@ onBeforeUnmount(() => {
 .video-overlay.clickable:hover .play-icon { transform: scale(1.08); }
 .play-icon { transition: transform 0.15s; }
 
-.spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(255,255,255,0.15);
+.stop-btn {
+  width: 52px;
+  height: 52px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.stop-btn:hover {
+  background: rgba(208,56,56,0.45);
+  border-color: rgba(255,255,255,0.7);
+  transform: scale(1.06);
+}
+.inline-spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  vertical-align: -0.12em;
+  border: 1.5px solid rgba(255,255,255,0.25);
   border-top-color: rgba(255,255,255,0.8);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .overlay-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 13px;
   color: rgba(255,255,255,0.7);
   font-weight: 500;
