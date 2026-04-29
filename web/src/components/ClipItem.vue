@@ -76,7 +76,12 @@ function openPlayer() {
     <div class="list-meta list-only">
       <span class="list-time">{{ timeLabel }}</span>
       <div class="list-info">
-        <span class="list-kw">{{ keywordLabel || '—' }}</span>
+        <div class="list-kw-badges">
+          <template v-if="keywords.length > 0">
+            <span v-for="kw in keywords" :key="kw" class="clip-badge">{{ kw }}</span>
+          </template>
+          <span v-else class="list-kw-empty">—</span>
+        </div>
         <span class="list-vlm">{{ vlmText || '—' }}</span>
       </div>
     </div>
@@ -283,13 +288,16 @@ function openPlayer() {
   min-width: 0;
   overflow: hidden;
 }
-.list-kw {
+.list-kw-badges {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow: hidden;
+}
+.list-kw-empty {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .list-vlm {
   font-size: 12px;
