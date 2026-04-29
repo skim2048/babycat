@@ -32,9 +32,6 @@ camera_ready = threading.Event()
 
 DEFAULT_SOURCE_TYPE = "rtsp_camera"
 _REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
-_STREAM_PROTOCOLS = {"hls", "webrtc"}
-
-
 def load() -> Optional[dict]:
     try:
         with open(CONFIG_PATH) as f:
@@ -48,6 +45,7 @@ def save(config: dict) -> None:
     existing = load() or {}
     existing.update(config)
     existing.pop("name", None)  # @claude Drop a legacy field.
+    existing.pop("stream_protocol", None)  # Drop legacy runtime transport preference.
     with open(CONFIG_PATH, "w") as f:
         json.dump(existing, f, indent=2, ensure_ascii=False)
 
@@ -151,7 +149,6 @@ def _normalize_rtsp_camera_profile(config: dict, existing: dict, source_type: st
         "rtsp_port": _coalesce(config, existing, "rtsp_port", 554),
         "onvif_port": _coalesce_optional(config, existing, "onvif_port"),
         "stream_path": str(_coalesce(config, existing, "stream_path", "stream1")).strip(),
-        "stream_protocol": _normalize_stream_protocol(_coalesce(config, existing, "stream_protocol", "hls")),
     }
 
     for field in _REQUIRED_RTSP_FIELDS:
@@ -178,13 +175,6 @@ def _coalesce_optional(config: dict, existing: dict, key: str):
     return existing.get(key)
 
 
-def _normalize_stream_protocol(value) -> str:
-    protocol = str(value or "hls").strip().lower()
-    if protocol not in _STREAM_PROTOCOLS:
-        return "hls"
-    return protocol
-
-
 def _profile_view(config: dict) -> dict:
     source_type = _source_type(config)
     viewer = _source_profile_viewer(source_type)
@@ -197,7 +187,7 @@ def _profile_view_rtsp_camera(config: dict, source_type: str) -> dict:
     return {
         "configured": True,
         "source_type": source_type,
-        **{k: v for k, v in config.items() if k != "password"},
+        **{k: v for k, v in config.items() if k not in {"password", "stream_protocol"}},
         "password_set": bool(config.get("password")),
     }
 

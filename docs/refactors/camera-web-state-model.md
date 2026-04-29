@@ -11,13 +11,13 @@
 - Owner layer: `web`
 - Producer: `useCamera.js`
 - Consumer: `LiveStream.vue`, `DashboardView.vue`, camera UI
-- Adjacent layers to review: stored camera profile contract, PTZ visibility, preferred stream protocol handling
+- Adjacent layers to review: stored camera profile contract, PTZ visibility, and runtime transport state handling
 
 ## 3. Boundary Preservation Checks
 
 - persisted camera config fields remain unchanged
 - PTZ visibility still depends on the same ONVIF capability
-- the saved stream preference remains the single source for preferred transport
+- runtime transport selection stays outside persisted camera profile state
 
 ## 4. Minimum Validation
 
@@ -28,7 +28,7 @@
 ## 5. Result
 
 - What was validated:
-  - `useCamera.js` now exports derived camera state for preferred transport, PTZ enablement, and screen state
+  - `useCamera.js` now exports derived camera state for PTZ enablement and screen state
   - `LiveStream.vue` and `DashboardView.vue` consume those derived values instead of reinterpreting raw config locally
   - `node --check web/src/composables/useCamera.js` passed
 - What was not validated:

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { alternateStreamProtocol, useCamera } from '../composables/useCamera.js'
+import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useSSE } from '../composables/useSSE.js'
@@ -19,7 +19,7 @@ const { isAuthenticated, isPersistentSession, sessionRemainingSeconds } = useAut
 const { t } = useLocale()
 
 const { accessToken } = useAuth()
-const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
+const { configured, connecting, connected, reconnectKey, ptzEnabled, setConnected, setDisconnected, disconnect } = useCamera()
 
 watch(reconnectKey, () => {
   if (!configured.value) return
@@ -88,11 +88,11 @@ let fallbackUsed = false
 const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
+const PRIMARY_STREAM_PROTOCOL = 'webrtc'
 
-const activeProtocol = ref(preferredStreamProtocol.value)
+const activeProtocol = ref(PRIMARY_STREAM_PROTOCOL)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
-const preferredIsWebRTC = computed(() => preferredStreamProtocol.value === 'webrtc')
-const fallbackActive = computed(() => activeProtocol.value !== preferredStreamProtocol.value)
+const fallbackActive = computed(() => activeProtocol.value !== PRIMARY_STREAM_PROTOCOL)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
 const showSessionRemaining = computed(() =>
   isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
@@ -110,15 +110,10 @@ const { stats, startStats, stopStats } = useStreamStats({
   getHlsInstance: () => hls,
 })
 
-function toggleProtocol() {
-  config.stream_protocol = alternateStreamProtocol(preferredStreamProtocol.value)
-  saveCamera()
-}
-
 function handleConnect() {
   stopped.value = false
   connecting.value = true
-  resetPreferredProtocol()
+  resetRuntimeProtocol()
   connectDeadline = Date.now() + CONNECT_TIMEOUT
   startCountdown()
   restartStream()
@@ -161,13 +156,13 @@ function handleDisconnect() {
   disconnect()
 }
 
-function resetPreferredProtocol() {
-  activeProtocol.value = preferredStreamProtocol.value
+function resetRuntimeProtocol() {
+  activeProtocol.value = PRIMARY_STREAM_PROTOCOL
   fallbackUsed = false
 }
 
 function restartStream({ resetProtocol = false } = {}) {
-  if (resetProtocol) resetPreferredProtocol()
+  if (resetProtocol) resetRuntimeProtocol()
   destroyAll()
   initStream()
 }
@@ -227,7 +222,7 @@ function schedulePipelineRecovery() {
 function tryFallback(mySession) {
   if (fallbackUsed || mySession !== sessionId) return false
   fallbackUsed = true
-  activeProtocol.value = alternateStreamProtocol(activeProtocol.value)
+  activeProtocol.value = activeProtocol.value === 'webrtc' ? 'hls' : 'webrtc'
   connectDeadline = Date.now() + CONNECT_TIMEOUT
   startCountdown()
   initStream()
@@ -443,28 +438,28 @@ onBeforeUnmount(() => {
           <div v-if="showSessionRemaining" class="session-remaining-badge">
             {{ t('live.sessionRemaining', { time: sessionRemainingText }) }}
           </div>
-          <div class="proto-toggle" @click="toggleProtocol">
-            <span class="proto-opt" :class="{ active: !preferredIsWebRTC }">HLS</span>
-            <span class="proto-opt" :class="{ active: preferredIsWebRTC }">WebRTC</span>
+          <div class="proto-toggle" aria-label="Current stream protocol">
+            <span class="proto-opt" :class="{ active: activeProtocol === 'hls' }">HLS</span>
+            <span class="proto-opt" :class="{ active: activeProtocol === 'webrtc' }">WebRTC</span>
           </div>
         </div>
 
         <div v-if="stopped" class="video-overlay clickable" @click="handleConnect">
-          <div class="play-icon">
+          <div class="overlay-icon" aria-hidden="true">
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="24" r="23" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
-              <polygon points="19,14 19,34 36,24" fill="rgba(255,255,255,0.85)"/>
+              <polygon points="19,14 19,34 36,24" fill="currentColor"/>
             </svg>
           </div>
           <span class="overlay-text">{{ t('live.connectIdle') }}</span>
         </div>
 
-        <div v-else-if="loading" class="video-overlay">
-          <button class="stop-btn" @click="handleDisconnect" :title="t('live.disconnect')">
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-              <rect x="4" y="4" width="14" height="14" fill="currentColor"/>
+        <div v-else-if="loading" class="video-overlay clickable" @click="handleDisconnect">
+          <div class="overlay-icon" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <rect x="19" y="14" width="5" height="20" rx="1.5" fill="currentColor"/>
+              <rect x="31" y="14" width="5" height="20" rx="1.5" fill="currentColor"/>
             </svg>
-          </button>
+          </div>
           <span class="overlay-text">
             {{ t('live.connectingPrefix', { protocol: activeProtocol.toUpperCase() }) }}
             <span class="inline-spinner" />
@@ -671,10 +666,8 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   padding: 2px;
   gap: 2px;
-  cursor: pointer;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  user-select: none;
 }
 .proto-opt {
   padding: 3px 10px;
@@ -720,29 +713,16 @@ onBeforeUnmount(() => {
   background: rgba(0,0,0,0.6);
 }
 .video-overlay.clickable { cursor: pointer; }
-.play-icon { transition: transform 0.15s; cursor: pointer; }
-.play-icon:hover svg circle { stroke: rgba(255,255,255,0.7); }
-.play-icon:hover { transform: scale(1.08); }
-
-.stop-btn {
-  width: 52px;
-  height: 52px;
-  border: 2px solid rgba(255,255,255,0.4);
-  border-radius: 50%;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.85);
+.video-overlay.clickable:hover .overlay-icon {
+  color: rgba(255,255,255,0.96);
+  transform: scale(1.08);
+}
+.overlay-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-.stop-btn:hover {
-  background: rgba(255,255,255,0.16);
-  border-color: rgba(255,255,255,0.7);
-  transform: scale(1.06);
+  color: rgba(255,255,255,0.85);
+  transition: color 0.15s, transform 0.15s;
 }
 .inline-spinner {
   display: inline-block;

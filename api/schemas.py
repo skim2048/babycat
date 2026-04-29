@@ -54,7 +54,6 @@ class CameraProfileIn(BaseModel):
     rtsp_port: Optional[int] = None
     onvif_port: Optional[int] = None
     stream_path: Optional[str] = None
-    stream_protocol: Optional[str] = None
 
 
 class CameraProfileOut(BaseModel):
@@ -66,7 +65,6 @@ class CameraProfileOut(BaseModel):
     rtsp_port: Optional[int] = None
     onvif_port: Optional[int] = None
     stream_path: Optional[str] = None
-    stream_protocol: Optional[str] = None
     ptz_home: Optional[PTZHomeOut] = None
 
 

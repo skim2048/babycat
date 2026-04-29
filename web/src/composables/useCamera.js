@@ -12,16 +12,7 @@ const config = reactive({
   password_set: false,
   stream_path: 'stream1',
   onvif_port: null,
-  stream_protocol: 'hls',
 })
-
-export function normalizeStreamProtocol(value) {
-  return value === 'webrtc' ? 'webrtc' : 'hls'
-}
-
-export function alternateStreamProtocol(value) {
-  return normalizeStreamProtocol(value) === 'webrtc' ? 'hls' : 'webrtc'
-}
 
 // @claude configured: profile is persisted in camera.json (durable).
 // @claude connecting: stream connection attempt in progress (transient).
@@ -33,7 +24,6 @@ const status = ref('')
 const reconnectKey = ref(0)  // @claude Bumped on successful profile save so LiveStream auto-reconnects.
 let loaded = false
 
-const preferredStreamProtocol = computed(() => normalizeStreamProtocol(config.stream_protocol))
 const ptzEnabled = computed(() => config.onvif_port != null)
 const cameraViewState = computed(() => {
   if (!configured.value) return 'unconfigured'
@@ -73,7 +63,6 @@ async function load() {
       config.password_set = !!data.password_set
       config.stream_path = data.stream_path || 'stream1'
       config.onvif_port = data.onvif_port || null
-      config.stream_protocol = normalizeStreamProtocol(data.stream_protocol)
       configured.value = true
       status.value = ''
     }
@@ -96,7 +85,6 @@ async function save() {
     if (config.password) {
       body.password = config.password
     }
-    body.stream_protocol = normalizeStreamProtocol(config.stream_protocol)
     const res = await authFetch(API_ENDPOINTS.camera, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -141,7 +129,7 @@ function disconnect() {
 export function useCamera() {
   return {
     config, configured, connecting, connected, status, reconnectKey,
-    preferredStreamProtocol, ptzEnabled, cameraViewState,
+    ptzEnabled, cameraViewState,
     load, save, disconnect, setConnected, setDisconnected,
   }
 }

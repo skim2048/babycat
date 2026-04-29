@@ -33,7 +33,6 @@
   - `apply()` and `startup_apply()` still preserve PTZ-before-MediaMTX behavior
   - camera profile response shaping now comes from `app/camera.py` instead of being duplicated in `app/server.py`
   - input normalization now treats `rtsp_camera` as the current source type and allows ONVIF to be omitted
-  - `stream_protocol` now has an explicit UI-facing contract: `hls` or `webrtc`, with fallback to `hls`
   - `python -m pytest tests/test_app_camera.py -q` passed
 - What was not validated:
   - live MediaMTX API interaction

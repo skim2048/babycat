@@ -12,6 +12,7 @@ def test_profile_view_masks_password_and_marks_configured(monkeypatch):
         "username": "admin",
         "password": "secret",
         "stream_path": "stream1",
+        "stream_protocol": "webrtc",
     })
 
     result = camera_module.profile_view()
@@ -21,6 +22,7 @@ def test_profile_view_masks_password_and_marks_configured(monkeypatch):
     assert result["password_set"] is True
     assert result["ip"] == "192.168.0.10"
     assert "password" not in result
+    assert "stream_protocol" not in result
 
 
 def test_profile_view_returns_unconfigured_for_unsupported_source_type(monkeypatch):
@@ -53,7 +55,6 @@ def test_normalize_profile_defaults_to_rtsp_camera_and_keeps_onvif_optional():
         "rtsp_port": 554,
         "onvif_port": None,
         "stream_path": "stream1",
-        "stream_protocol": "hls",
     }
 
 
@@ -76,19 +77,6 @@ def test_normalize_profile_preserves_saved_password_and_allows_onvif_clear():
     assert normalized["onvif_port"] is None
     assert normalized["ip"] == "192.168.0.11"
     assert normalized["username"] == "admin2"
-
-
-def test_normalize_profile_coerces_unknown_stream_protocol_to_hls():
-    normalized, error = camera_module._normalize_profile({
-        "ip": "192.168.0.10",
-        "username": "admin",
-        "password": "secret",
-        "stream_protocol": "rtsp",
-    }, {})
-
-    assert error is None
-    assert normalized["stream_protocol"] == "hls"
-
 
 def test_apply_mediamtx_source_builds_rtsp_url_before_update(monkeypatch):
     captured = {}
@@ -177,6 +165,24 @@ def test_apply_failure_does_not_persist_profile_and_leaves_ready_cleared(monkeyp
 
     assert result == {"ok": False, "error": "MediaMTX API connection failed"}
     assert calls == ["clear", ("activate", "192.168.0.10")]
+
+
+def test_save_drops_legacy_stream_protocol(tmp_path, monkeypatch):
+    target = tmp_path / "cam_profile.json"
+    target.write_text('{"stream_protocol":"webrtc","ptz_home":{"pan":0.1,"tilt":-0.2}}')
+    monkeypatch.setattr(camera_module, "CONFIG_PATH", str(target))
+
+    camera_module.save({
+        "source_type": "rtsp_camera",
+        "ip": "192.168.0.10",
+        "username": "admin",
+        "password": "secret",
+        "stream_path": "stream1",
+    })
+
+    saved = target.read_text()
+    assert '"stream_protocol"' not in saved
+    assert '"ptz_home"' in saved
 
 
 def test_configure_ptz_builds_onvif_url_from_config(monkeypatch):

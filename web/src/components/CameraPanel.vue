@@ -17,7 +17,6 @@ const local = reactive({
   password_set: false,
   stream_path: 'stream1',
   onvif_port: null,
-  stream_protocol: 'hls',
 })
 
 const showPassword = ref(false)
@@ -33,7 +32,6 @@ onMounted(() => {
     password_set: config.password_set,
     stream_path: config.stream_path,
     onvif_port: config.onvif_port,
-    stream_protocol: config.stream_protocol,
   })
   if (config.password_set) {
     passwordLoaded.value = true
