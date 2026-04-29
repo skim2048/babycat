@@ -23,8 +23,10 @@ description: Use after implementation to choose, run, and report the smallest cr
 4. Record what was run, what was not run, and why.
 5. Avoid claiming full coverage when hardware or streaming paths were not exercised.
 6. Report both validated behavior and remaining runtime risk.
+7. For refactors that add imports or helper symbols, include at least one check that the affected runtime path still executes without local identifier shadowing errors.
 
 ## Definition of done
 
 - A right-sized validation set was chosen, run when possible, and reported.
 - Any gap between performed validation and runtime risk is explicit.
+- Runtime-path validation includes symbol-collision risk when that class of change was introduced.

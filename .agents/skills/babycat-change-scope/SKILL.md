@@ -24,8 +24,10 @@ description: Use before code changes, refactors, bug fixes, or feature work to d
 4. List the surrounding directories or services that may be affected.
 5. State the failure modes worth checking.
 6. State the smallest useful verification plan before editing.
+7. If adding imports, composables, or translated message helpers, check whether the new identifiers can shadow existing local variables, parameters, refs, or computed names in the same file.
 
 ## Definition of done
 
 - The change target, dependencies, impact area, failure modes, and validation plan are explicit.
 - Hidden higher-level design issues are named if they affect the task.
+- Identifier collision risk from newly introduced symbols has been considered when relevant.

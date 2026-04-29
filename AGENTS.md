@@ -27,3 +27,5 @@
 - Default to `app` and `api` as the primary refactor targets. Treat `web` mainly as a contract consumer and validation surface.
 - When changing one layer, check whether `app`, `api`, `web`, `config`, `tests`, and `docs` need follow-up updates.
 - If verification cannot be run in the current environment, say so and name the remaining risk.
+- When introducing a new identifier, do not reuse short generic names without checking for collisions in the same local scope first. Treat imports such as `t`, `state`, `status`, `data`, `config`, `open`, and `event` as collision-prone by default.
+- After string extraction, i18n work, or composable adoption, re-check event handlers and state mutation paths for identifier shadowing or renamed symbol conflicts before considering the change done.
