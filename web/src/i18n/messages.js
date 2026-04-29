@@ -1,5 +1,5 @@
 export const messages = {
-  'locale.switchControl': { en: '언어 전환', ko: '언어 전환' },
+  'locale.switchControl': { en: 'Switch Language', ko: '언어 전환' },
   'theme.toggle': { en: 'Toggle theme', ko: '테마 전환' },
 
   'dashboard.menuLabel': { en: 'Menu', ko: '메뉴' },
