@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
+import { useLocale } from '../composables/useLocale.js'
 
 defineProps({
   open: Boolean,
@@ -9,6 +10,7 @@ defineProps({
 const emit = defineEmits(['toggle'])
 
 const { state: sseState } = useSSE()
+const { t } = useLocale()
 
 const HISTORY_LEN = 30
 const cpuUsageHist = []
@@ -110,7 +112,7 @@ onMounted(() => {
 <template>
   <div class="vsb-acc">
     <button class="vsb-acc-header" @click="emit('toggle')">
-      <span>시스템</span>
+      <span>{{ t('live.system') }}</span>
       <svg class="vsb-acc-chevron" :class="{ open }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="2,4.5 6,8 10,4.5"/>
       </svg>
@@ -121,8 +123,8 @@ onMounted(() => {
           <div class="vsb-header">
             <span class="vsb-name vsb-cpu">CPU</span>
             <div class="vsb-legend">
-              <span class="vsb-leg-usage vsb-cpu">사용률</span>
-              <span class="vsb-leg-temp vsb-cpu">온도</span>
+              <span class="vsb-leg-usage vsb-cpu">{{ t('live.usage') }}</span>
+              <span class="vsb-leg-temp vsb-cpu">{{ t('live.temperature') }}</span>
             </div>
           </div>
           <canvas ref="cpuCanvasRef" class="vsb-canvas"></canvas>
@@ -136,8 +138,8 @@ onMounted(() => {
           <div class="vsb-header">
             <span class="vsb-name vsb-gpu">GPU</span>
             <div class="vsb-legend">
-              <span class="vsb-leg-usage vsb-gpu">사용률</span>
-              <span class="vsb-leg-temp vsb-gpu">온도</span>
+              <span class="vsb-leg-usage vsb-gpu">{{ t('live.usage') }}</span>
+              <span class="vsb-leg-temp vsb-gpu">{{ t('live.temperature') }}</span>
             </div>
           </div>
           <canvas ref="gpuCanvasRef" class="vsb-canvas"></canvas>
@@ -151,7 +153,7 @@ onMounted(() => {
           <div class="vsb-header">
             <span class="vsb-name vsb-ram">RAM</span>
             <div class="vsb-legend">
-              <span class="vsb-leg-usage vsb-ram">사용률</span>
+              <span class="vsb-leg-usage vsb-ram">{{ t('live.usage') }}</span>
             </div>
           </div>
           <canvas ref="ramCanvasRef" class="vsb-canvas"></canvas>

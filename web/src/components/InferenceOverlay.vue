@@ -3,10 +3,12 @@ import { computed } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { authFetch } from '../composables/useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
+import { useLocale } from '../composables/useLocale.js'
 
 defineProps({ open: Boolean })
 
 const { state } = useSSE()
+const { t } = useLocale()
 
 // @claude Convert ms -> s and truncate to two decimals (e.g. 5038.5 -> 5.03).
 const inferSec = computed(() => (Math.floor(state.infer_ms / 10) / 100).toFixed(2))
@@ -19,13 +21,13 @@ const switchDisabled = computed(() => state.vlm_state !== 'ready')
 
 const vlmStatusLabel = computed(() => {
   const s = state.vlm_state
-  if (s === 'ready') return 'VLM ready'
-  if (s === 'switching') return 'Switching VLM ...'
-  if (s === 'downloading') return 'Downloading VLM ...'
-  if (s === 'compiling') return 'Compiling VLM ...'
-  if (s === 'initializing') return 'Initializing VLM ...'
-  if (s === 'error') return `VLM error: ${state.vlm_error || 'unknown'}`
-  return 'Loading VLM ...'
+  if (s === 'ready') return t('inference.vlmReady')
+  if (s === 'switching') return t('inference.vlmSwitching')
+  if (s === 'downloading') return t('inference.vlmDownloading')
+  if (s === 'compiling') return t('inference.vlmCompiling')
+  if (s === 'initializing') return t('inference.vlmInitializing')
+  if (s === 'error') return t('inference.vlmError', { message: state.vlm_error || t('inference.vlmUnknown') })
+  return t('inference.vlmLoading')
 })
 
 // @claude In-progress states (spinner) — every stage the user should see as "work in flight on the backend".
@@ -69,7 +71,7 @@ function shortName(id) {
           </svg>
           <span>{{ vlmStatusLabel }}</span>
         </div>
-        <div class="infer-model-row" role="radiogroup" aria-label="VLM 모델">
+        <div class="infer-model-row" role="radiogroup" :aria-label="t('inference.modelGroup')">
           <label
             v-for="m in state.vlm_models"
             :key="m"

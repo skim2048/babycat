@@ -1,7 +1,9 @@
 <script setup>
 import { useTheme } from '../composables/useTheme.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const { theme, setTheme } = useTheme()
+const { t } = useLocale()
 
 function toggle() {
   setTheme(theme.value === 'light' ? 'dark' : 'light')
@@ -9,7 +11,7 @@ function toggle() {
 </script>
 
 <template>
-  <button class="theme-toggle" :class="{ dark: theme === 'dark' }" @click="toggle" type="button" aria-label="테마 전환">
+  <button class="theme-toggle" :class="{ dark: theme === 'dark' }" @click="toggle" type="button" :aria-label="t('theme.toggle')">
     <span class="icon sun">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="5"/>

@@ -2,11 +2,13 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
+import { useLocale } from '../composables/useLocale.js'
 import { useTheme } from '../composables/useTheme.js'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
 const { login } = useAuth()
+const { t } = useLocale()
 const { theme } = useTheme()
 
 const username = ref('')
@@ -23,9 +25,10 @@ async function handleLogin() {
     router.push({ name: 'dashboard' })
   } catch (e) {
     if (e.message.startsWith('too many attempts')) {
-      error.value = `로그인 시도가 너무 많습니다. ${e.message.replace('too many attempts, retry after ', '').replace('s', '초')} 후 다시 시도하세요.`
+      const seconds = e.message.replace('too many attempts, retry after ', '').replace('s', '')
+      error.value = t('login.error.tooManyAttempts', { seconds })
     } else {
-      error.value = '아이디 또는 비밀번호가 올바르지 않습니다.'
+      error.value = t('login.error.invalidCredentials')
     }
   } finally {
     loading.value = false
@@ -42,7 +45,7 @@ async function handleLogin() {
       <input
         v-model="username"
         type="text"
-        placeholder="아이디"
+        :placeholder="t('login.usernamePlaceholder')"
         class="login-input"
         autocomplete="username"
         required
@@ -50,7 +53,7 @@ async function handleLogin() {
       <input
         v-model="password"
         type="password"
-        placeholder="비밀번호"
+        :placeholder="t('login.passwordPlaceholder')"
         class="login-input"
         autocomplete="current-password"
         required
@@ -59,15 +62,15 @@ async function handleLogin() {
       <div class="login-options">
         <label class="login-remember">
           <input v-model="rememberMe" type="checkbox" />
-          <span>로그인 정보 저장</span>
+          <span>{{ t('login.rememberMe') }}</span>
         </label>
-        <a class="login-find" @click.prevent="error = '아직 지원되지 않습니다.'">아이디 | 비밀번호 찾기</a>
+        <a class="login-find" @click.prevent="error = t('login.error.unsupported')">{{ t('login.findAccount') }}</a>
       </div>
 
       <hr class="login-divider" />
 
       <button type="submit" class="login-btn" :disabled="loading">
-        {{ loading ? '로그인 중...' : '로그인' }}
+        {{ loading ? t('login.loading') : t('login.submit') }}
       </button>
 
       <p v-if="error" class="login-error">{{ error }}</p>

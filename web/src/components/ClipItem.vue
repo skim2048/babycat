@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
+import { formatDateTime, useLocale } from '../composables/useLocale.js'
 import { getClipUrl } from '../endpoints.js'
 import ClipPlayerModal from './ClipPlayerModal.vue'
 
 const { getToken } = useAuth()
+const { locale, t } = useLocale()
 
 const props = defineProps({
   clip: Object,
@@ -27,14 +29,15 @@ const timeLabel = computed(() => {
   const ts = props.clip.timestamp ?? props.clip.mtime ?? 0
   if (!ts) return ''
   const d = new Date(ts * 1000)
-  const yy = String(d.getFullYear()).slice(2)
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const h = d.getHours()
-  const min = String(d.getMinutes()).padStart(2, '0')
-  const ampm = h < 12 ? 'AM' : 'PM'
-  const h12 = h % 12 || 12
-  return `${yy}-${mm}-${dd}  ${ampm} ${String(h12).padStart(2, '0')}:${min}`
+  locale.value
+  return formatDateTime(d, {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).replace(',', '')
 })
 
 const keywords = computed(() => props.clip.keywords || [])
@@ -55,7 +58,7 @@ function openPlayer() {
     <div class="clip-header gallery-only">
       <input type="checkbox" class="clip-chk" :checked="isChecked" @change="emit('check', $event.target.checked)" />
       <span class="clip-time">{{ timeLabel }}</span>
-      <button class="clip-delete-btn gallery-delete-btn" @click="emit('delete')" aria-label="클립 삭제">
+      <button class="clip-delete-btn gallery-delete-btn" @click="emit('delete')" :aria-label="t('clips.item.delete')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M2.5 4h11" /><path d="M6 2h4" /><path d="M5 4v8" /><path d="M8 4v8" /><path d="M11 4v8" />
           <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
@@ -78,7 +81,7 @@ function openPlayer() {
       </div>
     </div>
 
-    <button class="clip-delete-btn list-delete-btn list-only" @click="emit('delete')" aria-label="클립 삭제">
+    <button class="clip-delete-btn list-delete-btn list-only" @click="emit('delete')" :aria-label="t('clips.item.delete')">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2.5 4h11" /><path d="M6 2h4" /><path d="M5 4v8" /><path d="M8 4v8" /><path d="M11 4v8" />
         <path d="M3.5 4.5l.5 9a1 1 0 0 0 1 .9h6a1 1 0 0 0 1-.9l.5-9" />
@@ -91,7 +94,7 @@ function openPlayer() {
 
     <div v-if="vlmText" class="clip-vlm gallery-only">
       <div class="clip-vlm-text" :class="{ expanded }">{{ vlmText }}</div>
-      <button class="clip-expand-btn" @click="expanded = !expanded" :class="{ open: expanded }" aria-label="펼치기">
+      <button class="clip-expand-btn" @click="expanded = !expanded" :class="{ open: expanded }" :aria-label="t('clips.item.expand')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="4,6 8,10 12,6" />
         </svg>

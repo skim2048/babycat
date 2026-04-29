@@ -1,4 +1,6 @@
 <script setup>
+import { useLocale } from '../composables/useLocale.js'
+
 defineProps({
   show: { type: Boolean, default: false },
   remainingSeconds: { type: Number, default: 0 },
@@ -7,6 +9,7 @@ defineProps({
 })
 
 defineEmits(['extend', 'logout'])
+const { t } = useLocale()
 </script>
 
 <template>
@@ -20,10 +23,10 @@ defineEmits(['extend', 'logout'])
           aria-labelledby="session-expiry-title"
           aria-describedby="session-expiry-description"
         >
-          <p class="session-modal-label">세션 안내</p>
-          <h2 id="session-expiry-title" class="session-modal-title">로그인 세션이 곧 만료됩니다.</h2>
+          <p class="session-modal-label">{{ t('session.label') }}</p>
+          <h2 id="session-expiry-title" class="session-modal-title">{{ t('session.title') }}</h2>
           <p id="session-expiry-description" class="session-modal-copy">
-            {{ remainingSeconds }}초 후 자동 로그아웃됩니다. 계속 사용하려면 세션을 연장하세요.
+            {{ t('session.copy', { seconds: remainingSeconds }) }}
           </p>
           <div class="session-modal-actions">
             <button
@@ -33,14 +36,14 @@ defineEmits(['extend', 'logout'])
               :disabled="extending"
               @click="$emit('extend')"
             >
-              {{ extending ? '연장 중...' : '연장' }}
+              {{ extending ? t('session.extending') : t('session.extend') }}
             </button>
             <button
               type="button"
               class="session-modal-btn"
               @click="$emit('logout')"
             >
-              로그아웃
+              {{ t('session.logout') }}
             </button>
           </div>
         </div>

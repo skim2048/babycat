@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { alternateStreamProtocol, useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useLocale } from '../composables/useLocale.js'
 import { useSSE } from '../composables/useSSE.js'
 import InferenceOverlay from './InferenceOverlay.vue'
 import LiveStreamSystemPanel from './LiveStreamSystemPanel.vue'
@@ -15,6 +16,7 @@ const {
   pipelineDetailLabel,
 } = useSSE()
 const { isAuthenticated, isPersistentSession, sessionRemainingSeconds } = useAuth()
+const { t } = useLocale()
 
 const { accessToken } = useAuth()
 const { config, configured, connecting, connected, reconnectKey, preferredStreamProtocol, ptzEnabled, setConnected, setDisconnected, disconnect, save: saveCamera } = useCamera()
@@ -439,7 +441,7 @@ onBeforeUnmount(() => {
 
         <div class="video-top-bar">
           <div v-if="showSessionRemaining" class="session-remaining-badge">
-            세션 남은 시간 {{ sessionRemainingText }}
+            {{ t('live.sessionRemaining', { time: sessionRemainingText }) }}
           </div>
           <div class="proto-toggle" @click="toggleProtocol">
             <span class="proto-opt" :class="{ active: !preferredIsWebRTC }">HLS</span>
@@ -454,24 +456,24 @@ onBeforeUnmount(() => {
               <polygon points="19,14 19,34 36,24" fill="rgba(255,255,255,0.85)"/>
             </svg>
           </div>
-          <span class="overlay-text">연결 대기중</span>
+          <span class="overlay-text">{{ t('live.connectIdle') }}</span>
         </div>
 
         <div v-else-if="loading" class="video-overlay">
           <div class="spinner" />
-          <span class="overlay-text">연결 중... {{ activeProtocol.toUpperCase() }} {{ remainingSec }}초</span>
+          <span class="overlay-text">{{ t('live.connecting', { protocol: activeProtocol.toUpperCase(), seconds: remainingSec }) }}</span>
         </div>
 
         <div v-else-if="timedOut" class="video-overlay">
-          <span class="overlay-text timeout">네트워크 상태 또는 카메라 프로필을 확인하세요.</span>
-          <button class="retry-btn" @click="handleConnect">재연결</button>
+          <span class="overlay-text timeout">{{ t('live.timeout') }}</span>
+          <button class="retry-btn" @click="handleConnect">{{ t('live.retry') }}</button>
         </div>
 
         <div v-if="isPlaying && fallbackActive" class="protocol-badge">
-          {{ activeProtocol.toUpperCase() }} 폴백 중
+          {{ t('live.fallback', { protocol: activeProtocol.toUpperCase() }) }}
         </div>
 
-        <button v-if="!stopped" class="disconnect-btn" @click="handleDisconnect" title="연결 해제">
+        <button v-if="!stopped" class="disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <line x1="3" y1="3" x2="13" y2="13" />
             <line x1="13" y1="3" x2="3" y2="13" />
@@ -488,7 +490,7 @@ onBeforeUnmount(() => {
             :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
             :disabled="!isPlaying"
             @click.stop="inferOpen = !inferOpen"
-            title="추론 결과"
+            :title="t('live.inference')"
           >
             <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5.5 14 L10.5 14" />
@@ -506,7 +508,7 @@ onBeforeUnmount(() => {
           </button>
 
           <!-- Fullscreen -->
-          <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? '축소' : '확대'">
+          <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')">
             <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="11,1 17,1 17,7" />
               <polyline points="7,17 1,17 1,11" />
@@ -523,21 +525,21 @@ onBeforeUnmount(() => {
     <!-- Status bar -->
     <div class="status-bar">
       <span class="sb-item">
-        <span class="sb-key">파이프라인</span>
+        <span class="sb-key">{{ t('live.pipeline') }}</span>
         <span class="sb-val">{{ pipelineStateLabel }}<template v-if="pipelineDetailLabel"> ({{ pipelineDetailLabel }})</template></span>
       </span>
       <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">해상도</span><span class="sb-val">{{ stats.resolution || '–' }}</span></span>
+      <span class="sb-item"><span class="sb-key">{{ t('live.resolution') }}</span><span class="sb-val">{{ stats.resolution || '–' }}</span></span>
       <span class="sb-sep">·</span>
       <span class="sb-item"><span class="sb-key">FPS</span><span class="sb-val">{{ stats.fps || '–' }}</span></span>
       <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">비트레이트</span><span class="sb-val">{{ stats.bitrate || '–' }}</span></span>
+      <span class="sb-item"><span class="sb-key">{{ t('live.bitrate') }}</span><span class="sb-val">{{ stats.bitrate || '–' }}</span></span>
       <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">코덱</span><span class="sb-val">{{ stats.codec || '–' }}</span></span>
+      <span class="sb-item"><span class="sb-key">{{ t('live.codec') }}</span><span class="sb-val">{{ stats.codec || '–' }}</span></span>
       <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">지연</span><span class="sb-val">{{ stats.rtt || '–' }}</span></span>
+      <span class="sb-item"><span class="sb-key">{{ t('live.latency') }}</span><span class="sb-val">{{ stats.rtt || '–' }}</span></span>
       <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">패킷손실</span><span class="sb-val">{{ stats.packetLoss || '–' }}</span></span>
+      <span class="sb-item"><span class="sb-key">{{ t('live.packetLoss') }}</span><span class="sb-val">{{ stats.packetLoss || '–' }}</span></span>
     </div>
   </div>
 </template>

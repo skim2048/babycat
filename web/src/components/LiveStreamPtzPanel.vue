@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { usePtz } from '../composables/usePtz.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const props = defineProps({
   open: Boolean,
@@ -11,6 +12,7 @@ const emit = defineEmits(['toggle'])
 
 const { status: ptzStatus, startMove, stopMove, forceStop, saveHome, gotoHome } = usePtz()
 const ptzPressing = ref(null)
+const { t } = useLocale()
 
 const ptzDirs = [
   { id: 'up', pan: 0, tilt: 1 },
@@ -103,8 +105,8 @@ defineExpose({
           <div></div>
         </div>
         <div class="vsb-ptz-actions">
-          <button class="vsb-ptz-act" :disabled="disabled" @click="saveHome">홈 저장</button>
-          <button class="vsb-ptz-act go" :disabled="disabled" @click="gotoHome">홈 이동</button>
+          <button class="vsb-ptz-act" :disabled="disabled" @click="saveHome">{{ t('live.ptz.saveHome') }}</button>
+          <button class="vsb-ptz-act go" :disabled="disabled" @click="gotoHome">{{ t('live.ptz.gotoHome') }}</button>
         </div>
         <div class="vsb-ptz-status">{{ ptzStatus }}</div>
       </div>

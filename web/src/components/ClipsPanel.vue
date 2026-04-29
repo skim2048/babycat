@@ -4,10 +4,12 @@ import { useClips } from '../composables/useClips.js'
 import { useAuth } from '../composables/useAuth.js'
 import { authFetch } from '../composables/useFetch.js'
 import { API_ENDPOINTS } from '../endpoints.js'
+import { useLocale } from '../composables/useLocale.js'
 import ClipItem from './ClipItem.vue'
 
 const { clipVersion, deleteClips } = useClips()
 const { isAuthenticated } = useAuth()
+const { t } = useLocale()
 
 // ── View state ───────────────────────────────────────────────────────────────
 const viewMode = ref('gallery')
@@ -26,6 +28,12 @@ const currentPage = ref(1)
 const clips = ref([])
 const total = ref(0)
 const checked = ref({})
+const presetLabels = {
+  today: 'clips.preset.today',
+  yesterday: 'clips.preset.yesterday',
+  week: 'clips.preset.week',
+  month: 'clips.preset.month',
+}
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const selectedCount = computed(() => Object.values(checked.value).filter(Boolean).length)
@@ -173,7 +181,7 @@ const activePreset = computed(() => {
 })
 
 const dateFilterLabel = computed(() => {
-  if (!hasDateFilter.value) return '날짜'
+  if (!hasDateFilter.value) return t('clips.date')
   const fmt = (s) => s.slice(5).replace('-', '/')
   if (dateFrom.value && dateTo.value) {
     return dateFrom.value === dateTo.value ? fmt(dateFrom.value) : `${fmt(dateFrom.value)} ~ ${fmt(dateTo.value)}`
@@ -185,12 +193,12 @@ const dateFilterLabel = computed(() => {
 <template>
   <div class="clips-panel">
     <div class="clips-toolbar">
-      <div class="view-mode-group" role="group" aria-label="보기 모드">
+      <div class="view-mode-group" role="group" :aria-label="t('clips.viewMode')">
         <button
           class="view-mode-btn"
           :class="{ active: viewMode === 'gallery' }"
           @click="viewMode = 'gallery'"
-          aria-label="갤러리 보기"
+          :aria-label="t('clips.view.gallery')"
           :aria-pressed="viewMode === 'gallery'"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
@@ -204,7 +212,7 @@ const dateFilterLabel = computed(() => {
           class="view-mode-btn"
           :class="{ active: viewMode === 'list' }"
           @click="viewMode = 'list'"
-          aria-label="리스트 보기"
+          :aria-label="t('clips.view.list')"
           :aria-pressed="viewMode === 'list'"
         >
           <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
@@ -215,7 +223,7 @@ const dateFilterLabel = computed(() => {
         </button>
       </div>
 
-      <input type="text" class="clip-search" v-model="searchQuery" placeholder="검색..." />
+      <input type="text" class="clip-search" v-model="searchQuery" :placeholder="t('clips.searchPlaceholder')" />
 
       <div class="date-filter-wrap">
         <button
@@ -223,7 +231,7 @@ const dateFilterLabel = computed(() => {
           class="clip-action-btn date-filter-btn"
           :class="{ active: hasDateFilter }"
           @click="openDatePopover"
-          aria-label="날짜 필터"
+          :aria-label="t('clips.dateFilter')"
           :aria-expanded="datePopoverOpen"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -242,17 +250,17 @@ const dateFilterLabel = computed(() => {
           <div
             class="date-popover"
             role="dialog"
-            aria-label="날짜 필터"
+            :aria-label="t('clips.dateFilter')"
             :style="{ top: datePopoverPos.top + 'px', left: datePopoverPos.left + 'px' }"
           >
             <div class="date-presets">
               <button
-                v-for="(label, key) in { today: '오늘', yesterday: '어제', week: '이번 주', month: '이번 달' }"
+                v-for="(labelKey, key) in presetLabels"
                 :key="key"
                 class="date-preset-btn"
                 :class="{ active: activePreset === key }"
                 @click="setPreset(key)"
-              >{{ label }}</button>
+              >{{ t(labelKey) }}</button>
             </div>
             <div class="date-range">
               <input type="date" class="date-input" v-model="dateFrom" :max="dateTo || undefined" />
@@ -260,18 +268,18 @@ const dateFilterLabel = computed(() => {
               <input type="date" class="date-input" v-model="dateTo" :min="dateFrom || undefined" />
             </div>
             <div class="date-popover-footer">
-              <button class="clip-action-btn" :disabled="!hasDateFilter" @click="clearDateFilter">초기화</button>
-              <button class="clip-action-btn" @click="datePopoverOpen = false">닫기</button>
+              <button class="clip-action-btn" :disabled="!hasDateFilter" @click="clearDateFilter">{{ t('clips.action.reset') }}</button>
+              <button class="clip-action-btn" @click="datePopoverOpen = false">{{ t('clips.action.close') }}</button>
             </div>
           </div>
         </template>
       </Teleport>
 
       <button class="clip-action-btn" :disabled="clips.length === 0" @click="toggleSelectAll">
-        {{ selectedCount > 0 ? '선택 해제' : '모두 선택' }}
+        {{ selectedCount > 0 ? t('clips.action.clearSelection') : t('clips.action.selectAll') }}
       </button>
       <button class="clip-action-btn danger" :disabled="selectedCount === 0" @click="deleteSelected">
-        {{ selectedCount > 0 ? `삭제 (${selectedCount})` : '삭제' }}
+        {{ selectedCount > 0 ? t('clips.action.deleteCount', { count: selectedCount }) : t('clips.action.delete') }}
       </button>
     </div>
 
@@ -287,24 +295,24 @@ const dateFilterLabel = computed(() => {
           @delete="deleteClips([clip.name])"
         />
       </template>
-      <div v-else class="clip-empty">녹화된 클립 없음</div>
+      <div v-else class="clip-empty">{{ t('clips.empty') }}</div>
     </div>
 
     <div v-if="total > 0" class="clips-pagination">
-      <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--" aria-label="이전 페이지">
+      <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--" :aria-label="t('clips.pagination.prev')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="10,2 4,8 10,14" />
         </svg>
       </button>
       <span class="page-info">{{ currentPage }} / {{ totalPages }}</span>
-      <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++" aria-label="다음 페이지">
+      <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++" :aria-label="t('clips.pagination.next')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6,2 12,8 6,14" />
         </svg>
       </button>
-      <span class="page-count">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, total) }} / {{ total }}개</span>
-      <select class="page-size-select" v-model="pageSize" aria-label="페이지 크기">
-        <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ n }}개</option>
+      <span class="page-count">{{ t('clips.pagination.count', { from: (currentPage - 1) * pageSize + 1, to: Math.min(currentPage * pageSize, total), total }) }}</span>
+      <select class="page-size-select" v-model="pageSize" :aria-label="t('clips.pagination.pageSize')">
+        <option v-for="n in PAGE_SIZES" :key="n" :value="n">{{ t('clips.pagination.pageSizeOption', { count: n }) }}</option>
       </select>
     </div>
   </div>

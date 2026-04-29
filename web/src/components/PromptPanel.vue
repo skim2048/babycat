@@ -3,10 +3,12 @@ import { ref, watch } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { authFetch } from '../composables/useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const emit = defineEmits(['close'])
 
 const { state } = useSSE()
+const { t } = useLocale()
 
 const prompt = ref('')
 const triggers = ref('')
@@ -36,43 +38,43 @@ async function apply() {
     })
     const data = await res.json()
     if (data.ok) {
-      status.value = '적용되었습니다.'
+      status.value = t('prompt.status.applied')
       setTimeout(() => { status.value = '' }, 2000)
     } else {
-      status.value = `오류: ${data.error || '알 수 없음'}`
+      status.value = t('prompt.status.error', { message: data.error || t('prompt.status.unknown') })
     }
   } catch {
-    status.value = '적용 실패'
+    status.value = t('prompt.status.failed')
   }
 }
 </script>
 
 <template>
   <div class="prompt-form">
-    <label class="prompt-label">질의 프롬프트</label>
-    <p class="prompt-hint">분석 지시문입니다. 영어만 지원합니다.</p>
+    <label class="prompt-label">{{ t('prompt.label.query') }}</label>
+    <p class="prompt-hint">{{ t('prompt.hint.query') }}</p>
     <textarea
       class="prompt-input"
       v-model="prompt"
-      placeholder="e.g. Describe what the person is doing"
+      :placeholder="t('prompt.placeholder.query')"
       rows="3"
     />
 
-    <label class="prompt-label">이벤트 키워드</label>
-    <p class="prompt-hint">분석 결과문에서 이벤트 발생 여부를 판단합니다. 영어만 지원합니다.</p>
+    <label class="prompt-label">{{ t('prompt.label.triggers') }}</label>
+    <p class="prompt-hint">{{ t('prompt.hint.triggers') }}</p>
     <div class="triggers-field">
       <input
         class="prompt-input"
         v-model="triggers"
-        placeholder="e.g. person, walking"
+        :placeholder="t('prompt.placeholder.triggers')"
       />
       <button
         type="button"
         class="triggers-clear"
         :disabled="!triggers"
         @click="triggers = ''"
-        aria-label="비우기"
-        title="비우기"
+        :aria-label="t('prompt.action.clear')"
+        :title="t('prompt.action.clear')"
       >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="2,4 14,4" />
@@ -86,8 +88,8 @@ async function apply() {
 
     <div class="prompt-actions">
       <span class="prompt-status">{{ status }}</span>
-      <button class="btn-cancel" @click="emit('close')">닫기</button>
-      <button class="btn-apply" @click="apply">적용</button>
+      <button class="btn-cancel" @click="emit('close')">{{ t('prompt.action.close') }}</button>
+      <button class="btn-apply" @click="apply">{{ t('prompt.action.apply') }}</button>
     </div>
   </div>
 </template>

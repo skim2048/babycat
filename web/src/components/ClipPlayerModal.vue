@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useLocale } from '../composables/useLocale.js'
 
 const props = defineProps({
   open: Boolean,
@@ -10,6 +11,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+const { t } = useLocale()
 
 const playerEl = ref(null)
 const playerPlaying = ref(false)
@@ -126,7 +128,7 @@ function onKeydown(e) {
         ></video>
 
         <div class="player-controls">
-          <button class="player-btn" @click="togglePlayerPlay" :aria-label="playerPlaying ? '일시정지' : '재생'">
+          <button class="player-btn" @click="togglePlayerPlay" :aria-label="playerPlaying ? t('player.pause') : t('player.play')">
             <svg v-if="!playerPlaying" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
               <polygon points="3,1 14,8 3,15" />
             </svg>
@@ -164,7 +166,7 @@ function onKeydown(e) {
             @input="setVolume"
           />
 
-          <button class="player-btn" @click="closePlayer" aria-label="닫기">
+          <button class="player-btn" @click="closePlayer" :aria-label="t('player.close')">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
               <line x1="2" y1="2" x2="14" y2="14" /><line x1="14" y1="2" x2="2" y2="14" />
             </svg>

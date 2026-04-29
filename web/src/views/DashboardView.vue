@@ -2,6 +2,7 @@
 import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useLocale } from '../composables/useLocale.js'
 import { useTheme } from '../composables/useTheme.js'
 
 const CameraPanel = defineAsyncComponent(() => import('../components/CameraPanel.vue'))
@@ -12,6 +13,7 @@ const LiveStream = defineAsyncComponent(() => import('../components/LiveStream.v
 
 const { cameraViewState, load: loadCamera } = useCamera()
 const { logout } = useAuth()
+const { t, toggleLocale } = useLocale()
 const { theme, setTheme } = useTheme()
 
 function toggleTheme() {
@@ -59,6 +61,11 @@ function openPasswordModal() {
   passwordModalOpen.value = true
 }
 
+function handleLocaleToggle() {
+  profileMenuOpen.value = false
+  toggleLocale()
+}
+
 function openPromptModal() {
   menuOpen.value = false
   promptModalOpen.value = true
@@ -100,7 +107,7 @@ function handleLogout() {
     <div class="header-left">
       <div class="header-actions">
         <div class="menu-wrapper">
-          <button ref="menuBtnRef" class="menu-btn" @click="toggleMenu" aria-label="메뉴">
+          <button ref="menuBtnRef" class="menu-btn" @click="toggleMenu" :aria-label="t('dashboard.menuLabel')">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="3" y1="6" x2="21" y2="6"/>
               <line x1="3" y1="12" x2="21" y2="12"/>
@@ -109,10 +116,10 @@ function handleLogout() {
           </button>
           <Transition name="dropdown">
             <div v-if="menuOpen" ref="menuRef" class="dropdown-menu">
-              <button class="dropdown-item" @click="openCameraModal">카메라 설정</button>
-              <button class="dropdown-item" @click="openPromptModal">프롬프트 설정</button>
-              <button class="dropdown-item" @click="openClipsModal">녹화 클립</button>
-              <button class="dropdown-item" @click="toggleTheme">테마 변경</button>
+              <button class="dropdown-item" @click="openCameraModal">{{ t('dashboard.menu.camera') }}</button>
+              <button class="dropdown-item" @click="openPromptModal">{{ t('dashboard.menu.prompt') }}</button>
+              <button class="dropdown-item" @click="openClipsModal">{{ t('dashboard.menu.clips') }}</button>
+              <button class="dropdown-item" @click="toggleTheme">{{ t('dashboard.menu.theme') }}</button>
             </div>
           </Transition>
         </div>
@@ -121,13 +128,14 @@ function handleLogout() {
     </div>
     <div class="header-right">
       <div class="menu-wrapper">
-        <button ref="profileBtnRef" class="profile-btn" @click="toggleProfileMenu" aria-label="프로필">
+        <button ref="profileBtnRef" class="profile-btn" @click="toggleProfileMenu" :aria-label="t('dashboard.profileLabel')">
           <img src="/user_profile.svg" alt="" class="profile-icon" />
         </button>
         <Transition name="dropdown">
           <div v-if="profileMenuOpen" ref="profileMenuRef" class="dropdown-menu dropdown-menu-right">
-            <button class="dropdown-item" @click="openPasswordModal">비밀번호 변경</button>
-            <button class="dropdown-item danger" @click="handleLogout">로그아웃</button>
+            <button class="dropdown-item" @click="handleLocaleToggle">{{ t('locale.switchControl') }}</button>
+            <button class="dropdown-item" @click="openPasswordModal">{{ t('dashboard.menu.password') }}</button>
+            <button class="dropdown-item danger" @click="handleLogout">{{ t('dashboard.menu.logout') }}</button>
           </div>
         </Transition>
       </div>
@@ -137,7 +145,7 @@ function handleLogout() {
     <div class="video-area">
       <LiveStream v-if="cameraViewState !== 'unconfigured'" />
       <div v-else class="empty-state">
-        <p>카메라가 설정되지 않았습니다. 메뉴에서 카메라 설정을 완료하세요.</p>
+        <p>{{ t('dashboard.emptyCamera') }}</p>
       </div>
     </div>
   </div>
@@ -147,7 +155,7 @@ function handleLogout() {
     <div v-if="cameraModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
-          <span class="modal-title">카메라 설정</span>
+          <span class="modal-title">{{ t('dashboard.menu.camera') }}</span>
           <button class="modal-close" @click="cameraModalOpen = false">&times;</button>
         </div>
         <div class="modal-body">
@@ -162,7 +170,7 @@ function handleLogout() {
     <div v-if="passwordModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
-          <span class="modal-title">비밀번호 변경</span>
+          <span class="modal-title">{{ t('dashboard.menu.password') }}</span>
           <button class="modal-close" @click="passwordModalOpen = false">&times;</button>
         </div>
         <div class="modal-body">
@@ -177,7 +185,7 @@ function handleLogout() {
     <div v-if="clipsModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content clips-modal">
         <div class="modal-header">
-          <span class="modal-title">녹화 클립</span>
+          <span class="modal-title">{{ t('dashboard.menu.clips') }}</span>
           <button class="modal-close" @click="clipsModalOpen = false">&times;</button>
         </div>
         <div class="modal-body clips-modal-body">
@@ -192,7 +200,7 @@ function handleLogout() {
     <div v-if="promptModalOpen" class="modal-backdrop" @mousedown="onBackdropMouseDown" @click="closeModal">
       <div class="modal-content">
         <div class="modal-header">
-          <span class="modal-title">프롬프트 설정</span>
+          <span class="modal-title">{{ t('dashboard.menu.prompt') }}</span>
           <button class="modal-close" @click="promptModalOpen = false">&times;</button>
         </div>
         <div class="modal-body">

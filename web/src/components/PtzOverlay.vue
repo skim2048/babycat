@@ -1,10 +1,12 @@
 <script setup>
 import { ref } from 'vue'
 import { usePtz } from '../composables/usePtz.js'
+import { useLocale } from '../composables/useLocale.js'
 
 defineProps({ open: Boolean })
 
 const { status, startMove, stopMove, forceStop, saveHome, gotoHome } = usePtz()
+const { t } = useLocale()
 
 const pressing = ref(null)
 
@@ -67,8 +69,8 @@ function onUp(dir) {
       </div>
 
       <div class="ptz-actions">
-        <button class="ptz-act-btn" @click="saveHome">현재 저장</button>
-        <button class="ptz-act-btn go" @click="gotoHome">저장 위치로</button>
+        <button class="ptz-act-btn" @click="saveHome">{{ t('ptz.overlay.saveCurrent') }}</button>
+        <button class="ptz-act-btn go" @click="gotoHome">{{ t('ptz.overlay.gotoSaved') }}</button>
       </div>
 
       <div class="ptz-status">{{ status }}</div>

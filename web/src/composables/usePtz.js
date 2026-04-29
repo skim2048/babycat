@@ -1,9 +1,10 @@
 import { ref } from 'vue'
 import { authFetch } from './useFetch.js'
+import { t } from './useLocale.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
 const PTZ_SPEED = 0.5
-const status = ref('대기')
+const status = ref(t('ptz.idle'))
 
 async function post(body) {
   try {
@@ -23,32 +24,32 @@ function startMove(pan, tilt) {
   const p = pan * PTZ_SPEED
   const t = tilt * PTZ_SPEED
   status.value =
-    p > 0 ? '→ 오른쪽 이동 중' :
-    p < 0 ? '← 왼쪽 이동 중' :
-    t > 0 ? '↑ 위 이동 중' : '↓ 아래 이동 중'
+    p > 0 ? t('ptz.move.right') :
+    p < 0 ? t('ptz.move.left') :
+    t > 0 ? t('ptz.move.up') : t('ptz.move.down')
   post({ action: 'move', pan: p, tilt: t })
 }
 
 function stopMove() {
-  status.value = '정지'
+  status.value = t('ptz.stop')
   post({ action: 'stop' })
 }
 
 function forceStop() {
-  status.value = '강제 정지'
+  status.value = t('ptz.forceStop')
   post({ action: 'stop' })
 }
 
 async function saveHome() {
-  status.value = '저장 중...'
+  status.value = t('ptz.saving')
   const data = await post({ action: 'save' })
-  status.value = data?.ok ? '저장 완료' : '저장 실패 (위치 미확인)'
+  status.value = data?.ok ? t('ptz.saved') : t('ptz.saveFailed')
 }
 
 async function gotoHome() {
-  status.value = '이동 중...'
+  status.value = t('ptz.going')
   const data = await post({ action: 'goto' })
-  status.value = data?.ok ? '이동 완료' : '저장된 위치 없음'
+  status.value = data?.ok ? t('ptz.arrived') : t('ptz.noSavedHome')
 }
 
 export function usePtz() {

@@ -1,5 +1,6 @@
 import { computed, ref, reactive } from 'vue'
 import { authFetch } from './useFetch.js'
+import { t } from './useLocale.js'
 import { API_ENDPOINTS } from '../endpoints.js'
 
 const config = reactive({
@@ -60,7 +61,7 @@ async function load() {
     const res = await authFetch(API_ENDPOINTS.camera)
     const data = await readCameraBody(res)
     if (!res.ok) {
-      status.value = cameraErrorMessage(data, `카메라 설정을 불러오지 못했습니다. (${res.status})`)
+      status.value = cameraErrorMessage(data, t('camera.error.loadStatus', { status: res.status }))
       return
     }
     if (data.configured) {
@@ -77,7 +78,7 @@ async function load() {
       status.value = ''
     }
   } catch {
-    status.value = '카메라 설정을 불러오지 못했습니다.'
+    status.value = t('camera.error.loadGeneric')
   }
 }
 
@@ -103,7 +104,7 @@ async function save() {
     })
     const data = await readCameraBody(res)
     if (!res.ok) {
-      status.value = cameraErrorMessage(data, `저장 실패 (${res.status})`)
+      status.value = cameraErrorMessage(data, t('camera.error.saveStatus', { status: res.status }))
       return false
     }
     if (data?.ok) {
@@ -114,10 +115,10 @@ async function save() {
       reconnectKey.value += 1
       return true
     } else {
-      status.value = cameraErrorMessage(data, '저장 실패')
+      status.value = cameraErrorMessage(data, t('camera.error.saveGeneric'))
     }
   } catch {
-    status.value = '저장 실패'
+    status.value = t('camera.error.saveGeneric')
   }
   return false
 }

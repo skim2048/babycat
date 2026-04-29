@@ -1,5 +1,6 @@
 import { computed, reactive, readonly, watch } from 'vue'
 import { useAuth } from './useAuth.js'
+import { hasMessage, t } from './useLocale.js'
 import { getEventsUrl } from '../endpoints.js'
 
 const state = reactive({
@@ -48,23 +49,6 @@ const MAX_BACKOFF = 30000
 let eventSource = null
 let reconnectTimer = null
 let backoff = 1000
-const PIPELINE_STATE_LABELS = {
-  idle: '유휴',
-  starting: '시작 중',
-  streaming: '스트리밍 중',
-  stalled: '멈춤',
-  restarting: '재시작 중',
-  stopped: '종료됨',
-}
-const PIPELINE_DETAIL_LABELS = {
-  waiting_for_vlm: 'VLM 대기',
-  waiting_for_camera: '카메라 대기',
-  startup: '초기 시작',
-  camera_apply: '카메라 재설정',
-  watchdog_timeout: '카메라 응답시간 초과',
-  shutdown: '종료',
-}
-
 function resetState() {
   state.uptime = '-'
   state.infer_raw = ''
@@ -165,13 +149,16 @@ function connect() {
 export function useSSE() {
   connect()
   const readonlyState = readonly(state)
-  const pipelineStateLabel = computed(() =>
-    PIPELINE_STATE_LABELS[readonlyState.pipeline_state] || readonlyState.pipeline_state || '알 수 없음',
-  )
+  const pipelineStateLabel = computed(() => {
+    const key = `sse.pipeline.${readonlyState.pipeline_state}`
+    if (hasMessage(key)) return t(key)
+    return readonlyState.pipeline_state || t('sse.unknown')
+  })
   const pipelineDetailLabel = computed(() => {
     const detail = readonlyState.pipeline_state_detail
     if (!detail) return ''
-    return PIPELINE_DETAIL_LABELS[detail] || detail
+    const key = `sse.detail.${detail}`
+    return hasMessage(key) ? t(key) : detail
   })
   return {
     state: readonlyState,

@@ -1,9 +1,11 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useCamera } from '../composables/useCamera.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const emit = defineEmits(['close'])
 const { config, status, save } = useCamera()
+const { t } = useLocale()
 
 // @claude Local working copy — cancelling leaves the shared config untouched.
 const local = reactive({
@@ -67,16 +69,16 @@ function handleCancel() {
   <div class="cam-panel">
     <div class="cam-form">
       <label class="cam-label">
-        <span class="cam-label-text">카메라 ID</span>
+        <span class="cam-label-text">{{ t('camera.field.username') }}</span>
         <input class="cam-input" v-model="local.username" placeholder="admin" />
       </label>
       <label class="cam-label">
-        <span class="cam-label-text">카메라 비밀번호</span>
+        <span class="cam-label-text">{{ t('camera.field.password') }}</span>
         <div class="pw-field">
           <input class="cam-input pw-input" :class="{ 'pw-loaded': passwordLoaded }"
                  v-model="local.password"
                  :type="showPassword ? 'text' : 'password'"
-                 :placeholder="passwordLoaded ? '저장된 비밀번호 유지' : ''"
+                 :placeholder="passwordLoaded ? t('camera.field.passwordPlaceholder') : ''"
                  @focus="onPasswordFocus" />
           <button type="button" class="pw-toggle"
                   :class="{ disabled: passwordLoaded }"
@@ -95,26 +97,26 @@ function handleCancel() {
         </div>
       </label>
       <label class="cam-label">
-        <span class="cam-label-text">IP 또는 호스트명</span>
+        <span class="cam-label-text">{{ t('camera.field.host') }}</span>
         <input class="cam-input" v-model="local.ip" placeholder="192.168.1.101" />
       </label>
       <label class="cam-label">
-        <span class="cam-label-text">RTSP 포트 번호</span>
+        <span class="cam-label-text">{{ t('camera.field.rtspPort') }}</span>
         <input class="cam-input" v-model.number="local.rtsp_port" type="number" />
       </label>
       <label class="cam-label">
-        <span class="cam-label-text">ONVIF 포트 번호 (선택)</span>
+        <span class="cam-label-text">{{ t('camera.field.onvifPort') }}</span>
         <input class="cam-input" v-model.number="local.onvif_port" type="number"
                placeholder="2020" />
       </label>
       <label class="cam-label">
-        <span class="cam-label-text">URL (경로)</span>
+        <span class="cam-label-text">{{ t('camera.field.streamPath') }}</span>
         <input class="cam-input" v-model="local.stream_path" placeholder="stream1" />
       </label>
     </div>
     <div class="cam-actions">
-      <button class="cam-btn save" @click="handleSave">저장</button>
-      <button class="cam-btn cancel" @click="handleCancel">취소</button>
+      <button class="cam-btn save" @click="handleSave">{{ t('camera.action.save') }}</button>
+      <button class="cam-btn cancel" @click="handleCancel">{{ t('camera.action.cancel') }}</button>
     </div>
     <div class="cam-status" v-if="status">{{ status }}</div>
   </div>

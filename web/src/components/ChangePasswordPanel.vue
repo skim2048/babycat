@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { authFetch } from '../composables/useFetch.js'
 import { API_ENDPOINTS } from '../endpoints.js'
+import { useLocale } from '../composables/useLocale.js'
 
 const emit = defineEmits(['close'])
 
@@ -14,21 +15,22 @@ const loading = ref(false)
 const showCurrent = ref(false)
 const showNew = ref(false)
 const showConfirm = ref(false)
+const { t } = useLocale()
 
 async function handleChange() {
   error.value = ''
   success.value = ''
 
   if (currentPassword.value === newPassword.value) {
-    error.value = '현재 비밀번호와 다른 비밀번호를 입력하세요.'
+    error.value = t('changePassword.error.sameAsCurrent')
     return
   }
   if (newPassword.value.length < 4) {
-    error.value = '새 비밀번호는 4자 이상이어야 합니다.'
+    error.value = t('changePassword.error.minLength')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
-    error.value = '새 비밀번호가 일치하지 않습니다.'
+    error.value = t('changePassword.error.mismatch')
     return
   }
 
@@ -44,15 +46,15 @@ async function handleChange() {
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      error.value = body.detail || '비밀번호 변경에 실패했습니다.'
+      error.value = body.detail || t('changePassword.error.requestFailed')
       return
     }
-    success.value = '비밀번호가 변경되었습니다.'
+    success.value = t('changePassword.success')
     currentPassword.value = ''
     newPassword.value = ''
     confirmPassword.value = ''
   } catch {
-    error.value = '서버 연결에 실패했습니다.'
+    error.value = t('changePassword.error.network')
   } finally {
     loading.value = false
   }
@@ -67,7 +69,7 @@ function handleCancel() {
   <div class="cp-panel">
     <div class="cp-form">
       <label class="cp-label">
-        <span class="cp-label-text">현재 비밀번호</span>
+        <span class="cp-label-text">{{ t('changePassword.field.current') }}</span>
         <div class="pw-field">
           <input class="cp-input pw-input" v-model="currentPassword"
                  :type="showCurrent ? 'text' : 'password'" autocomplete="current-password" />
@@ -78,7 +80,7 @@ function handleCancel() {
         </div>
       </label>
       <label class="cp-label">
-        <span class="cp-label-text">새 비밀번호</span>
+        <span class="cp-label-text">{{ t('changePassword.field.new') }}</span>
         <div class="pw-field">
           <input class="cp-input pw-input" v-model="newPassword"
                  :type="showNew ? 'text' : 'password'" autocomplete="new-password" />
@@ -89,7 +91,7 @@ function handleCancel() {
         </div>
       </label>
       <label class="cp-label">
-        <span class="cp-label-text">새 비밀번호 확인</span>
+        <span class="cp-label-text">{{ t('changePassword.field.confirm') }}</span>
         <div class="pw-field">
           <input class="cp-input pw-input" v-model="confirmPassword"
                  :type="showConfirm ? 'text' : 'password'" autocomplete="new-password" />
@@ -102,9 +104,9 @@ function handleCancel() {
     </div>
     <div class="cp-actions">
       <button class="cp-btn save" @click="handleChange" :disabled="loading">
-        {{ loading ? '변경 중...' : '변경' }}
+        {{ loading ? t('changePassword.action.loading') : t('changePassword.action.submit') }}
       </button>
-      <button class="cp-btn cancel" @click="handleCancel">취소</button>
+      <button class="cp-btn cancel" @click="handleCancel">{{ t('changePassword.action.cancel') }}</button>
     </div>
     <p v-if="error" class="cp-msg error">{{ error }}</p>
     <p v-if="success" class="cp-msg success">{{ success }}</p>
