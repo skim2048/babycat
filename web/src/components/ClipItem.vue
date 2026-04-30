@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useAuth } from '../composables/useAuth.js'
-import { formatDateTime, useLocale } from '../composables/useLocale.js'
+import { useLocale } from '../composables/useLocale.js'
 import { getClipUrl } from '../endpoints.js'
 import ClipPlayerModal from './ClipPlayerModal.vue'
 
@@ -21,6 +21,18 @@ const emit = defineEmits(['check', 'delete'])
 const expanded = ref(false)
 const playerOpen = ref(false)
 
+function pad2(value) {
+  return String(value).padStart(2, '0')
+}
+
+function formatClipTimestamp(value) {
+  return [
+    pad2(value.getFullYear() % 100),
+    pad2(value.getMonth() + 1),
+    pad2(value.getDate()),
+  ].join('-') + ` ${pad2(value.getHours())}:${pad2(value.getMinutes())}`
+}
+
 const clipSrc = computed(() =>
   getClipUrl(props.clip.name, props.clip.size, getToken()),
 )
@@ -30,14 +42,7 @@ const timeLabel = computed(() => {
   if (!ts) return ''
   const d = new Date(ts * 1000)
   locale.value
-  return formatDateTime(d, {
-    year: '2-digit',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  }).replace(',', '')
+  return formatClipTimestamp(d)
 })
 
 const keywords = computed(() => props.clip.keywords || [])
