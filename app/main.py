@@ -41,6 +41,11 @@ from state import state as app_state
 from server import set_restart_pipeline_callback, start_server
 from ptz import is_moving as ptz_is_moving
 from pipeline_lifecycle import PipelineLifecycle
+from trigger_clip_diagnostics import (
+    build_trigger_clip_meta,
+    probe_clip_duration_seconds,
+    summarize_ffmpeg_stderr,
+)
 
 log = logging.getLogger(__name__)
 
@@ -132,6 +137,7 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         log.warning("No clip directory set — skipping trigger clip")
         app_state.set_clip_storage_status("skipped", "clip_dir_unset")
         return
+    record_requested_at = time.time()
 
     lt = time.localtime(event_time)
     ts = time.strftime("%Y%m%d_%H%M%S", lt)
@@ -173,22 +179,49 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         "-c:v", "copy", "-c:a", "aac",
         str(out_path),
     ]
-    log.info("trigger-clip recording start: %s (%ds)", out_path.name, TRIGGER_CLIP_DUR)
+    ffmpeg_started_at = time.time()
+    start_delay_ms = int(round((ffmpeg_started_at - event_time) * 1000))
+    log.info(
+        "trigger-clip recording start: %s (%ds, event_time=%.3f, start_delay_ms=%d)",
+        out_path.name,
+        TRIGGER_CLIP_DUR,
+        event_time,
+        start_delay_ms,
+    )
     try:
+        run_started_at = time.time()
         result = subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             timeout=TRIGGER_CLIP_DUR + 10,
             check=False,
         )
+        ffmpeg_elapsed_ms = int(round((time.time() - run_started_at) * 1000))
+        stderr_summary = summarize_ffmpeg_stderr(result.stderr)
         if result.returncode != 0:
             cleanup_partial_outputs(out_path, meta_path)
             free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
-            log.error("trigger-clip recording failed: %s (exit=%d)", out_path.name, result.returncode)
+            log.error(
+                "trigger-clip recording failed: %s (exit=%d, start_delay_ms=%d, ffmpeg_elapsed_ms=%d, stderr=%r)",
+                out_path.name,
+                result.returncode,
+                start_delay_ms,
+                ffmpeg_elapsed_ms,
+                stderr_summary,
+            )
             app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
             return
-        log.info("trigger-clip recording done: %s", out_path.name)
+        clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
+        clip_duration_s = probe_clip_duration_seconds(out_path)
+        log.info(
+            "trigger-clip recording done: %s (start_delay_ms=%d, ffmpeg_elapsed_ms=%d, clip_size_bytes=%d, clip_duration_s=%s)",
+            out_path.name,
+            start_delay_ms,
+            ffmpeg_elapsed_ms,
+            clip_size_bytes,
+            clip_duration_s if clip_duration_s is not None else "unknown",
+        )
     except subprocess.TimeoutExpired:
         log.warning("trigger-clip recording timeout: %s", out_path.name)
         cleanup_partial_outputs(out_path, meta_path)
@@ -201,11 +234,16 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         return
 
     try:
-        meta = {
-            "timestamp": int(event_time),
-            "keywords": matched_keywords,
-            "vlm_text": vlm_text,
-        }
+        meta = build_trigger_clip_meta(
+            event_time=event_time,
+            matched_keywords=matched_keywords,
+            vlm_text=vlm_text,
+            record_requested_at=record_requested_at,
+            ffmpeg_started_at=ffmpeg_started_at,
+            ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
+            clip_size_bytes=clip_size_bytes,
+            clip_duration_s=clip_duration_s,
+        )
         with open(meta_path, "w", encoding="utf-8") as f:
             _json.dump(meta, f, ensure_ascii=False, indent=2)
     except Exception as e:
