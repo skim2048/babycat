@@ -5,6 +5,7 @@ services:
     container_name: babycat-mediamtx
     restart: unless-stopped
     environment:
+      - TZ=Asia/Seoul
       # @claude Host IP advertised as a WebRTC ICE candidate (HOST_IP from .env).
       # @claude Containers cannot see the host NIC, so it must be injected. Comma-separated list supported.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-}
@@ -29,6 +30,7 @@ services:
     ports:
       - "8080:8080"   # @claude Debug web UI.
     environment:
+      - TZ=Asia/Seoul
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       # @claude NVIDIA GStreamer plugins are mounted from the host (see volumes below).
@@ -78,6 +80,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - TZ=Asia/Seoul
       - CAM_DIR=/data
       - DB_PATH=/data/db/babycat.db
       - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}

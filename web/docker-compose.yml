@@ -9,6 +9,8 @@ services:
       dockerfile: docker/Dockerfile
     container_name: babycat-web
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Seoul
     ports:
       - "5173:5173"    # @claude Vite dev server.
     volumes:
