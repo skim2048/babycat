@@ -6,9 +6,9 @@ import { useLocale } from '../composables/useLocale.js'
 import { useSSE } from '../composables/useSSE.js'
 import InferenceOverlay from './InferenceOverlay.vue'
 import LiveStreamSystemPanel from './LiveStreamSystemPanel.vue'
-import LiveStreamPtzPanel from './LiveStreamPtzPanel.vue'
 import { useStreamStats } from '../composables/useStreamStats.js'
 import { getHlsUrl, getWhepUrl } from '../endpoints.js'
+import { usePtz } from '../composables/usePtz.js'
 
 const {
   state: sseState,
@@ -43,19 +43,64 @@ watch(() => sseState.pipeline_state, (nextState, prevState) => {
 
 const videoRef = ref(null)
 const videoWrapRef = ref(null)
-const ptzPanelRef = ref(null)
 const loading = ref(false)
 const timedOut = ref(false)
 const stopped = ref(true)
 const fullscreen = ref(false)
 const inferOpen = ref(false)
+const ptzControlOpen = ref(false)
 
 // ── Accordion state ──
 const sysOpen = ref(true)
-const ptzOpen = ref(true)
+
+// ── Toolbar PTZ ──
+const { startMove, stopMove, saveHome, gotoHome } = usePtz()
+const ptzPressing = ref(null)
+const saveState = ref(null) // null | 'saving' | 'ok' | 'fail'
+let saveResetTimer = null
+
+async function handleSaveHome() {
+  if (!canUseToolbarPtz.value) return
+  if (saveState.value === 'saving') return
+  saveState.value = 'saving'
+  const ok = await saveHome()
+  saveState.value = ok ? 'ok' : 'fail'
+  if (saveResetTimer) clearTimeout(saveResetTimer)
+  saveResetTimer = setTimeout(() => { saveState.value = null }, 1500)
+}
+const ptzDirs = [
+  { id: 'up',    pan:  0, tilt:  1 },
+  { id: 'down',  pan:  0, tilt: -1 },
+  { id: 'left',  pan: -1, tilt:  0 },
+  { id: 'right', pan:  1, tilt:  0 },
+]
+
+function ptzDown(dir, event) {
+  if (!canUseToolbarPtz.value) return
+  event.preventDefault()
+  ptzPressing.value = dir.id
+  startMove(dir.pan, dir.tilt)
+}
+
+function ptzUp(dir) {
+  if (ptzPressing.value !== dir.id) return
+  ptzPressing.value = null
+  stopMove()
+}
+
+function stopToolbarPtzMotion() {
+  if (ptzPressing.value == null) return
+  ptzPressing.value = null
+  stopMove()
+}
+
+function handleToolbarGotoHome() {
+  if (!canUseToolbarPtz.value) return
+  gotoHome()
+}
 
 function stopActivePtzMotion() {
-  ptzPanelRef.value?.stopActiveMotion()
+  stopToolbarPtzMotion()
 }
 
 // ── Stream ──
@@ -94,6 +139,13 @@ const activeProtocol = ref(PRIMARY_STREAM_PROTOCOL)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const fallbackActive = computed(() => activeProtocol.value !== PRIMARY_STREAM_PROTOCOL)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
+const showToolbarPtz = computed(() => ptzEnabled.value && !stopped.value)
+const canUseToolbarPtz = computed(() => showToolbarPtz.value && isPlaying.value)
+watch(canUseToolbarPtz, (nextValue) => {
+  if (nextValue) return
+  stopToolbarPtzMotion()
+  ptzControlOpen.value = false
+})
 const showSessionRemaining = computed(() =>
   isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
 )
@@ -150,6 +202,7 @@ function stopCountdown() {
 
 function handleDisconnect() {
   stopActivePtzMotion()
+  ptzControlOpen.value = false
   stopped.value = true
   stopCountdown()
   destroyAll()
@@ -421,13 +474,6 @@ onBeforeUnmount(() => {
       <!-- ── Left Sidebar ── -->
       <div class="video-sidebar">
         <LiveStreamSystemPanel :open="sysOpen" @toggle="sysOpen = !sysOpen" />
-        <LiveStreamPtzPanel
-          v-if="ptzEnabled"
-          ref="ptzPanelRef"
-          :open="ptzOpen"
-          :disabled="!isPlaying"
-          @toggle="ptzOpen = !ptzOpen"
-        />
       </div>
 
       <!-- ── Video wrap ── -->
@@ -480,48 +526,107 @@ onBeforeUnmount(() => {
 
         <!-- Bottom-right toolbar -->
         <div class="video-bar">
-          <!-- Inference toggle -->
-          <button
-            class="toolbar-btn infer-btn"
-            :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
-            :disabled="!isPlaying"
-            @click.stop="inferOpen = !inferOpen"
-            :title="t('live.inference')"
-          >
-            <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5.5 14 L10.5 14" />
-              <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
-            </svg>
-            <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
-              <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
-              <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
-              <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
-              <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
-              <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-              <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-            </svg>
-          </button>
 
-          <!-- Disconnect -->
-          <button v-if="!stopped" class="toolbar-btn disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <line x1="3" y1="3" x2="13" y2="13" />
-              <line x1="13" y1="3" x2="3" y2="13" />
-            </svg>
-          </button>
+          <!-- PTZ expanded row -->
+          <div v-if="showToolbarPtz && ptzControlOpen" class="ptz-bar-row">
+            <!-- 현재위치 저장 -->
+            <button class="toolbar-btn" :class="{ 'save-ok': saveState === 'ok', 'save-fail': saveState === 'fail', 'save-saving': saveState === 'saving' }" :disabled="!canUseToolbarPtz" @click="handleSaveHome" :title="t('live.ptz.saveHome')">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="8" y1="2" x2="8" y2="11" />
+                <polyline points="4.5,7.5 8,11 11.5,7.5" />
+                <line x1="3" y1="14" x2="13" y2="14" />
+              </svg>
+            </button>
+            <!-- 저장위치 로드 -->
+            <button class="toolbar-btn" :disabled="!canUseToolbarPtz" @click="handleToolbarGotoHome" :title="t('live.ptz.gotoHome')">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M 6,5 H 11 A 3,3 0 0 1 11,11 H 5"/>
+                <polyline points="5.5,8.5 2.5,11 5.5,13.5"/>
+              </svg>
+            </button>
+            <!-- 상 -->
+            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'up' }" :disabled="!canUseToolbarPtz"
+              @mousedown="(e) => ptzDown(ptzDirs[0], e)" @mouseup="ptzUp(ptzDirs[0])" @mouseleave="ptzUp(ptzDirs[0])"
+              @touchstart.prevent="(e) => ptzDown(ptzDirs[0], e)" @touchend="ptzUp(ptzDirs[0])" :title="t('live.ptz.up')">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,9.5 7,4.5 12,9.5"/></svg>
+            </button>
+            <!-- 하 -->
+            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'down' }" :disabled="!canUseToolbarPtz"
+              @mousedown="(e) => ptzDown(ptzDirs[1], e)" @mouseup="ptzUp(ptzDirs[1])" @mouseleave="ptzUp(ptzDirs[1])"
+              @touchstart.prevent="(e) => ptzDown(ptzDirs[1], e)" @touchend="ptzUp(ptzDirs[1])" :title="t('live.ptz.down')">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4.5 7,9.5 12,4.5"/></svg>
+            </button>
+            <!-- 좌 -->
+            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'left' }" :disabled="!canUseToolbarPtz"
+              @mousedown="(e) => ptzDown(ptzDirs[2], e)" @mouseup="ptzUp(ptzDirs[2])" @mouseleave="ptzUp(ptzDirs[2])"
+              @touchstart.prevent="(e) => ptzDown(ptzDirs[2], e)" @touchend="ptzUp(ptzDirs[2])" :title="t('live.ptz.left')">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9.5,2 4.5,7 9.5,12"/></svg>
+            </button>
+            <!-- 우 -->
+            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'right' }" :disabled="!canUseToolbarPtz"
+              @mousedown="(e) => ptzDown(ptzDirs[3], e)" @mouseup="ptzUp(ptzDirs[3])" @mouseleave="ptzUp(ptzDirs[3])"
+              @touchstart.prevent="(e) => ptzDown(ptzDirs[3], e)" @touchend="ptzUp(ptzDirs[3])" :title="t('live.ptz.right')">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,2 9.5,7 4.5,12"/></svg>
+            </button>
+          </div>
 
-          <!-- Fullscreen -->
-          <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')">
-            <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="11,1 17,1 17,7" />
-              <polyline points="7,17 1,17 1,11" />
-            </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="17,7 11,7 11,1" />
-              <polyline points="1,11 7,11 7,17" />
-            </svg>
-          </button>
+          <!-- Main toolbar row -->
+          <div class="toolbar-row">
+            <!-- Inference toggle -->
+            <button
+              class="toolbar-btn infer-btn"
+              :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
+              :disabled="!isPlaying"
+              @click.stop="inferOpen = !inferOpen"
+              :title="t('live.inference')"
+            >
+              <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5.5 14 L10.5 14" />
+                <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
+              </svg>
+              <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
+                <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
+                <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
+                <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
+                <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
+                <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+                <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
+              </svg>
+            </button>
+
+            <!-- PTZ Control -->
+            <button v-if="showToolbarPtz" class="toolbar-btn" :class="{ 'ptz-active': ptzControlOpen }"
+              @click.stop="ptzControlOpen = !ptzControlOpen" :title="t('live.ptz')">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <circle cx="10" cy="10" r="3"/>
+                <polygon points="10,0  7.5,5  12.5,5"/>
+                <polygon points="10,20  12.5,15  7.5,15"/>
+                <polygon points="0,10  5,7.5  5,12.5"/>
+                <polygon points="20,10  15,12.5  15,7.5"/>
+              </svg>
+            </button>
+
+            <!-- Disconnect -->
+            <button v-if="!stopped" class="toolbar-btn disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <line x1="3" y1="3" x2="13" y2="13" />
+                <line x1="13" y1="3" x2="3" y2="13" />
+              </svg>
+            </button>
+
+            <!-- Fullscreen -->
+            <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')">
+              <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="11,1 17,1 17,7" />
+                <polyline points="7,17 1,17 1,11" />
+              </svg>
+              <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="17,7 11,7 11,1" />
+                <polyline points="1,11 7,11 7,17" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -766,7 +871,8 @@ onBeforeUnmount(() => {
   bottom: 8px;
   right: 8px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
   padding: 5px 6px;
   background: rgba(0,0,0,0.55);
@@ -775,6 +881,20 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   z-index: 5;
+}
+.ptz-bar-row,
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ptz-active {
+  background: rgba(255,255,255,0.16);
+  color: #fff;
+}
+.ptz-pressing {
+  background: rgba(100,160,255,0.35);
+  color: #fff;
 }
 
 .toolbar-btn {
@@ -801,5 +921,17 @@ onBeforeUnmount(() => {
 }
 .infer-triggered {
   background: rgba(255,220,50,0.25);
+}
+.save-saving {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.save-ok {
+  background: rgba(80,200,120,0.35);
+  color: rgb(120,230,150);
+}
+.save-fail {
+  background: rgba(220,80,80,0.35);
+  color: rgb(255,130,130);
 }
 </style>

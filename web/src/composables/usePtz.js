@@ -44,6 +44,7 @@ async function saveHome() {
   status.value = t('ptz.saving')
   const data = await post({ action: 'save' })
   status.value = data?.ok ? t('ptz.saved') : t('ptz.saveFailed')
+  return !!data?.ok
 }
 
 async function gotoHome() {
