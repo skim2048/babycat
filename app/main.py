@@ -46,6 +46,14 @@ from trigger_clip_diagnostics import (
     probe_clip_duration_seconds,
     summarize_ffmpeg_stderr,
 )
+from trigger_clip_rollover import (
+    bool_env,
+    ensure_segment_dir,
+    purge_old_segments,
+    segment_recorder_cmd,
+    select_segments_for_window,
+    write_concat_manifest,
+)
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +76,12 @@ TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
 CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "256"))
 CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "512"))
 CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "20"))
+TRIGGER_ROLLOVER_ENABLED = bool_env("TRIGGER_ROLLOVER_ENABLED", True)
+TRIGGER_SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/data/.segments/live")
+TRIGGER_SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
+TRIGGER_SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
+TRIGGER_PRE_EVENT_SEC = float(os.getenv("TRIGGER_PRE_EVENT_SEC", "2"))
+TRIGGER_POST_EVENT_SEC = float(os.getenv("TRIGGER_POST_EVENT_SEC", str(TRIGGER_CLIP_DUR)))
 
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
@@ -114,13 +128,249 @@ CLIP_STORAGE_POLICY = ClipStoragePolicy(
     target_free_bytes=max(CLIP_MIN_FREE_MB, CLIP_TARGET_FREE_MB) * 1024 * 1024,
     prune_max_files=max(0, CLIP_PRUNE_MAX_FILES),
 )
+_segment_recorder_started = False
+_segment_recorder_lock = threading.Lock()
+
+
+def _finalize_rollover_clip(
+    matched_keywords: list[str],
+    vlm_text: str,
+    event_time: float,
+    *,
+    clip_dir: str,
+) -> None:
+    window_start = event_time - TRIGGER_PRE_EVENT_SEC
+    window_end = event_time + TRIGGER_POST_EVENT_SEC
+    wait_seconds = max(0.0, window_end - time.time())
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
+
+    record_requested_at = time.time()
+    lt = time.localtime(event_time)
+    ts = time.strftime("%Y%m%d_%H%M%S", lt)
+    ms = int((event_time - int(event_time)) * 1000)
+    base = f"{ts}_{ms:03d}"
+
+    dest_dir = Path(clip_dir) / time.strftime("%Y", lt) / time.strftime("%m", lt)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    capacity = ensure_clip_capacity(clip_dir, CLIP_STORAGE_POLICY)
+    if capacity.deleted_files:
+        log.warning(
+            "trigger-clip pruned %d old clips to recover %.1f MB (free=%d MB)",
+            capacity.deleted_files,
+            capacity.deleted_bytes / (1024 * 1024),
+            bytes_to_mb(capacity.free_bytes) or 0,
+        )
+    if not capacity.ok:
+        free_mb = bytes_to_mb(capacity.free_bytes)
+        log.warning(
+            "trigger-clip skipped: low disk space before finalize (free=%d MB, min=%d MB, deleted=%d)",
+            free_mb or 0,
+            CLIP_MIN_FREE_MB,
+            capacity.deleted_files,
+        )
+        app_state.invalidate_clip_cache()
+        app_state.set_clip_storage_status("skipped", capacity.reason, free_mb)
+        return
+
+    selected_segments = select_segments_for_window(
+        TRIGGER_SEGMENT_DIR,
+        window_start,
+        window_end,
+        segment_span_s=TRIGGER_SEGMENT_TIME,
+    )
+    if not selected_segments:
+        free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
+        log.error(
+            "trigger-clip finalize failed: no rollover segments for %s (window_start=%.3f, window_end=%.3f)",
+            base,
+            window_start,
+            window_end,
+        )
+        app_state.set_clip_storage_status("error", "segment_window_empty", free_mb)
+        return
+
+    out_path = dest_dir / f"{base}.mp4"
+    meta_path = dest_dir / f"{base}.json"
+    manifest_path = Path(TRIGGER_SEGMENT_DIR) / f"{base}.segments.txt"
+    write_concat_manifest(selected_segments, manifest_path)
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(manifest_path),
+        "-c",
+        "copy",
+        str(out_path),
+    ]
+    ffmpeg_started_at = time.time()
+    start_delay_ms = int(round((ffmpeg_started_at - event_time) * 1000))
+    log.info(
+        "trigger-clip finalize start: %s (segments=%d, window_start=%.3f, window_end=%.3f, finalize_delay_ms=%d)",
+        out_path.name,
+        len(selected_segments),
+        window_start,
+        window_end,
+        start_delay_ms,
+    )
+    try:
+        run_started_at = time.time()
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=int(TRIGGER_PRE_EVENT_SEC + TRIGGER_POST_EVENT_SEC + 15),
+            check=False,
+        )
+        ffmpeg_elapsed_ms = int(round((time.time() - run_started_at) * 1000))
+        stderr_summary = summarize_ffmpeg_stderr(result.stderr)
+        if result.returncode != 0:
+            cleanup_partial_outputs(out_path, meta_path)
+            free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
+            log.error(
+                "trigger-clip finalize failed: %s (exit=%d, segments=%d, finalize_delay_ms=%d, ffmpeg_elapsed_ms=%d, stderr=%r)",
+                out_path.name,
+                result.returncode,
+                len(selected_segments),
+                start_delay_ms,
+                ffmpeg_elapsed_ms,
+                stderr_summary,
+            )
+            app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
+            return
+        clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
+        clip_duration_s = probe_clip_duration_seconds(out_path)
+        log.info(
+            "trigger-clip finalize done: %s (segments=%d, finalize_delay_ms=%d, ffmpeg_elapsed_ms=%d, clip_size_bytes=%d, clip_duration_s=%s)",
+            out_path.name,
+            len(selected_segments),
+            start_delay_ms,
+            ffmpeg_elapsed_ms,
+            clip_size_bytes,
+            clip_duration_s if clip_duration_s is not None else "unknown",
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("trigger-clip finalize timeout: %s", out_path.name)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_timeout", bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return
+    except Exception as e:
+        log.error("trigger-clip finalize error: %s", e)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_error", bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return
+    finally:
+        try:
+            manifest_path.unlink()
+        except OSError:
+            pass
+
+    try:
+        import json as _json
+
+        meta = build_trigger_clip_meta(
+            event_time=event_time,
+            matched_keywords=matched_keywords,
+            vlm_text=vlm_text,
+            record_requested_at=record_requested_at,
+            ffmpeg_started_at=ffmpeg_started_at,
+            ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
+            clip_size_bytes=clip_size_bytes,
+            clip_duration_s=clip_duration_s,
+        )
+        meta.update({
+            "record_mode": "segment_rollover",
+            "segment_window_start_ms": int(round(window_start * 1000)),
+            "segment_window_end_ms": int(round(window_end * 1000)),
+            "selected_segment_count": len(selected_segments),
+            "capture_source": "mediamtx_rollover_segments",
+            "video_codec_mode": "copy_concat",
+        })
+        with open(meta_path, "w", encoding="utf-8") as f:
+            _json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error("metadata save error: %s", e)
+
+    app_state.invalidate_clip_cache()
+    app_state.set_clip_storage_status(
+        "ok",
+        capacity.reason if capacity.reason != "ok" else "",
+        bytes_to_mb(shutil.disk_usage(dest_dir).free),
+    )
+
+
+def _segment_recorder_worker() -> None:
+    segment_dir = ensure_segment_dir(TRIGGER_SEGMENT_DIR)
+    log.info(
+        "segment-recorder enabled: dir=%s segment_time=%ss retention=%ss pre=%.1fs post=%.1fs",
+        segment_dir,
+        TRIGGER_SEGMENT_TIME,
+        TRIGGER_SEGMENT_RETENTION,
+        TRIGGER_PRE_EVENT_SEC,
+        TRIGGER_POST_EVENT_SEC,
+    )
+    backoff = 1.0
+    while True:
+        retain_since = time.time() - TRIGGER_SEGMENT_RETENTION
+        purge_old_segments(segment_dir, retain_since=retain_since)
+        cmd = segment_recorder_cmd(MEDIAMTX_URL, segment_dir, segment_time_s=TRIGGER_SEGMENT_TIME)
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+        except Exception as e:
+            log.error("segment-recorder launch failed: %s", e)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 10.0)
+            continue
+
+        log.info("segment-recorder started")
+        while True:
+            if proc.poll() is not None:
+                break
+            purge_old_segments(segment_dir, retain_since=time.time() - TRIGGER_SEGMENT_RETENTION)
+            time.sleep(1.0)
+
+        try:
+            _, stderr = proc.communicate(timeout=1)
+        except Exception:
+            stderr = b""
+        log.warning(
+            "segment-recorder exited: exit=%d stderr=%r",
+            proc.returncode,
+            summarize_ffmpeg_stderr(stderr),
+        )
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 10.0)
+
+
+def start_segment_recorder_once() -> None:
+    global _segment_recorder_started
+    if not TRIGGER_ROLLOVER_ENABLED:
+        return
+    with _segment_recorder_lock:
+        if _segment_recorder_started:
+            return
+        threading.Thread(target=_segment_recorder_worker, daemon=True).start()
+        _segment_recorder_started = True
 
 
 def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
                       event_time: float) -> None:
     """
-    On a trigger keyword event, record TRIGGER_CLIP_DUR seconds straight
-    from the RTSP stream via ffmpeg. Output path:
+    On a trigger keyword event, finalize a user-visible clip around the
+    event from rolling MediaMTX-backed segments. Output path:
       {DATA_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4 (+ same-name .json)
     Repeat calls within TRIGGER_COOLDOWN are ignored.
 
@@ -137,123 +387,11 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         log.warning("No clip directory set — skipping trigger clip")
         app_state.set_clip_storage_status("skipped", "clip_dir_unset")
         return
-    record_requested_at = time.time()
-
-    lt = time.localtime(event_time)
-    ts = time.strftime("%Y%m%d_%H%M%S", lt)
-    ms = int((event_time - int(event_time)) * 1000)
-    base = f"{ts}_{ms:03d}"
-
-    import json as _json
-    dest_dir = Path(clip_dir) / time.strftime("%Y", lt) / time.strftime("%m", lt)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    capacity = ensure_clip_capacity(clip_dir, CLIP_STORAGE_POLICY)
-    if capacity.deleted_files:
-        log.warning(
-            "trigger-clip pruned %d old clips to recover %.1f MB (free=%d MB)",
-            capacity.deleted_files,
-            capacity.deleted_bytes / (1024 * 1024),
-            bytes_to_mb(capacity.free_bytes) or 0,
-        )
-    if not capacity.ok:
-        free_mb = bytes_to_mb(capacity.free_bytes)
-        log.warning(
-            "trigger-clip skipped: low disk space (free=%d MB, min=%d MB, deleted=%d)",
-            free_mb or 0,
-            CLIP_MIN_FREE_MB,
-            capacity.deleted_files,
-        )
-        app_state.invalidate_clip_cache()
-        app_state.set_clip_storage_status("skipped", capacity.reason, free_mb)
-        return
-
-    out_path = dest_dir / f"{base}.mp4"
-    meta_path = dest_dir / f"{base}.json"
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-rtsp_transport", "tcp",
-        "-i", MEDIAMTX_URL,
-        "-t", str(TRIGGER_CLIP_DUR),
-        "-c:v", "copy", "-c:a", "aac",
-        str(out_path),
-    ]
-    ffmpeg_started_at = time.time()
-    start_delay_ms = int(round((ffmpeg_started_at - event_time) * 1000))
-    log.info(
-        "trigger-clip recording start: %s (%ds, event_time=%.3f, start_delay_ms=%d)",
-        out_path.name,
-        TRIGGER_CLIP_DUR,
+    _finalize_rollover_clip(
+        matched_keywords,
+        vlm_text,
         event_time,
-        start_delay_ms,
-    )
-    try:
-        run_started_at = time.time()
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            timeout=TRIGGER_CLIP_DUR + 10,
-            check=False,
-        )
-        ffmpeg_elapsed_ms = int(round((time.time() - run_started_at) * 1000))
-        stderr_summary = summarize_ffmpeg_stderr(result.stderr)
-        if result.returncode != 0:
-            cleanup_partial_outputs(out_path, meta_path)
-            free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
-            log.error(
-                "trigger-clip recording failed: %s (exit=%d, start_delay_ms=%d, ffmpeg_elapsed_ms=%d, stderr=%r)",
-                out_path.name,
-                result.returncode,
-                start_delay_ms,
-                ffmpeg_elapsed_ms,
-                stderr_summary,
-            )
-            app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
-            return
-        clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
-        clip_duration_s = probe_clip_duration_seconds(out_path)
-        log.info(
-            "trigger-clip recording done: %s (start_delay_ms=%d, ffmpeg_elapsed_ms=%d, clip_size_bytes=%d, clip_duration_s=%s)",
-            out_path.name,
-            start_delay_ms,
-            ffmpeg_elapsed_ms,
-            clip_size_bytes,
-            clip_duration_s if clip_duration_s is not None else "unknown",
-        )
-    except subprocess.TimeoutExpired:
-        log.warning("trigger-clip recording timeout: %s", out_path.name)
-        cleanup_partial_outputs(out_path, meta_path)
-        app_state.set_clip_storage_status("error", "ffmpeg_timeout", bytes_to_mb(shutil.disk_usage(dest_dir).free))
-        return
-    except Exception as e:
-        log.error("trigger-clip recording error: %s", e)
-        cleanup_partial_outputs(out_path, meta_path)
-        app_state.set_clip_storage_status("error", "ffmpeg_error", bytes_to_mb(shutil.disk_usage(dest_dir).free))
-        return
-
-    try:
-        meta = build_trigger_clip_meta(
-            event_time=event_time,
-            matched_keywords=matched_keywords,
-            vlm_text=vlm_text,
-            record_requested_at=record_requested_at,
-            ffmpeg_started_at=ffmpeg_started_at,
-            ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
-            clip_size_bytes=clip_size_bytes,
-            clip_duration_s=clip_duration_s,
-        )
-        with open(meta_path, "w", encoding="utf-8") as f:
-            _json.dump(meta, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        log.error("metadata save error: %s", e)
-
-    app_state.invalidate_clip_cache()
-    app_state.set_clip_storage_status(
-        "ok",
-        capacity.reason if capacity.reason != "ok" else "",
-        bytes_to_mb(shutil.disk_usage(dest_dir).free),
+        clip_dir=clip_dir,
     )
 
 
@@ -661,6 +799,7 @@ def main() -> None:
     app_state.set_clip_dir(camera.DATA_DIR)
     _pipeline_lifecycle.mark_waiting_for_vlm()
     set_restart_pipeline_callback(restart_pipeline)
+    start_segment_recorder_once()
 
     # @claude Start the debug/web server immediately so the web UI can save a camera profile
     # @claude while the VLM is still loading (NanoLLM.from_pretrained can take tens of minutes

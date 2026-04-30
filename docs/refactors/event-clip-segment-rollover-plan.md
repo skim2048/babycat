@@ -9,19 +9,18 @@ Problem:
 - Result: some clips can begin with visually frozen or stale-looking content, and event timing can drift before/after the user-visible action.
 
 Immediate action:
-- Keep the current architecture for now.
-- Add observability for `event_time`, recorder start delay, ffmpeg elapsed time, output size/duration, and stderr summary.
-- Persist these diagnostics in sidecar metadata so field issues can be reviewed after clip deletion from the UI.
+- Observability for `event_time`, recorder/finalizer start delay, ffmpeg elapsed time, output size/duration, and stderr summary was added.
+- Sidecar metadata now carries these diagnostics for postmortem review.
 
-Target direction:
-- Move from trigger-time RTSP re-recording to short rolling segments.
-- Keep recent segments in a dedicated temporary area, separate from final event clips.
-- On event, finalize `pre-event + post-event` windows into one user-visible clip.
+Current prototype direction:
+- Trigger-time RTSP re-recording was replaced with short rolling segments.
+- Recent segments are kept in `/data/.segments/live` as `.ts` files, separate from final event clips.
+- On event, the app finalizes a `pre-event + post-event` window into one user-visible mp4.
 
 Proposed defaults:
 - Segment duration: 1 second
 - Rolling window: 10 to 15 seconds
-- Final event clip: 2 to 3 seconds before the event + 5 seconds after the event
+- Final event clip: 2 seconds before the event + 5 seconds after the event
 - API/Web expose finalized event clips only
 
 Boundary notes:
@@ -31,6 +30,6 @@ Boundary notes:
 - `data/` layout likely needs a temporary sub-tree in addition to `/data/{YYYY}/{MM}` final outputs.
 
 Validation goals:
-- Compare `event_time_ms` vs `ffmpeg_started_at_ms` on current clips.
-- Confirm whether frozen-start clips correlate with large start delay or short keyframe intervals.
-- Use those observations to decide whether to prototype segment rollover directly or first try a narrower recorder change.
+- Compare `event_time_ms` vs finalizer timing fields on current clips.
+- Confirm whether frozen-start clips disappear or shrink under the continuous-segment path.
+- If artifacts remain, evaluate whether segment capture itself must re-encode to force denser keyframes.

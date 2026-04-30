@@ -1,0 +1,44 @@
+Trigger clip rollover runtime checklist
+
+1. Rebuild and restart the containers.
+   The app code changed, so the new image/container must be running.
+
+2. Check the app logs for segment recorder startup.
+   Expected patterns:
+   - segment-recorder enabled
+   - segment-recorder started
+   Watch for repeated:
+   - segment-recorder exited
+
+3. Trigger several real events and inspect the generated clips.
+   Verify:
+   - clips are still created consistently
+   - frozen/stalled-looking opening segments are reduced or gone
+   - some pre-event context is visible
+   - total duration is roughly 7 seconds
+     Current default window: 2 seconds before event + 5 seconds after event
+
+4. Inspect the sidecar .json of newly created clips.
+   Confirm fields such as:
+   - record_mode
+   - segment_window_start_ms
+   - segment_window_end_ms
+   - selected_segment_count
+   - existing diagnostic timing fields
+
+5. Inspect the temporary segment directory.
+   Path:
+   - /data/.segments/live
+   Verify:
+   - .ts files are being created
+   - older segments are being removed over time
+   - the directory does not grow without bound
+
+Most important observations to report back:
+- whether segment-recorder stays stable for several minutes or longer
+- whether the frozen-start pattern disappears, shrinks, or still remains
+
+These observations will determine the next decision:
+- keep the current rollover structure
+- add re-encoding to segment capture/finalization
+- tune retention/window defaults
