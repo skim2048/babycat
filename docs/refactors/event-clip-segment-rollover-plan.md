@@ -13,9 +13,10 @@ Immediate action:
 - Sidecar metadata now carries these diagnostics for postmortem review.
 
 Current prototype direction:
-- Trigger-time RTSP re-recording was replaced with short rolling segments.
+- Trigger-time RTSP re-recording remains the safe default path.
+- Short rolling segments are available as an opt-in experiment behind `TRIGGER_ROLLOVER_ENABLED=1`.
 - Recent segments are kept in `/data/.segments/live` as `.ts` files, separate from final event clips.
-- On event, the app finalizes a `pre-event + post-event` window into one user-visible mp4.
+- On event, the app first tries to finalize a `pre-event + post-event` window into one user-visible mp4; if that fails, it falls back to direct RTSP recording.
 
 Proposed defaults:
 - Segment duration: 1 second
@@ -30,6 +31,7 @@ Boundary notes:
 - `data/` layout likely needs a temporary sub-tree in addition to `/data/{YYYY}/{MM}` final outputs.
 
 Validation goals:
-- Compare `event_time_ms` vs finalizer timing fields on current clips.
+- Keep direct RTSP recording available so clip saving does not regress to zero.
+- Compare `event_time_ms` vs finalizer timing fields only when rollover is explicitly enabled.
 - Confirm whether frozen-start clips disappear or shrink under the continuous-segment path.
 - If artifacts remain, evaluate whether segment capture itself must re-encode to force denser keyframes.

@@ -53,3 +53,12 @@ def test_purge_old_segments_removes_only_older_than_threshold(tmp_path: Path):
     assert removed == 1
     assert old.exists() is False
     assert keep.exists() is True
+
+
+def test_latest_segment_age_seconds_uses_latest_segment_timestamp(tmp_path: Path):
+    (tmp_path / "20260430_091500.ts").write_bytes(b"x")
+    (tmp_path / "20260430_091520.ts").write_bytes(b"x")
+
+    age = rollover.latest_segment_age_seconds(tmp_path, now=1777508125.0)
+
+    assert age == 5.0

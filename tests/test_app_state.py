@@ -28,6 +28,10 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     app_state.clip_storage_state = "ok"
     app_state.clip_storage_reason = "pruned_old_clips"
     app_state.clip_storage_free_mb = 512
+    app_state.segment_recorder_state = "running"
+    app_state.segment_recorder_error = ""
+    app_state.segment_recorder_segment_count = 7
+    app_state.segment_recorder_last_segment_age_s = 0.8
     app_state.vlm_state = "ready"
     app_state.vlm_error = ""
     app_state.vlm_models = ["Efficient-Large-Model/VILA1.5-3b"]
@@ -67,6 +71,10 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     assert snap["clip_storage_state"] == "ok"
     assert snap["clip_storage_reason"] == "pruned_old_clips"
     assert snap["clip_storage_free_mb"] == 512
+    assert snap["segment_recorder_state"] == "running"
+    assert snap["segment_recorder_error"] == ""
+    assert snap["segment_recorder_segment_count"] == 7
+    assert snap["segment_recorder_last_segment_age_s"] == 0.8
     assert snap["ptz_pan"] == 0.1
     assert snap["ptz_saved_tilt"] == 0.4
     assert snap["vlm_state"] == "ready"
@@ -93,6 +101,10 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     app_state.clip_storage_state = "skipped"
     app_state.clip_storage_reason = "low_disk_space"
     app_state.clip_storage_free_mb = 42
+    app_state.segment_recorder_state = "disabled"
+    app_state.segment_recorder_error = ""
+    app_state.segment_recorder_segment_count = 0
+    app_state.segment_recorder_last_segment_age_s = None
     app_state.vlm_state = "switching"
     app_state.vlm_error = "none"
     app_state.vlm_models = ["m1", "m2"]
@@ -108,6 +120,10 @@ def test_runtime_snapshot_locked_formats_trigger_keywords_and_config():
     assert snap["clip_storage_state"] == "skipped"
     assert snap["clip_storage_reason"] == "low_disk_space"
     assert snap["clip_storage_free_mb"] == 42
+    assert snap["segment_recorder_state"] == "disabled"
+    assert snap["segment_recorder_error"] == ""
+    assert snap["segment_recorder_segment_count"] == 0
+    assert snap["segment_recorder_last_segment_age_s"] is None
     assert snap["vlm_state"] == "switching"
     assert snap["vlm_error"] == "none"
     assert snap["vlm_models"] == ["m1", "m2"]
@@ -229,4 +245,24 @@ def test_set_clip_storage_status_updates_public_snapshot_and_pushes(monkeypatch)
     assert app_state.clip_storage_state == "error"
     assert app_state.clip_storage_reason == "ffmpeg_failed"
     assert app_state.clip_storage_free_mb == 17
+    assert pushes == ["push"]
+
+
+def test_set_segment_recorder_status_updates_public_snapshot_and_pushes(monkeypatch):
+    app_state = state_module.AppState()
+    pushes = []
+
+    monkeypatch.setattr(app_state, "_sse_push", lambda: pushes.append("push"))
+
+    app_state.set_segment_recorder_status(
+        "running",
+        error="",
+        segment_count=9,
+        last_segment_age_s=1.2,
+    )
+
+    assert app_state.segment_recorder_state == "running"
+    assert app_state.segment_recorder_error == ""
+    assert app_state.segment_recorder_segment_count == 9
+    assert app_state.segment_recorder_last_segment_age_s == 1.2
     assert pushes == ["push"]

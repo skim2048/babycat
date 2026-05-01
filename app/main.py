@@ -49,6 +49,8 @@ from trigger_clip_diagnostics import (
 from trigger_clip_rollover import (
     bool_env,
     ensure_segment_dir,
+    latest_segment_age_seconds,
+    list_segments,
     purge_old_segments,
     segment_recorder_cmd,
     select_segments_for_window,
@@ -76,7 +78,7 @@ TRIGGER_CLIP_DUR  = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
 CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "256"))
 CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "512"))
 CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "20"))
-TRIGGER_ROLLOVER_ENABLED = bool_env("TRIGGER_ROLLOVER_ENABLED", True)
+TRIGGER_ROLLOVER_ENABLED = bool_env("TRIGGER_ROLLOVER_ENABLED", False)
 TRIGGER_SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/data/.segments/live")
 TRIGGER_SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
 TRIGGER_SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
@@ -138,7 +140,7 @@ def _finalize_rollover_clip(
     event_time: float,
     *,
     clip_dir: str,
-) -> None:
+) -> bool:
     window_start = event_time - TRIGGER_PRE_EVENT_SEC
     window_end = event_time + TRIGGER_POST_EVENT_SEC
     wait_seconds = max(0.0, window_end - time.time())
@@ -172,7 +174,7 @@ def _finalize_rollover_clip(
         )
         app_state.invalidate_clip_cache()
         app_state.set_clip_storage_status("skipped", capacity.reason, free_mb)
-        return
+        return False
 
     selected_segments = select_segments_for_window(
         TRIGGER_SEGMENT_DIR,
@@ -189,7 +191,7 @@ def _finalize_rollover_clip(
             window_end,
         )
         app_state.set_clip_storage_status("error", "segment_window_empty", free_mb)
-        return
+        return False
 
     out_path = dest_dir / f"{base}.mp4"
     meta_path = dest_dir / f"{base}.json"
@@ -246,7 +248,7 @@ def _finalize_rollover_clip(
                 stderr_summary,
             )
             app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
-            return
+            return False
         clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
         clip_duration_s = probe_clip_duration_seconds(out_path)
         log.info(
@@ -262,12 +264,12 @@ def _finalize_rollover_clip(
         log.warning("trigger-clip finalize timeout: %s", out_path.name)
         cleanup_partial_outputs(out_path, meta_path)
         app_state.set_clip_storage_status("error", "ffmpeg_timeout", bytes_to_mb(shutil.disk_usage(dest_dir).free))
-        return
+        return False
     except Exception as e:
         log.error("trigger-clip finalize error: %s", e)
         cleanup_partial_outputs(out_path, meta_path)
         app_state.set_clip_storage_status("error", "ffmpeg_error", bytes_to_mb(shutil.disk_usage(dest_dir).free))
-        return
+        return False
     finally:
         try:
             manifest_path.unlink()
@@ -306,10 +308,145 @@ def _finalize_rollover_clip(
         capacity.reason if capacity.reason != "ok" else "",
         bytes_to_mb(shutil.disk_usage(dest_dir).free),
     )
+    return True
+
+
+def _record_direct_trigger_clip(
+    matched_keywords: list[str],
+    vlm_text: str,
+    event_time: float,
+    *,
+    clip_dir: str,
+) -> bool:
+    """Record a trigger clip directly from the RTSP source via ffmpeg."""
+    record_requested_at = time.time()
+    lt = time.localtime(event_time)
+    ts = time.strftime("%Y%m%d_%H%M%S", lt)
+    ms = int((event_time - int(event_time)) * 1000)
+    base = f"{ts}_{ms:03d}"
+
+    import json as _json
+    dest_dir = Path(clip_dir) / time.strftime("%Y", lt) / time.strftime("%m", lt)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    capacity = ensure_clip_capacity(clip_dir, CLIP_STORAGE_POLICY)
+    if capacity.deleted_files:
+        log.warning(
+            "trigger-clip pruned %d old clips to recover %.1f MB (free=%d MB)",
+            capacity.deleted_files,
+            capacity.deleted_bytes / (1024 * 1024),
+            bytes_to_mb(capacity.free_bytes) or 0,
+        )
+    if not capacity.ok:
+        free_mb = bytes_to_mb(capacity.free_bytes)
+        log.warning(
+            "trigger-clip skipped: low disk space (free=%d MB, min=%d MB, deleted=%d)",
+            free_mb or 0,
+            CLIP_MIN_FREE_MB,
+            capacity.deleted_files,
+        )
+        app_state.invalidate_clip_cache()
+        app_state.set_clip_storage_status("skipped", capacity.reason, free_mb)
+        return False
+
+    out_path = dest_dir / f"{base}.mp4"
+    meta_path = dest_dir / f"{base}.json"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-rtsp_transport", "tcp",
+        "-i", MEDIAMTX_URL,
+        "-t", str(TRIGGER_CLIP_DUR),
+        "-c:v", "copy", "-c:a", "aac",
+        str(out_path),
+    ]
+    ffmpeg_started_at = time.time()
+    start_delay_ms = int(round((ffmpeg_started_at - event_time) * 1000))
+    log.info(
+        "trigger-clip recording start: %s (%ds, event_time=%.3f, start_delay_ms=%d)",
+        out_path.name,
+        TRIGGER_CLIP_DUR,
+        event_time,
+        start_delay_ms,
+    )
+    try:
+        run_started_at = time.time()
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=TRIGGER_CLIP_DUR + 10,
+            check=False,
+        )
+        ffmpeg_elapsed_ms = int(round((time.time() - run_started_at) * 1000))
+        stderr_summary = summarize_ffmpeg_stderr(result.stderr)
+        if result.returncode != 0:
+            cleanup_partial_outputs(out_path, meta_path)
+            free_mb = bytes_to_mb(shutil.disk_usage(dest_dir).free)
+            log.error(
+                "trigger-clip recording failed: %s (exit=%d, start_delay_ms=%d, ffmpeg_elapsed_ms=%d, stderr=%r)",
+                out_path.name,
+                result.returncode,
+                start_delay_ms,
+                ffmpeg_elapsed_ms,
+                stderr_summary,
+            )
+            app_state.set_clip_storage_status("error", "ffmpeg_failed", free_mb)
+            return False
+        clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
+        clip_duration_s = probe_clip_duration_seconds(out_path)
+        log.info(
+            "trigger-clip recording done: %s (start_delay_ms=%d, ffmpeg_elapsed_ms=%d, clip_size_bytes=%d, clip_duration_s=%s)",
+            out_path.name,
+            start_delay_ms,
+            ffmpeg_elapsed_ms,
+            clip_size_bytes,
+            clip_duration_s if clip_duration_s is not None else "unknown",
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("trigger-clip recording timeout: %s", out_path.name)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_timeout", bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return False
+    except Exception as e:
+        log.error("trigger-clip recording error: %s", e)
+        cleanup_partial_outputs(out_path, meta_path)
+        app_state.set_clip_storage_status("error", "ffmpeg_error", bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return False
+
+    try:
+        meta = build_trigger_clip_meta(
+            event_time=event_time,
+            matched_keywords=matched_keywords,
+            vlm_text=vlm_text,
+            record_requested_at=record_requested_at,
+            ffmpeg_started_at=ffmpeg_started_at,
+            ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
+            clip_size_bytes=clip_size_bytes,
+            clip_duration_s=clip_duration_s,
+        )
+        meta.update({
+            "record_mode": "direct_rtsp_record",
+            "capture_source": "mediamtx_rtsp",
+            "video_codec_mode": "copy",
+        })
+        with open(meta_path, "w", encoding="utf-8") as f:
+            _json.dump(meta, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log.error("metadata save error: %s", e)
+
+    app_state.invalidate_clip_cache()
+    app_state.set_clip_storage_status(
+        "ok",
+        capacity.reason if capacity.reason != "ok" else "",
+        bytes_to_mb(shutil.disk_usage(dest_dir).free),
+    )
+    return True
 
 
 def _segment_recorder_worker() -> None:
     segment_dir = ensure_segment_dir(TRIGGER_SEGMENT_DIR)
+    app_state.set_segment_recorder_status("starting", segment_count=0, last_segment_age_s=None)
     log.info(
         "segment-recorder enabled: dir=%s segment_time=%ss retention=%ss pre=%.1fs post=%.1fs",
         segment_dir,
@@ -331,15 +468,23 @@ def _segment_recorder_worker() -> None:
             )
         except Exception as e:
             log.error("segment-recorder launch failed: %s", e)
+            app_state.set_segment_recorder_status("error", error=str(e)[:240], segment_count=0, last_segment_age_s=None)
             time.sleep(backoff)
             backoff = min(backoff * 2, 10.0)
             continue
 
         log.info("segment-recorder started")
+        app_state.set_segment_recorder_status("running", error="")
         while True:
             if proc.poll() is not None:
                 break
             purge_old_segments(segment_dir, retain_since=time.time() - TRIGGER_SEGMENT_RETENTION)
+            app_state.set_segment_recorder_status(
+                "running",
+                error="",
+                segment_count=len(list_segments(segment_dir)),
+                last_segment_age_s=latest_segment_age_seconds(segment_dir),
+            )
             time.sleep(1.0)
 
         try:
@@ -351,6 +496,12 @@ def _segment_recorder_worker() -> None:
             proc.returncode,
             summarize_ffmpeg_stderr(stderr),
         )
+        app_state.set_segment_recorder_status(
+            "error",
+            error=f"exit={proc.returncode}",
+            segment_count=len(list_segments(segment_dir)),
+            last_segment_age_s=latest_segment_age_seconds(segment_dir),
+        )
         time.sleep(backoff)
         backoff = min(backoff * 2, 10.0)
 
@@ -358,6 +509,7 @@ def _segment_recorder_worker() -> None:
 def start_segment_recorder_once() -> None:
     global _segment_recorder_started
     if not TRIGGER_ROLLOVER_ENABLED:
+        app_state.set_segment_recorder_status("disabled", error="", segment_count=0, last_segment_age_s=None)
         return
     with _segment_recorder_lock:
         if _segment_recorder_started:
@@ -387,7 +539,18 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         log.warning("No clip directory set — skipping trigger clip")
         app_state.set_clip_storage_status("skipped", "clip_dir_unset")
         return
-    _finalize_rollover_clip(
+    if TRIGGER_ROLLOVER_ENABLED:
+        ok = _finalize_rollover_clip(
+            matched_keywords,
+            vlm_text,
+            event_time,
+            clip_dir=clip_dir,
+        )
+        if ok:
+            return
+        log.warning("trigger-clip rollover failed — falling back to direct RTSP recording")
+
+    _record_direct_trigger_clip(
         matched_keywords,
         vlm_text,
         event_time,

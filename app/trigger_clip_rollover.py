@@ -43,6 +43,17 @@ def list_segments(base_dir: str | Path) -> list[Path]:
     return segments
 
 
+def latest_segment_age_seconds(base_dir: str | Path, *, now: float | None = None) -> float | None:
+    segments = list_segments(base_dir)
+    if not segments:
+        return None
+    started_at = parse_segment_start(segments[-1])
+    if started_at is None:
+        return None
+    current = time.time() if now is None else now
+    return max(0.0, current - started_at)
+
+
 def select_segments_for_window(
     base_dir: str | Path,
     window_start: float,

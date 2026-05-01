@@ -116,6 +116,10 @@ class AppState:
         self.clip_storage_state: str = "ok"
         self.clip_storage_reason: str = ""
         self.clip_storage_free_mb: int | None = None
+        self.segment_recorder_state: str = "disabled"
+        self.segment_recorder_error: str = ""
+        self.segment_recorder_segment_count: int = 0
+        self.segment_recorder_last_segment_age_s: float | None = None
         self.pipeline_state: str = "idle"
         self.pipeline_state_detail: str = "waiting_for_vlm"
         self.pipeline_started_at: float = 0.0
@@ -198,6 +202,23 @@ class AppState:
             self.clip_storage_free_mb = free_mb
         self._sse_push()
 
+    def set_segment_recorder_status(
+        self,
+        state: str,
+        *,
+        error: str = "",
+        segment_count: int | None = None,
+        last_segment_age_s: float | None = None,
+    ):
+        with self._lock:
+            self.segment_recorder_state = state
+            self.segment_recorder_error = error
+            if segment_count is not None:
+                self.segment_recorder_segment_count = segment_count
+            if last_segment_age_s is not None or last_segment_age_s is None:
+                self.segment_recorder_last_segment_age_s = last_segment_age_s
+        self._sse_push()
+
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         transitioned = False
         with self._lock:
@@ -250,6 +271,10 @@ class AppState:
             "clip_storage_state": self.clip_storage_state,
             "clip_storage_reason": self.clip_storage_reason,
             "clip_storage_free_mb": self.clip_storage_free_mb,
+            "segment_recorder_state": self.segment_recorder_state,
+            "segment_recorder_error": self.segment_recorder_error,
+            "segment_recorder_segment_count": self.segment_recorder_segment_count,
+            "segment_recorder_last_segment_age_s": self.segment_recorder_last_segment_age_s,
             "vlm_state": self.vlm_state,
             "vlm_error": self.vlm_error,
             "vlm_models": list(self.vlm_models),
