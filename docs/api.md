@@ -296,7 +296,7 @@ es.onmessage = (e) => {
 | `clip_storage_state` | string | 최근 클립 저장 정책 결과. 현재 `ok`, `skipped`, `error`를 사용 |
 | `clip_storage_reason` | string | 최근 클립 저장/정리 사유. 예: `pruned_old_clips`, `low_disk_space`, `ffmpeg_failed` |
 | `clip_storage_free_mb` | int \| null | 최근 클립 저장 정책 판단 시점의 남은 디스크 공간 (MB) |
-| `segment_recorder_state` | string | 롤오버 세그먼트 recorder 상태. 현재 `disabled`, `starting`, `running`, `error`를 사용 |
+| `segment_recorder_state` | string | 롤오버 세그먼트 recorder 상태. 현재 `disabled`, `starting`, `running`, `error`를 사용. `running`은 실제 세그먼트가 관측된 뒤에만 사용한다 |
 | `segment_recorder_error` | string | recorder 최근 오류 요약. 없으면 빈 문자열 |
 | `segment_recorder_segment_count` | int | 임시 세그먼트 디렉토리에서 관측한 세그먼트 개수 |
 | `segment_recorder_last_segment_age_s` | float \| null | 가장 최근 세그먼트 시작 시각의 경과 초. recorder가 비활성/비어 있으면 `null` |

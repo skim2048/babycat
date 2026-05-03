@@ -84,6 +84,7 @@ TRIGGER_SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
 TRIGGER_SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
 TRIGGER_PRE_EVENT_SEC = float(os.getenv("TRIGGER_PRE_EVENT_SEC", "2"))
 TRIGGER_POST_EVENT_SEC = float(os.getenv("TRIGGER_POST_EVENT_SEC", str(TRIGGER_CLIP_DUR)))
+TRIGGER_SEGMENT_STARTUP_TIMEOUT = float(os.getenv("TRIGGER_SEGMENT_STARTUP_TIMEOUT", "5"))
 
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)
@@ -474,17 +475,45 @@ def _segment_recorder_worker() -> None:
             continue
 
         log.info("segment-recorder started")
-        app_state.set_segment_recorder_status("running", error="")
+        app_state.set_segment_recorder_status("starting", error="", segment_count=0, last_segment_age_s=None)
+        started_at = time.time()
         while True:
             if proc.poll() is not None:
                 break
             purge_old_segments(segment_dir, retain_since=time.time() - TRIGGER_SEGMENT_RETENTION)
-            app_state.set_segment_recorder_status(
-                "running",
-                error="",
-                segment_count=len(list_segments(segment_dir)),
-                last_segment_age_s=latest_segment_age_seconds(segment_dir),
-            )
+            segment_count = len(list_segments(segment_dir))
+            last_segment_age_s = latest_segment_age_seconds(segment_dir)
+            if segment_count > 0:
+                app_state.set_segment_recorder_status(
+                    "running",
+                    error="",
+                    segment_count=segment_count,
+                    last_segment_age_s=last_segment_age_s,
+                )
+            else:
+                elapsed = time.time() - started_at
+                if elapsed >= max(1.0, TRIGGER_SEGMENT_STARTUP_TIMEOUT):
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                    app_state.set_segment_recorder_status(
+                        "error",
+                        error="segment_start_timeout",
+                        segment_count=0,
+                        last_segment_age_s=None,
+                    )
+                    log.warning(
+                        "segment-recorder produced no segments within %.1fs; restarting",
+                        elapsed,
+                    )
+                    break
+                app_state.set_segment_recorder_status(
+                    "starting",
+                    error="",
+                    segment_count=0,
+                    last_segment_age_s=None,
+                )
             time.sleep(1.0)
 
         try:

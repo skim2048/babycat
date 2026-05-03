@@ -16,6 +16,7 @@ Current prototype direction:
 - Trigger-time RTSP re-recording remains the safe default path.
 - Short rolling segments are available as an opt-in experiment behind `TRIGGER_ROLLOVER_ENABLED=1`.
 - Recent segments are kept in `/data/.segments/live` as `.ts` files, separate from final event clips.
+- Recorder segmentation now re-encodes with forced 1-second keyframes because direct `copy` segmentation did not reliably emit 1-second files under the observed RTSP stream.
 - On event, the app first tries to finalize a `pre-event + post-event` window into one user-visible mp4; if that fails, it falls back to direct RTSP recording.
 
 Proposed defaults:

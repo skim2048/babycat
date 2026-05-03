@@ -62,3 +62,17 @@ def test_latest_segment_age_seconds_uses_latest_segment_timestamp(tmp_path: Path
     age = rollover.latest_segment_age_seconds(tmp_path, now=1777508125.0)
 
     assert age == 5.0
+
+
+def test_segment_recorder_cmd_reencodes_with_forced_keyframes(tmp_path: Path):
+    cmd = rollover.segment_recorder_cmd(
+        "rtsp://example/live",
+        tmp_path,
+        segment_time_s=1,
+    )
+
+    joined = " ".join(cmd)
+    assert "-c:v libx264" in joined
+    assert "-force_key_frames expr:gte(t,n_forced*1)" in joined
+    assert "-segment_time 1" in joined
+    assert "-c copy" not in joined

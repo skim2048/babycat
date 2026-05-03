@@ -108,6 +108,8 @@ def segment_recorder_cmd(
     segment_time_s: int,
 ) -> list[str]:
     pattern = str(Path(segment_dir) / f"%Y%m%d_%H%M%S{SEGMENT_SUFFIX}")
+    gop_seconds = max(1, int(segment_time_s))
+    gop_frames = max(1, 30 * gop_seconds)
     return [
         "ffmpeg",
         "-hide_banner",
@@ -116,10 +118,27 @@ def segment_recorder_cmd(
         "-y",
         "-rtsp_transport",
         "tcp",
+        "-fflags",
+        "+genpts",
         "-i",
         source_url,
-        "-c",
-        "copy",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-tune",
+        "zerolatency",
+        "-pix_fmt",
+        "yuv420p",
+        "-g",
+        str(gop_frames),
+        "-keyint_min",
+        str(gop_frames),
+        "-sc_threshold",
+        "0",
+        "-force_key_frames",
+        f"expr:gte(t,n_forced*{gop_seconds})",
         "-f",
         "segment",
         "-segment_time",
