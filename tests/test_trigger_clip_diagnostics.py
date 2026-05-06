@@ -32,9 +32,16 @@ def test_build_trigger_clip_meta_includes_diagnostics():
         ffmpeg_elapsed_ms=5200,
         clip_size_bytes=123456,
         clip_duration_s=4.987,
+        last_frame_time=99.6,
+        inference_started_at=99.75,
+        inference_elapsed_ms=430,
     )
     assert meta["timestamp"] == 100
     assert meta["event_time_ms"] == 100250
+    assert meta["frame_time_ms"] == 99600
+    assert meta["frame_to_event_ms"] == 650
+    assert meta["inference_started_at_ms"] == 99750
+    assert meta["inference_elapsed_ms"] == 430
     assert meta["start_delay_ms"] == 750
     assert meta["ffmpeg_elapsed_ms"] == 5200
     assert meta["clip_size_bytes"] == 123456

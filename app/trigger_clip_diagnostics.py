@@ -70,9 +70,12 @@ def build_trigger_clip_meta(
     ffmpeg_elapsed_ms: int,
     clip_size_bytes: int,
     clip_duration_s: float | None,
+    last_frame_time: float | None = None,
+    inference_started_at: float | None = None,
+    inference_elapsed_ms: int | None = None,
 ) -> dict:
     """Build clip sidecar metadata with diagnostic timing fields."""
-    return {
+    meta = {
         "timestamp": int(event_time),
         "event_time_ms": int(round(event_time * 1000)),
         "keywords": matched_keywords,
@@ -86,3 +89,11 @@ def build_trigger_clip_meta(
         "capture_source": "mediamtx_rtsp",
         "video_codec_mode": "copy",
     }
+    if last_frame_time is not None:
+        meta["frame_time_ms"] = int(round(last_frame_time * 1000))
+        meta["frame_to_event_ms"] = int(round((event_time - last_frame_time) * 1000))
+    if inference_started_at is not None:
+        meta["inference_started_at_ms"] = int(round(inference_started_at * 1000))
+    if inference_elapsed_ms is not None:
+        meta["inference_elapsed_ms"] = int(inference_elapsed_ms)
+    return meta

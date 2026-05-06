@@ -79,7 +79,7 @@ CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "256"))
 CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "512"))
 CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "20"))
 TRIGGER_ROLLOVER_ENABLED = bool_env("TRIGGER_ROLLOVER_ENABLED", False)
-TRIGGER_SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/data/.segments/live")
+TRIGGER_SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/run/babycat-segments/live")
 TRIGGER_SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
 TRIGGER_SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
 TRIGGER_PRE_EVENT_SEC = float(os.getenv("TRIGGER_PRE_EVENT_SEC", "2"))
@@ -107,15 +107,22 @@ class RingBuffer:
         self._buf: deque = deque(maxlen=maxlen)
         self._lock = threading.Lock()
 
-    def push(self, frame: Image.Image) -> None:
+    def push(self, frame: Image.Image, captured_at: float) -> None:
         with self._lock:
-            self._buf.append(frame)
+            self._buf.append((captured_at, frame))
 
     def latest(self, n: int) -> list:
         """Return the most recent n frames (fewer if the buffer has less). @claude"""
         with self._lock:
-            frames = list(self._buf)
+            samples = list(self._buf)
+        frames = [frame for _, frame in samples]
         return frames[-n:] if len(frames) >= n else frames
+
+    def latest_samples(self, n: int) -> list:
+        """Return the most recent n `(captured_at, frame)` samples."""
+        with self._lock:
+            samples = list(self._buf)
+        return samples[-n:] if len(samples) >= n else samples
 
     def __len__(self) -> int:
         with self._lock:
@@ -141,6 +148,9 @@ def _finalize_rollover_clip(
     event_time: float,
     *,
     clip_dir: str,
+    last_frame_time: float | None = None,
+    inference_started_at: float | None = None,
+    inference_elapsed_ms: int | None = None,
 ) -> bool:
     window_start = event_time - TRIGGER_PRE_EVENT_SEC
     window_end = event_time + TRIGGER_POST_EVENT_SEC
@@ -289,6 +299,9 @@ def _finalize_rollover_clip(
             ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
             clip_size_bytes=clip_size_bytes,
             clip_duration_s=clip_duration_s,
+            last_frame_time=last_frame_time,
+            inference_started_at=inference_started_at,
+            inference_elapsed_ms=inference_elapsed_ms,
         )
         meta.update({
             "record_mode": "segment_rollover",
@@ -318,6 +331,9 @@ def _record_direct_trigger_clip(
     event_time: float,
     *,
     clip_dir: str,
+    last_frame_time: float | None = None,
+    inference_started_at: float | None = None,
+    inference_elapsed_ms: int | None = None,
 ) -> bool:
     """Record a trigger clip directly from the RTSP source via ffmpeg."""
     record_requested_at = time.time()
@@ -425,6 +441,9 @@ def _record_direct_trigger_clip(
             ffmpeg_elapsed_ms=ffmpeg_elapsed_ms,
             clip_size_bytes=clip_size_bytes,
             clip_duration_s=clip_duration_s,
+            last_frame_time=last_frame_time,
+            inference_started_at=inference_started_at,
+            inference_elapsed_ms=inference_elapsed_ms,
         )
         meta.update({
             "record_mode": "direct_rtsp_record",
@@ -547,8 +566,14 @@ def start_segment_recorder_once() -> None:
         _segment_recorder_started = True
 
 
-def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
-                      event_time: float) -> None:
+def save_trigger_clip(
+    matched_keywords: list[str],
+    vlm_text: str,
+    event_time: float,
+    last_frame_time: float | None = None,
+    inference_started_at: float | None = None,
+    inference_elapsed_ms: int | None = None,
+) -> None:
     """
     On a trigger keyword event, finalize a user-visible clip around the
     event from rolling MediaMTX-backed segments. Output path:
@@ -574,6 +599,9 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
             vlm_text,
             event_time,
             clip_dir=clip_dir,
+            last_frame_time=last_frame_time,
+            inference_started_at=inference_started_at,
+            inference_elapsed_ms=inference_elapsed_ms,
         )
         if ok:
             return
@@ -584,6 +612,9 @@ def save_trigger_clip(matched_keywords: list[str], vlm_text: str,
         vlm_text,
         event_time,
         clip_dir=clip_dir,
+        last_frame_time=last_frame_time,
+        inference_started_at=inference_started_at,
+        inference_elapsed_ms=inference_elapsed_ms,
     )
 
 
@@ -795,17 +826,19 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
             # @claude Both switch and rollback failed — skip this iteration.
             continue
 
-        frames = ring.latest(N_FRAMES)
-        if not frames:
+        samples = ring.latest_samples(N_FRAMES)
+        if not samples:
             continue
+        frames = [frame for _, frame in samples]
+        last_frame_time = samples[-1][0]
 
-        t0 = time.time()
+        inference_started_at = time.time()
         try:
             raw = run_inference(holder.model, frames)
         except Exception as e:
             log.error("VLM inference error: %s", e)
             continue
-        elapsed_ms = (time.time() - t0) * 1000
+        inference_elapsed_ms = int(round((time.time() - inference_started_at) * 1000))
 
         triggers = app_state.get_triggers()
         raw_lower = raw.lower()
@@ -813,18 +846,27 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
         event_triggered = len(matched) > 0
 
         if event_triggered:
-            log.info("%.0fms -> EVENT: %s", elapsed_ms, matched)
+            event_time = time.time()
+            frame_to_event_ms = int(round((event_time - last_frame_time) * 1000))
+            log.info(
+                "%dms inference, frame_to_event_ms=%d -> EVENT: %s",
+                inference_elapsed_ms,
+                frame_to_event_ms,
+                matched,
+            )
         else:
-            log.info("%.0fms -> normal", elapsed_ms)
+            log.info("%dms -> normal", inference_elapsed_ms)
 
         app_state.update_inference(
             "EVENT" if event_triggered else "정상",
-            raw, elapsed_ms,
+            raw, inference_elapsed_ms,
             event_triggered=event_triggered)
 
         if event_triggered:
             threading.Thread(
-                target=save_trigger_clip, args=(matched, raw, time.time()), daemon=True
+                target=save_trigger_clip,
+                args=(matched, raw, event_time, last_frame_time, inference_started_at, inference_elapsed_ms),
+                daemon=True,
             ).start()
 
 
@@ -882,9 +924,10 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
         finally:
             buf.unmap(map_info)
 
+        captured_at = time.time()
         global _last_frame_time
-        _last_frame_time = time.time()
-        ring.push(img)
+        _last_frame_time = captured_at
+        ring.push(img, captured_at)
         app_state.update_frame(img, w, h)
 
         try:
