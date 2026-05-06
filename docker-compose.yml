@@ -31,6 +31,7 @@ services:
       - "8080:8080"   # @claude Debug web UI.
     environment:
       - TZ=Asia/Seoul
+      - TRIGGER_ROLLOVER_ENABLED=1
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       # @claude NVIDIA GStreamer plugins are mounted from the host (see volumes below).
