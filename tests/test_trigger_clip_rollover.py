@@ -76,3 +76,4 @@ def test_segment_recorder_cmd_reencodes_with_forced_keyframes(tmp_path: Path):
     assert "-force_key_frames expr:gte(t,n_forced*1)" in joined
     assert "-segment_time 1" in joined
     assert "-c copy" not in joined
+    assert "-reset_timestamps 1" not in joined

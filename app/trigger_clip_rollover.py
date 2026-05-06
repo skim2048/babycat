@@ -145,8 +145,6 @@ def segment_recorder_cmd(
         str(segment_time_s),
         "-segment_format",
         "mpegts",
-        "-reset_timestamps",
-        "1",
         "-strftime",
         "1",
         pattern,
