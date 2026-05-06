@@ -37,6 +37,10 @@ const state = reactive({
   trigger_keywords: '',
   // @claude Clips
   clip_count: 0,
+  segment_recorder_state: 'disabled',
+  segment_recorder_error: '',
+  segment_recorder_segment_count: 0,
+  segment_recorder_last_segment_age_s: null,
   // @claude VLM lifecycle — initializing | downloading | compiling | loading | ready | switching | error
   vlm_state: 'initializing',
   vlm_error: '',
@@ -77,6 +81,10 @@ function resetState() {
   state.inference_prompt = ''
   state.trigger_keywords = ''
   state.clip_count = 0
+  state.segment_recorder_state = 'disabled'
+  state.segment_recorder_error = ''
+  state.segment_recorder_segment_count = 0
+  state.segment_recorder_last_segment_age_s = null
   state.vlm_state = 'initializing'
   state.vlm_error = ''
   state.vlm_models = []

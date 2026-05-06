@@ -29,6 +29,15 @@ const ramPercent = computed(() =>
     : 0,
 )
 
+const segmentRecorderStateLabel = computed(() =>
+  t(`live.segmentRecorder.state.${sseState.segment_recorder_state || 'disabled'}`),
+)
+
+const segmentRecorderAgeLabel = computed(() => {
+  if (sseState.segment_recorder_last_segment_age_s == null) return '—'
+  return `${sseState.segment_recorder_last_segment_age_s.toFixed(1)}s`
+})
+
 function pushHist(arr, val) {
   arr.push(typeof val === 'number' ? val : 0)
   if (arr.length > HISTORY_LEN) arr.shift()
@@ -161,6 +170,22 @@ onMounted(() => {
             <span class="vsb-pct vsb-ram">{{ ramPercent }}%</span>
           </div>
         </div>
+
+        <div class="vsb-section">
+          <div class="vsb-header">
+            <span class="vsb-name vsb-recorder">{{ t('live.segmentRecorder.title') }}</span>
+          </div>
+          <div class="vsb-recorder-grid">
+            <span class="vsb-recorder-label">{{ t('live.segmentRecorder.status') }}</span>
+            <span class="vsb-recorder-value" :class="`state-${sseState.segment_recorder_state}`">{{ segmentRecorderStateLabel }}</span>
+            <span class="vsb-recorder-label">{{ t('live.segmentRecorder.count') }}</span>
+            <span class="vsb-recorder-value">{{ sseState.segment_recorder_segment_count }}</span>
+            <span class="vsb-recorder-label">{{ t('live.segmentRecorder.age') }}</span>
+            <span class="vsb-recorder-value">{{ segmentRecorderAgeLabel }}</span>
+            <span class="vsb-recorder-label">{{ t('live.segmentRecorder.error') }}</span>
+            <span class="vsb-recorder-value vsb-recorder-error">{{ sseState.segment_recorder_error || '—' }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -241,6 +266,10 @@ onMounted(() => {
   letter-spacing: 0.4px;
 }
 
+.vsb-recorder {
+  color: var(--text-1);
+}
+
 .vsb-legend {
   display: flex;
   gap: 6px;
@@ -313,5 +342,49 @@ onMounted(() => {
 .vsb-deg {
   font-size: 11px;
   color: var(--text-3);
+}
+
+.vsb-recorder-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-surface-secondary);
+}
+
+.vsb-recorder-label,
+.vsb-recorder-value {
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.vsb-recorder-label {
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.vsb-recorder-value {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.vsb-recorder-error {
+  max-width: 130px;
+  word-break: break-word;
+}
+
+.state-running {
+  color: var(--ok, #1c8c5e);
+}
+
+.state-error {
+  color: var(--danger, #c2410c);
+}
+
+.state-starting {
+  color: var(--warn, #a16207);
 }
 </style>
