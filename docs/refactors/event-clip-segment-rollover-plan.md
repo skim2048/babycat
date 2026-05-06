@@ -15,7 +15,7 @@ Immediate action:
 Current prototype direction:
 - Trigger-time RTSP re-recording remains the safe default path.
 - Short rolling segments are available as an opt-in experiment behind `TRIGGER_ROLLOVER_ENABLED=1`.
-- Recent segments are kept in `/data/.segments/live` as `.ts` files, separate from final event clips.
+- Recent segments are kept in tmpfs-backed `/run/babycat-segments/live` as `.ts` files, separate from final event clips on `/data`.
 - Recorder segmentation now re-encodes with forced 1-second keyframes because direct `copy` segmentation did not reliably emit 1-second files under the observed RTSP stream.
 - Segment timestamps are kept continuous across recorder output so concat finalization can evaluate segment boundaries without per-file timestamp resets.
 - On event, the app first tries to finalize a `pre-event + post-event` window into one user-visible mp4; if that fails, it falls back to direct RTSP recording.
@@ -30,7 +30,7 @@ Boundary notes:
 - `app` owns segment production, rollover cleanup, and final clip assembly.
 - `api` remains a finalized-clip consumer and should not index temporary segments.
 - `web` should keep its existing clip model unless final metadata shape changes materially.
-- `data/` layout likely needs a temporary sub-tree in addition to `/data/{YYYY}/{MM}` final outputs.
+- Final clips remain under `/data/{YYYY}/{MM}` while temporary segments live on tmpfs and are expected to disappear on restart.
 
 Validation goals:
 - Keep direct RTSP recording available so clip saving does not regress to zero.

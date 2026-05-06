@@ -32,6 +32,7 @@ services:
     environment:
       - TZ=Asia/Seoul
       - TRIGGER_ROLLOVER_ENABLED=1
+      - TRIGGER_SEGMENT_DIR=/run/babycat-segments/live
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       # @claude NVIDIA GStreamer plugins are mounted from the host (see volumes below).
@@ -66,6 +67,8 @@ services:
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
       - /tmp/nvscsock:/tmp/nvscsock                                 # @claude NvSciIPC daemon socket — NvMMLite HW path requires it (otherwise falls back to cuvidv4l2 and fails with CUDA_GPU_ID EINVAL).
+    tmpfs:
+      - /run/babycat-segments:size=64m,mode=1777
     ipc: host      # @claude NvSciIPC uses POSIX shm/mqueue on the host IPC namespace.
     depends_on:
       - babycat-mediamtx
