@@ -144,6 +144,7 @@ export const messages = {
   'live.system': { en: 'System', ko: '시스템' },
   'live.usage': { en: 'Usage', ko: '사용률' },
   'live.temperature': { en: 'Temp', ko: '온도' },
+  'live.storage.freeTotal': { en: '{free} MB free / {total} MB', ko: '여유 {free} MB / 전체 {total} MB' },
   'live.segmentRecorder.title': { en: 'Segment Recorder', ko: '세그먼트 Recorder' },
   'live.segmentRecorder.status': { en: 'Status', ko: '상태' },
   'live.segmentRecorder.count': { en: 'Segments', ko: '세그먼트 수' },

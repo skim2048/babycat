@@ -50,9 +50,6 @@ const fullscreen = ref(false)
 const inferOpen = ref(false)
 const ptzControlOpen = ref(false)
 
-// ── Accordion state ──
-const sysOpen = ref(true)
-
 // ── Toolbar PTZ ──
 const { startMove, stopMove, saveHome, gotoHome } = usePtz()
 const ptzPressing = ref(null)
@@ -473,7 +470,7 @@ onBeforeUnmount(() => {
 
       <!-- ── Left Sidebar ── -->
       <div class="video-sidebar">
-        <LiveStreamSystemPanel :open="sysOpen" @toggle="sysOpen = !sysOpen" />
+        <LiveStreamSystemPanel />
       </div>
 
       <!-- ── Video wrap ── -->

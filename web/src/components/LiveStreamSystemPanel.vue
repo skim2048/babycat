@@ -3,25 +3,25 @@ import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { useLocale } from '../composables/useLocale.js'
 
-defineProps({
-  open: Boolean,
-})
-
-const emit = defineEmits(['toggle'])
-
 const { state: sseState } = useSSE()
 const { t } = useLocale()
 
 const HISTORY_LEN = 30
+const showSegmentRecorder = false
+const openSections = ref({
+  cpu: true,
+  gpu: true,
+  ram: true,
+  disk: true,
+  recorder: true,
+})
 const cpuUsageHist = []
 const cpuTempHist = []
 const gpuUsageHist = []
 const gpuTempHist = []
-const ramUsageHist = []
 
 const cpuCanvasRef = ref(null)
 const gpuCanvasRef = ref(null)
-const ramCanvasRef = ref(null)
 
 const ramPercent = computed(() =>
   sseState.ram_total_mb > 0
@@ -29,14 +29,37 @@ const ramPercent = computed(() =>
     : 0,
 )
 
-const segmentRecorderStateLabel = computed(() =>
-  t(`live.segmentRecorder.state.${sseState.segment_recorder_state || 'disabled'}`),
+const diskPercent = computed(() =>
+  sseState.disk_total_mb > 0
+    ? Math.round((sseState.disk_used_mb / sseState.disk_total_mb) * 100)
+    : 0,
 )
 
-const segmentRecorderAgeLabel = computed(() => {
-  if (sseState.segment_recorder_last_segment_age_s == null) return '—'
-  return `${sseState.segment_recorder_last_segment_age_s.toFixed(1)}s`
-})
+const ramStorageLabel = computed(() => formatStoragePair(sseState.ram_used_mb, sseState.ram_total_mb))
+const diskStorageLabel = computed(() => formatStoragePair(sseState.disk_used_mb, sseState.disk_total_mb))
+
+function formatStoragePair(usedMb, totalMb) {
+  if (totalMb <= 0) return '—'
+  const unit = storageUnitForMb(Math.max(usedMb, totalMb))
+  return `${formatStorageValue(usedMb, unit)} ${unit.label} / ${formatStorageValue(totalMb, unit)} ${unit.label}`
+}
+
+function storageUnitForMb(valueMb) {
+  if (valueMb >= 1024 * 1024) return { label: 'TB', factor: 1024 * 1024 }
+  if (valueMb >= 1024) return { label: 'GB', factor: 1024 }
+  return { label: 'MB', factor: 1 }
+}
+
+function formatStorageValue(valueMb, unit) {
+  const convertedValue = valueMb / unit.factor
+  if (convertedValue >= 100 || Number.isInteger(convertedValue)) return String(Math.round(convertedValue))
+  return convertedValue.toFixed(1)
+}
+
+function toggleSection(sectionName) {
+  openSections.value[sectionName] = !openSections.value[sectionName]
+  nextTick(redrawSidebar)
+}
 
 function pushHist(arr, val) {
   arr.push(typeof val === 'number' ? val : 0)
@@ -88,9 +111,6 @@ function redrawSidebar() {
     { data: gpuUsageHist, colorVar: '--bar-gpu', dashed: false, alpha: 1 },
     { data: gpuTempHist, colorVar: '--bar-gpu', dashed: true, alpha: 0.45 },
   ])
-  drawChart(ramCanvasRef.value, [
-    { data: ramUsageHist, colorVar: '--bar-ram', dashed: false, alpha: 1 },
-  ])
 }
 
 watch(
@@ -99,16 +119,12 @@ watch(
     sseState.cpu_temp,
     sseState.gpu_load,
     sseState.gpu_temp,
-    sseState.ram_used_mb,
-    sseState.ram_total_mb,
   ],
-  ([cpu, cpuTemp, gpu, gpuTemp, ramUsed, ramTotal]) => {
-    const ram = ramTotal > 0 ? Math.round((ramUsed / ramTotal) * 100) : 0
+  ([cpu, cpuTemp, gpu, gpuTemp]) => {
     pushHist(cpuUsageHist, cpu)
     pushHist(cpuTempHist, cpuTemp)
     pushHist(gpuUsageHist, gpu)
     pushHist(gpuTempHist, gpuTemp)
-    pushHist(ramUsageHist, ram)
     nextTick(redrawSidebar)
   },
 )
@@ -119,18 +135,18 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="vsb-acc">
-    <button class="vsb-acc-header" @click="emit('toggle')">
-      <span>{{ t('live.system') }}</span>
-      <svg class="vsb-acc-chevron" :class="{ open }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="2,4.5 6,8 10,4.5"/>
-      </svg>
-    </button>
-    <div class="vsb-acc-body" :class="{ open }">
+  <div class="vsb-stack">
+    <div class="vsb-acc">
+      <button class="vsb-acc-header" @click="toggleSection('cpu')">
+        <span class="vsb-name vsb-cpu">CPU</span>
+        <svg class="vsb-acc-chevron" :class="{ open: openSections.cpu }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2,4.5 6,8 10,4.5"/>
+        </svg>
+      </button>
+      <div class="vsb-acc-body" :class="{ open: openSections.cpu }">
       <div class="vsb-acc-content">
         <div class="vsb-section">
           <div class="vsb-header">
-            <span class="vsb-name vsb-cpu">CPU</span>
             <div class="vsb-legend">
               <span class="vsb-leg-usage vsb-cpu">{{ t('live.usage') }}</span>
               <span class="vsb-leg-temp vsb-cpu">{{ t('live.temperature') }}</span>
@@ -142,10 +158,21 @@ onMounted(() => {
             <span class="vsb-deg">{{ sseState.cpu_temp }}°</span>
           </div>
         </div>
+      </div>
+      </div>
+    </div>
 
+    <div class="vsb-acc">
+      <button class="vsb-acc-header" @click="toggleSection('gpu')">
+        <span class="vsb-name vsb-gpu">GPU</span>
+        <svg class="vsb-acc-chevron" :class="{ open: openSections.gpu }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2,4.5 6,8 10,4.5"/>
+        </svg>
+      </button>
+      <div class="vsb-acc-body" :class="{ open: openSections.gpu }">
+      <div class="vsb-acc-content">
         <div class="vsb-section">
           <div class="vsb-header">
-            <span class="vsb-name vsb-gpu">GPU</span>
             <div class="vsb-legend">
               <span class="vsb-leg-usage vsb-gpu">{{ t('live.usage') }}</span>
               <span class="vsb-leg-temp vsb-gpu">{{ t('live.temperature') }}</span>
@@ -157,41 +184,93 @@ onMounted(() => {
             <span class="vsb-deg">{{ sseState.gpu_temp }}°</span>
           </div>
         </div>
+      </div>
+      </div>
+    </div>
 
+    <div class="vsb-acc">
+      <button class="vsb-acc-header" @click="toggleSection('ram')">
+        <span class="vsb-name vsb-ram">RAM</span>
+        <svg class="vsb-acc-chevron" :class="{ open: openSections.ram }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2,4.5 6,8 10,4.5"/>
+        </svg>
+      </button>
+      <div class="vsb-acc-body" :class="{ open: openSections.ram }">
+      <div class="vsb-acc-content">
         <div class="vsb-section">
-          <div class="vsb-header">
-            <span class="vsb-name vsb-ram">RAM</span>
-            <div class="vsb-legend">
-              <span class="vsb-leg-usage vsb-ram">{{ t('live.usage') }}</span>
-            </div>
+          <div class="vsb-meter">
+            <div class="vsb-meter-fill vsb-meter-ram" :style="{ width: `${ramPercent}%` }"></div>
           </div>
-          <canvas ref="ramCanvasRef" class="vsb-canvas"></canvas>
           <div class="vsb-footer">
             <span class="vsb-pct vsb-ram">{{ ramPercent }}%</span>
+            <span class="vsb-storage">{{ ramStorageLabel }}</span>
           </div>
         </div>
+      </div>
+      </div>
+    </div>
 
+    <div class="vsb-acc">
+      <button class="vsb-acc-header" @click="toggleSection('disk')">
+        <span class="vsb-name vsb-disk">DISK</span>
+        <svg class="vsb-acc-chevron" :class="{ open: openSections.disk }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2,4.5 6,8 10,4.5"/>
+        </svg>
+      </button>
+      <div class="vsb-acc-body" :class="{ open: openSections.disk }">
+      <div class="vsb-acc-content">
         <div class="vsb-section">
-          <div class="vsb-header">
-            <span class="vsb-name vsb-recorder">{{ t('live.segmentRecorder.title') }}</span>
+          <div class="vsb-meter">
+            <div class="vsb-meter-fill vsb-meter-disk" :style="{ width: `${diskPercent}%` }"></div>
           </div>
+          <div class="vsb-footer">
+            <span class="vsb-pct vsb-disk">{{ diskPercent }}%</span>
+            <span class="vsb-storage">{{ diskStorageLabel }}</span>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <div v-if="showSegmentRecorder" class="vsb-acc">
+      <button class="vsb-acc-header" @click="toggleSection('recorder')">
+            <span class="vsb-name vsb-recorder">{{ t('live.segmentRecorder.title') }}</span>
+        <svg class="vsb-acc-chevron" :class="{ open: openSections.recorder }" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="2,4.5 6,8 10,4.5"/>
+        </svg>
+      </button>
+      <div class="vsb-acc-body" :class="{ open: openSections.recorder }">
+      <div class="vsb-acc-content">
+        <div class="vsb-section">
           <div class="vsb-recorder-grid">
             <span class="vsb-recorder-label">{{ t('live.segmentRecorder.status') }}</span>
-            <span class="vsb-recorder-value" :class="`state-${sseState.segment_recorder_state}`">{{ segmentRecorderStateLabel }}</span>
+            <span class="vsb-recorder-value" :class="`state-${sseState.segment_recorder_state}`">
+              {{ t(`live.segmentRecorder.state.${sseState.segment_recorder_state || 'disabled'}`) }}
+            </span>
             <span class="vsb-recorder-label">{{ t('live.segmentRecorder.count') }}</span>
             <span class="vsb-recorder-value">{{ sseState.segment_recorder_segment_count }}</span>
             <span class="vsb-recorder-label">{{ t('live.segmentRecorder.age') }}</span>
-            <span class="vsb-recorder-value">{{ segmentRecorderAgeLabel }}</span>
+            <span class="vsb-recorder-value">
+              {{ sseState.segment_recorder_last_segment_age_s == null ? '—' : `${sseState.segment_recorder_last_segment_age_s.toFixed(1)}s` }}
+            </span>
             <span class="vsb-recorder-label">{{ t('live.segmentRecorder.error') }}</span>
             <span class="vsb-recorder-value vsb-recorder-error">{{ sseState.segment_recorder_error || '—' }}</span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.vsb-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 5px;
+}
+
 .vsb-acc {
   background: var(--bg-surface);
   flex-shrink: 0;
@@ -237,7 +316,7 @@ onMounted(() => {
 }
 
 .vsb-acc-body.open {
-  max-height: 520px;
+  max-height: 430px;
 }
 
 .vsb-acc-content {
@@ -321,11 +400,39 @@ onMounted(() => {
   color: var(--bar-ram);
 }
 
+.vsb-disk {
+  color: var(--bar-disk);
+}
+
 .vsb-canvas {
   display: block;
   width: 100%;
   height: 58px;
   border-radius: 4px;
+}
+
+.vsb-meter {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-surface-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.vsb-meter-fill {
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  transition: width 0.35s ease;
+}
+
+.vsb-meter-ram {
+  background: var(--bar-ram);
+}
+
+.vsb-meter-disk {
+  background: var(--bar-disk);
 }
 
 .vsb-footer {
@@ -342,6 +449,13 @@ onMounted(() => {
 .vsb-deg {
   font-size: 11px;
   color: var(--text-3);
+}
+
+.vsb-storage {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-ui);
+  text-align: right;
 }
 
 .vsb-recorder-grid {
@@ -367,7 +481,7 @@ onMounted(() => {
 
 .vsb-recorder-value {
   color: var(--text-1);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   text-align: right;
 }
 
