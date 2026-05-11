@@ -11,6 +11,12 @@ const ramPercent = computed(() =>
     ? Math.round((state.ram_used_mb / state.ram_total_mb) * 100)
     : 0,
 )
+
+const diskPercent = computed(() =>
+  state.disk_total_mb > 0
+    ? Math.round((state.disk_used_mb / state.disk_total_mb) * 100)
+    : 0,
+)
 </script>
 
 <template>
@@ -29,6 +35,10 @@ const ramPercent = computed(() =>
       <div class="sys-row">
         <span class="sys-label">RAM</span>
         <span class="sys-value">{{ ramPercent }}%</span>
+      </div>
+      <div class="sys-row">
+        <span class="sys-label">DISK</span>
+        <span class="sys-value">{{ diskPercent }}%</span>
       </div>
     </div>
   </Transition>
@@ -54,12 +64,12 @@ const ramPercent = computed(() =>
   font-size: 10px;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.5);
-  width: 28px;
+  width: 32px;
 }
 .sys-value {
   font-size: 11px;
   font-weight: 700;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.9);
   width: 32px;
   text-align: right;
@@ -67,7 +77,7 @@ const ramPercent = computed(() =>
 .sys-temp {
   font-size: 10px;
   font-weight: 600;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.5);
 }
 

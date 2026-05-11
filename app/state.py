@@ -18,7 +18,7 @@ from typing import Optional
 
 from PIL import Image
 
-from hardware import HardwareMonitor
+from hardware import HardwareMonitor, disk_usage
 import ptz
 
 
@@ -368,6 +368,7 @@ class AppState:
     def _external_snapshot(self) -> dict:
         return {
             **self._hw.snapshot(),
+            **disk_usage(self.get_clip_dir()),
             **self._external_ptz_snapshot(),
             "uptime": self._uptime_text(),
             "clip_count": len(self.list_clips()),

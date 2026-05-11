@@ -7,6 +7,8 @@ Reads CPU/RAM/GPU utilization and temperatures from /proc and /sys.
 """
 
 import logging
+import shutil
+from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -14,6 +16,7 @@ log = logging.getLogger(__name__)
 GPU_LOAD_PATH    = "/sys/devices/platform/bus@0/17000000.gpu/load"
 CPU_THERMAL_PATH = "/sys/devices/virtual/thermal/thermal_zone0/temp"
 GPU_THERMAL_PATH = "/sys/devices/virtual/thermal/thermal_zone1/temp"
+MB = 1024 * 1024
 
 
 def _read_sysfs(path: str) -> Optional[str]:
@@ -22,6 +25,45 @@ def _read_sysfs(path: str) -> Optional[str]:
             return f.read().strip()
     except (OSError, IOError):
         return None
+
+
+def _nearest_existing_path(path: Path) -> Path | None:
+    current_path = path
+    while not current_path.exists():
+        parent_path = current_path.parent
+        if parent_path == current_path:
+            return None
+        current_path = parent_path
+    return current_path
+
+
+def disk_usage(path: str) -> dict:
+    """Return usage for the filesystem backing path, in MB."""
+    empty = {
+        "disk_used_mb": 0,
+        "disk_total_mb": 0,
+        "disk_free_mb": 0,
+        "disk_path": path or "",
+    }
+    if not path:
+        return empty
+
+    existing_path = _nearest_existing_path(Path(path))
+    if existing_path is None:
+        return empty
+
+    try:
+        usage = shutil.disk_usage(existing_path)
+    except Exception as e:
+        log.debug("Disk usage read failed for %s: %s", existing_path, e)
+        return empty
+
+    return {
+        "disk_used_mb": usage.used // MB,
+        "disk_total_mb": usage.total // MB,
+        "disk_free_mb": usage.free // MB,
+        "disk_path": str(existing_path),
+    }
 
 
 class HardwareMonitor:

@@ -50,6 +50,12 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
         "cpu_temp": 40.0,
         "gpu_temp": 41.0,
     })
+    monkeypatch.setattr(state_module, "disk_usage", lambda path: {
+        "disk_used_mb": 300,
+        "disk_total_mb": 1000,
+        "disk_free_mb": 700,
+        "disk_path": path,
+    })
     monkeypatch.setattr(state_module.ptz, "get_current", lambda: {"pan": 0.1, "tilt": 0.2})
     monkeypatch.setattr(state_module.ptz, "get_saved", lambda: {"pan": 0.3, "tilt": 0.4})
     monkeypatch.setattr(app_state, "list_clips", lambda: [{"name": "a.mp4"}, {"name": "b.mp4"}])
@@ -86,6 +92,9 @@ def test_snapshot_preserves_public_runtime_fields(monkeypatch):
     assert snap["pipeline_active_for_s"] == 100.0
     assert snap["pipeline_last_frame_age_s"] == 5.0
     assert snap["pipeline_restart_count"] == 2
+    assert snap["disk_used_mb"] == 300
+    assert snap["disk_total_mb"] == 1000
+    assert snap["disk_free_mb"] == 700
     assert snap["cfg_TARGET_FPS"] == 1
     assert snap["cfg_N_FRAMES"] == 4
 

@@ -24,6 +24,10 @@ const state = reactive({
   cpu_percent: 0,
   ram_used_mb: 0,
   ram_total_mb: 0,
+  disk_used_mb: 0,
+  disk_total_mb: 0,
+  disk_free_mb: 0,
+  disk_path: '',
   gpu_load: 0,
   cpu_temp: 0,
   gpu_temp: 0,
@@ -71,6 +75,10 @@ function resetState() {
   state.cpu_percent = 0
   state.ram_used_mb = 0
   state.ram_total_mb = 0
+  state.disk_used_mb = 0
+  state.disk_total_mb = 0
+  state.disk_free_mb = 0
+  state.disk_path = ''
   state.gpu_load = 0
   state.cpu_temp = 0
   state.gpu_temp = 0
