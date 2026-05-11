@@ -57,6 +57,7 @@
   --bar-cpu: #3b82d6;
   --bar-ram: #d09540;
   --bar-gpu: #2aa858;
+  --bar-disk: #7c6fd6;
 
   /* Input */
   --input-bg: #fff;
@@ -135,6 +136,7 @@
   --bar-cpu: #5b9ee6;
   --bar-ram: #d4a830;
   --bar-gpu: #34c06c;
+  --bar-disk: #9b8cff;
 
   /* Input */
   --input-bg: #14141c;
@@ -181,7 +183,7 @@ body {
   letter-spacing: 0.02em;
 }
 .header .uptime {
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-3);
+  font-family: var(--font-ui); font-size: 12px; color: var(--text-3);
   letter-spacing: 0.02em;
 }
 
@@ -249,7 +251,7 @@ body {
 }
 .row .k { font-size: 12px; color: var(--text-3); font-weight: 500; }
 .row .v {
-  font-family: var(--font-mono); font-size: 13px;
+  font-family: var(--font-ui); font-size: 13px;
   font-weight: 600; color: var(--text-1);
 }
 
@@ -272,7 +274,7 @@ body {
 .result-label.normal { color: var(--success); }
 .result-label.alert  { color: var(--danger); }
 .result-raw {
-  font-family: var(--font-mono); font-size: 13px;
+  font-family: var(--font-ui); font-size: 13px;
   font-weight: 500; color: var(--text-1); margin-top: 4px;
   line-height: 1.6;
 }
@@ -292,7 +294,7 @@ body {
 
 .temp {
   display: inline-block; padding: 3px 8px; border-radius: 4px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
 }
 .temp.cool { background: var(--success-bg); color: var(--success); }
 .temp.warm { background: var(--warning-bg); color: var(--warning); }
@@ -302,7 +304,7 @@ body {
 .prompt-row { display: flex; gap: 8px; flex-shrink: 0; }
 .prompt-fields { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .prompt-input {
-  width: 100%; font-family: var(--font-mono); font-size: 13px;
+  width: 100%; font-family: var(--font-ui); font-size: 13px;
   padding: 8px 12px; border: 1px solid var(--border-input);
   border-radius: var(--radius); outline: none;
   background: var(--input-bg); color: var(--text-1);
@@ -486,13 +488,13 @@ body {
 }
 .clip-time {
   font-size: 10px; color: var(--clip-meta);
-  font-family: var(--font-mono); white-space: nowrap;
+  font-family: var(--font-ui); white-space: nowrap;
 }
 .clip-info { padding: 5px 10px 7px; background: var(--clip-bar); }
 .clip-name {
   font-size: 10px; color: var(--clip-meta); overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
 }
 .clip-empty {
   font-size: 12px; color: var(--text-4); padding: 24px 0;
@@ -515,7 +517,7 @@ body {
   display: flex; gap: 8px; flex-wrap: wrap;
 }
 .hw-legend-item {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  font-family: var(--font-ui); font-size: 10px; font-weight: 600;
 }
 .hw-legend-cpu { color: var(--bar-cpu); }
 .hw-legend-ram { color: var(--bar-ram); }

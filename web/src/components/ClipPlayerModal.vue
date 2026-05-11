@@ -229,7 +229,7 @@ function onKeydown(e) {
 }
 .player-time {
   font-size: 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.75);
   white-space: nowrap;
   flex-shrink: 0;

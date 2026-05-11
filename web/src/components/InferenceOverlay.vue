@@ -136,7 +136,7 @@ function shortName(id) {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.7);
   margin-bottom: 0.35em;
 }
@@ -166,7 +166,7 @@ function shortName(id) {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
   user-select: none;
@@ -189,7 +189,7 @@ function shortName(id) {
   align-items: baseline;
   justify-content: flex-start;
   font-size: 11px; /* @claude Match the VLM status badge. */
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.55);
   line-height: 1.4;
   margin-bottom: 0.2em;
@@ -215,7 +215,7 @@ function shortName(id) {
 .infer-meta {
   font-size: 11px; /* @claude Match the VLM status badge. */
   font-weight: 600;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: rgba(255, 255, 255, 0.55);
   margin-top: 0.3em;
 }

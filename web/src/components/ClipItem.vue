@@ -190,7 +190,7 @@ function openPlayer() {
 .clip-time {
   flex: 1;
   font-size: 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--text-2);
   font-weight: 500;
 }
@@ -273,7 +273,7 @@ function openPlayer() {
 }
 .list-time {
   font-size: 12px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--text-2);
   white-space: nowrap;
   flex-shrink: 0;

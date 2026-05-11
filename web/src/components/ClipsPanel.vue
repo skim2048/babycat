@@ -424,7 +424,7 @@ const dateFilterLabel = computed(() => {
 }
 .page-info {
   font-size: 13px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   color: var(--text-2);
   min-width: 52px;
   text-align: center;

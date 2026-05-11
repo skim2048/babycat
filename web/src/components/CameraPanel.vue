@@ -141,7 +141,7 @@ function handleCancel() {
 .cam-input {
   width: 100%;
   min-width: 0;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   padding: 7px 10px;
   border: 1px solid var(--border-input);

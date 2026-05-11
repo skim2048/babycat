@@ -107,7 +107,7 @@ async function apply() {
 }
 .prompt-input {
   width: 100%;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 13px;
   padding: 8px 12px;
   border: 1px solid var(--border-input);
