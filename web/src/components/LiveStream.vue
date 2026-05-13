@@ -126,15 +126,35 @@ let countdownTimer = null
 let pc = null
 let sessionId = 0
 let connectDeadline = 0
-let fallbackUsed = false
 const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
 const CONNECT_TIMEOUT = 15000
-const PRIMARY_STREAM_PROTOCOL = 'webrtc'
+const DEFAULT_STREAM_PROTOCOL = 'hls'
+const STREAM_PROTOCOL_STORAGE_KEY = 'babycat_stream_protocol'
+const STREAM_PROTOCOLS = new Set(['hls', 'webrtc'])
 
-const activeProtocol = ref(PRIMARY_STREAM_PROTOCOL)
+function readStoredProtocol() {
+  if (typeof window === 'undefined') return DEFAULT_STREAM_PROTOCOL
+  try {
+    const value = window.localStorage.getItem(STREAM_PROTOCOL_STORAGE_KEY)
+    return STREAM_PROTOCOLS.has(value) ? value : DEFAULT_STREAM_PROTOCOL
+  } catch {
+    return DEFAULT_STREAM_PROTOCOL
+  }
+}
+
+function writeStoredProtocol(protocol) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(STREAM_PROTOCOL_STORAGE_KEY, protocol)
+  } catch {
+    // Browser storage can be unavailable in restricted contexts; keep runtime selection.
+  }
+}
+
+const preferredProtocol = ref(readStoredProtocol())
+const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
-const fallbackActive = computed(() => activeProtocol.value !== PRIMARY_STREAM_PROTOCOL)
 const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
 const showToolbarPtz = computed(() => ptzEnabled.value && !stopped.value)
 const canUseToolbarPtz = computed(() => showToolbarPtz.value && isPlaying.value)
@@ -176,7 +196,6 @@ function startCountdown() {
     if (ms <= 0) {
       if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
       if (loading.value) {
-        if (tryFallback(sessionId)) return
         loading.value = false
         timedOut.value = true
         destroyHls()
@@ -207,8 +226,7 @@ function handleDisconnect() {
 }
 
 function resetRuntimeProtocol() {
-  activeProtocol.value = PRIMARY_STREAM_PROTOCOL
-  fallbackUsed = false
+  activeProtocol.value = preferredProtocol.value
 }
 
 function restartStream({ resetProtocol = false } = {}) {
@@ -239,6 +257,17 @@ function clearAllTimers() {
   if (pipelineRecoveryTimer) { clearTimeout(pipelineRecoveryTimer); pipelineRecoveryTimer = null }
 }
 
+function selectProtocol(protocol) {
+  if (!STREAM_PROTOCOLS.has(protocol) || preferredProtocol.value === protocol) return
+  preferredProtocol.value = protocol
+  activeProtocol.value = protocol
+  writeStoredProtocol(protocol)
+  if (stopped.value) return
+  connectDeadline = Date.now() + CONNECT_TIMEOUT
+  startCountdown()
+  restartStream()
+}
+
 function browserPlaybackUnavailable() {
   return !configured.value || stopped.value || loading.value || timedOut.value
 }
@@ -267,16 +296,6 @@ function schedulePipelineRecovery() {
     if (!browserPlaybackNeedsReconnect(baselineTime)) return
     restartStream()
   }, 1250)
-}
-
-function tryFallback(mySession) {
-  if (fallbackUsed || mySession !== sessionId) return false
-  fallbackUsed = true
-  activeProtocol.value = activeProtocol.value === 'webrtc' ? 'hls' : 'webrtc'
-  connectDeadline = Date.now() + CONNECT_TIMEOUT
-  startCountdown()
-  initStream()
-  return true
 }
 
 // ── HLS ──
@@ -314,7 +333,6 @@ async function initHls() {
     hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
     hls.on(HlsLib.Events.ERROR, (_, data) => {
       if (data.fatal && mySession === sessionId && Date.now() < connectDeadline) {
-        if (tryFallback(mySession)) return
         retryTimer = setTimeout(() => {
           if (mySession === sessionId && Date.now() < connectDeadline) initHls()
         }, 3000)
@@ -383,7 +401,6 @@ async function initWebRTC() {
       if (state === 'connected') {
         onPlaying()
       } else if ((state === 'failed' || state === 'disconnected') && Date.now() < connectDeadline) {
-        if (tryFallback(mySession)) return
         retryTimer = setTimeout(() => {
           if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
         }, 3000)
@@ -409,7 +426,6 @@ async function initWebRTC() {
   } catch (e) {
     if (mySession !== sessionId) return
     if (Date.now() < connectDeadline) {
-      if (tryFallback(mySession)) return
       retryTimer = setTimeout(() => {
         if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
       }, 3000)
@@ -481,9 +497,21 @@ onBeforeUnmount(() => {
           <div v-if="showSessionRemaining" class="session-remaining-badge">
             {{ t('live.sessionRemaining', { time: sessionRemainingText }) }}
           </div>
-          <div class="proto-toggle" aria-label="Current stream protocol">
-            <span class="proto-opt" :class="{ active: activeProtocol === 'hls' }">HLS</span>
-            <span class="proto-opt" :class="{ active: activeProtocol === 'webrtc' }">WebRTC</span>
+          <div class="proto-toggle" aria-label="Stream protocol">
+            <button
+              type="button"
+              class="proto-opt"
+              :class="{ active: preferredProtocol === 'hls' }"
+              :aria-pressed="preferredProtocol === 'hls'"
+              @click="selectProtocol('hls')"
+            >HLS</button>
+            <button
+              type="button"
+              class="proto-opt"
+              :class="{ active: preferredProtocol === 'webrtc' }"
+              :aria-pressed="preferredProtocol === 'webrtc'"
+              @click="selectProtocol('webrtc')"
+            >WebRTC</button>
           </div>
         </div>
 
@@ -513,10 +541,6 @@ onBeforeUnmount(() => {
         <div v-else-if="timedOut" class="video-overlay">
           <span class="overlay-text timeout">{{ t('live.timeout') }}</span>
           <button class="retry-btn" @click="handleConnect">{{ t('live.retry') }}</button>
-        </div>
-
-        <div v-if="isPlaying && fallbackActive" class="protocol-badge">
-          {{ t('live.fallback', { protocol: activeProtocol.toUpperCase() }) }}
         </div>
 
         <InferenceOverlay :open="inferOpen && isPlaying" />
@@ -772,6 +796,8 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: blur(8px);
 }
 .proto-opt {
+  border: 0;
+  background: transparent;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 10px;
@@ -779,7 +805,11 @@ onBeforeUnmount(() => {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: rgba(255,255,255,0.38);
+  cursor: pointer;
   transition: background 0.22s, color 0.22s;
+}
+.proto-opt:hover {
+  color: rgba(255,255,255,0.78);
 }
 .proto-opt.active {
   background: rgba(255,255,255,0.15);
@@ -788,21 +818,6 @@ onBeforeUnmount(() => {
 .disconnect-btn:hover {
   background: rgba(255,255,255,0.16);
   color: #fff;
-}
-.protocol-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 4;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(0,0,0,0.65);
-  color: rgba(255,255,255,0.82);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 .video-overlay {
   position: absolute;

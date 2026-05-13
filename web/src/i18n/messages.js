@@ -169,7 +169,6 @@ export const messages = {
     ko: '네트워크 상태 또는 카메라 프로필을 확인하세요.',
   },
   'live.retry': { en: 'Reconnect', ko: '재연결' },
-  'live.fallback': { en: '{protocol} fallback active', ko: '{protocol} 폴백 중' },
   'live.ptz': { en: 'PTZ Control', ko: 'PTZ 제어' },
   'live.disconnect': { en: 'Disconnect', ko: '연결 해제' },
   'live.inference': { en: 'Inference Results', ko: '추론 결과' },

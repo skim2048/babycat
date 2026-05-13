@@ -1,10 +1,10 @@
-# Refactoring Checklist: Stream Protocol Runtime Fallback
+# Refactoring Checklist: Stream Protocol Selection
 
 ## 1. Change Summary
 
 - Refactoring target: `web/src/components/LiveStream.vue` runtime stream selection
 - Main flow: `Stream And SSE`
-- Reason for change: remove stored client protocol preference and let live transport selection stay in web runtime state so fallback behavior matches the documented contract
+- Reason for change: replace automatic runtime fallback with an operator-selected HLS/WebRTC preference stored in browser localStorage
 
 ## 2. Responsibility Boundary
 
@@ -15,24 +15,24 @@
 
 ## 3. Boundary Preservation Checks
 
-- camera profile no longer persists a client-selected playback transport
+- camera profile does not persist a client-selected playback transport
 - HLS and WHEP endpoints remain unchanged
-- runtime fallback remains transient and must not leak into saved camera configuration
+- protocol preference remains browser-local and must not leak into saved camera configuration
 
 ## 4. Minimum Validation
 
 - Required checks from the validation guide: stream paths unchanged, transport assumptions explicit, client-facing contract preserved
-- Automated checks to run: `node --check web/src/composables/useCamera.js`
-- Manual checks to run: static review that fallback changes only runtime transport state and starts from WebRTC first
+- Automated checks to run: `npx vite build --configLoader runner`
+- Manual checks to run: static review that selection changes only browser playback state and starts from HLS when localStorage has no saved value
 
 ## 5. Result
 
 - What was validated:
-  - `LiveStream.vue` now owns the active transport state and falls back once per connection attempt
+  - `LiveStream.vue` now owns the preferred transport state and stores it in browser localStorage
   - MediaMTX endpoint selection remains HLS `:8888` and WHEP `:8889`
-  - `node --check web/src/composables/useCamera.js` passed
+  - `npx vite build --configLoader runner` passed
 - What was not validated:
   - browser playback against live MediaMTX
-  - real WebRTC/HLS failure and fallback timing
+  - real WebRTC/HLS switching against a live camera
 - Remaining risk:
-  - runtime fallback logic is structurally clearer, but actual fallback behavior still depends on browser, MediaMTX, and network conditions
+  - WebRTC connectivity still depends on browser, MediaMTX, `HOST_IP`, UDP `8890`, and network conditions

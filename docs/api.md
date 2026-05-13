@@ -168,7 +168,7 @@ if (Hls.isSupported()) {
 
 ### 라이브 영상 — WebRTC
 
-HLS 대비 지연이 낮다. 프론트엔드는 HLS/WebRTC 토글을 제공하며, 저장되는 값은 선호 전송 방식이다. 실제 연결 시도 중 선택한 방식이 실패하면 대시보드는 같은 연결 세션 안에서 다른 방식으로 한 번 폴백할 수 있다.
+HLS 대비 지연이 낮다. 프론트엔드는 HLS/WebRTC 토글을 제공하며, 기본값은 HLS다. 사용자가 선택한 전송 방식은 브라우저 `localStorage`에 저장되고, 재생 중 변경하면 현재 연결을 정리한 뒤 선택한 방식으로 다시 연결한다. 시크릿/프라이빗 브라우징처럼 저장소가 세션 종료 시 삭제되는 환경에서는 다음 실행 시 기본값 HLS로 돌아간다.
 
 - **WHEP 엔드포인트**: `http://<host>:8889/live/whep`
 - **ICE UDP**: `8890/udp` — MediaMTX는 `MTX_WEBRTCADDITIONALHOSTS` 환경변수로 전달된 `HOST_IP`를 ICE 후보로 광고한다 (docker-compose.yml의 `HOST_IP`가 반드시 설정되어야 외부 접속 가능).

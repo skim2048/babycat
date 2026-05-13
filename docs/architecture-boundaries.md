@@ -76,7 +76,7 @@ Internal reference for developers and Codex. Use this document before refactorin
 
 - Owner: MediaMTX owns HLS/WebRTC transport; `app` owns MJPEG and SSE payloads.
 - Flow: camera RTSP is routed through MediaMTX for live playback, while `app` serves MJPEG debug frames and SSE runtime snapshots directly; `web` consumes both paths and chooses playback transport at runtime.
-- Watch for: auth differences, `HOST_IP` and WebRTC wiring, SSE field changes, MJPEG query-token usage, runtime HLS/WebRTC fallback behavior, and container timezone consistency.
+- Watch for: auth differences, `HOST_IP` and WebRTC wiring, SSE field changes, MJPEG query-token usage, browser-stored HLS/WebRTC selection behavior, and container timezone consistency.
 
 ## Cross-Boundary Changes
 
@@ -104,7 +104,7 @@ Check these in order:
 ## High-Risk Areas To Delay
 
 - Large `app` pipeline decomposition before contract and validation boundaries are clearer.
-- Stream fallback redesign across HLS/WebRTC/MJPEG without verifying MediaMTX and auth behavior together.
+- Stream transport selection redesign across HLS/WebRTC/MJPEG without verifying MediaMTX and auth behavior together.
 - `config/cam_profile.json` format changes without a compatibility rule.
 
 ## Safe First Refactor Areas
