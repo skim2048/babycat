@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useTheme } from '../composables/useTheme.js'
-import { getEditableBackendHost, setStoredBackendHost } from '../endpoints.js'
+import { getEditableBabycatHost, setStoredBabycatHost } from '../endpoints.js'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
@@ -14,18 +14,18 @@ const { theme } = useTheme()
 
 const username = ref('')
 const password = ref('')
-const backendHost = ref(getEditableBackendHost())
+const babycatHost = ref(getEditableBabycatHost())
 const rememberMe = ref(false)
 const error = ref('')
 const loading = ref(false)
 
-function handleBackendHostInput() {
-  backendHost.value = setStoredBackendHost(backendHost.value)
+function handleBabycatHostInput() {
+  babycatHost.value = setStoredBabycatHost(babycatHost.value)
 }
 
 async function handleLogin() {
   error.value = ''
-  handleBackendHostInput()
+  handleBabycatHostInput()
   loading.value = true
   try {
     await login(username.value, password.value, rememberMe.value)
@@ -66,13 +66,13 @@ async function handleLogin() {
         required
       />
       <input
-        v-model="backendHost"
+        v-model="babycatHost"
         type="text"
         :placeholder="t('login.backendHostPlaceholder')"
         class="login-input"
         autocomplete="off"
         spellcheck="false"
-        @change="handleBackendHostInput"
+        @change="handleBabycatHostInput"
       />
 
       <div class="login-options">

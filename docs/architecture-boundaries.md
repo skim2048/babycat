@@ -75,8 +75,8 @@ Internal reference for developers and Codex. Use this document before refactorin
 ### Stream / SSE
 
 - Owner: MediaMTX owns HLS/WebRTC transport; `app` owns MJPEG and SSE payloads.
-- Flow: camera RTSP is routed through MediaMTX for live playback, while `app` serves MJPEG debug frames and SSE runtime snapshots directly; `web` consumes both paths, chooses playback transport at runtime, and can override the backend host from the login page.
-- Watch for: auth differences, backend host override behavior, `HOST_IP` and WebRTC wiring, SSE field changes, MJPEG query-token usage, browser-stored HLS/WebRTC selection behavior, and container timezone consistency.
+- Flow: camera RTSP is routed through MediaMTX for live playback, while `app` serves MJPEG debug frames and SSE runtime snapshots directly; `web` consumes both paths, chooses playback transport at runtime, and can override the HLS/WebRTC host from the login page.
+- Watch for: auth differences, stream host override behavior, `HOST_IP` and WebRTC wiring, SSE field changes, MJPEG query-token usage, browser-stored HLS/WebRTC selection behavior, and container timezone consistency.
 
 ## Cross-Boundary Changes
 

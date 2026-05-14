@@ -3,14 +3,10 @@
 // `app` owns runtime control, live state, and MJPEG/SSE endpoints.
 // MediaMTX owns HLS/WebRTC transport endpoints.
 
-const BACKEND_HOST_STORAGE_KEY = 'babycat_backend_host'
+const BABYCAT_HOST_STORAGE_KEY = 'babycat_host'
 
 function hasWindow() {
   return typeof window !== 'undefined'
-}
-
-function stripTrailingSlash(value) {
-  return value.replace(/\/+$/, '')
 }
 
 function normalizeHost(value) {
@@ -23,105 +19,83 @@ function normalizeHost(value) {
   }
 }
 
-function getStoredBackendHost() {
+function getStoredBabycatHost() {
   if (!hasWindow()) return ''
-  return normalizeHost(window.localStorage.getItem(BACKEND_HOST_STORAGE_KEY))
+  return normalizeHost(window.localStorage.getItem(BABYCAT_HOST_STORAGE_KEY))
 }
 
-function getConfiguredBackendHost() {
-  return normalizeHost(import.meta.env.VITE_BABYCAT_HOST || import.meta.env.VITE_BACKEND_HOST)
+function getConfiguredBabycatHost() {
+  return normalizeHost(import.meta.env.VITE_BABYCAT_HOST)
 }
 
-function getConfiguredUrl(name) {
-  return stripTrailingSlash(import.meta.env[name] || '')
+function getBabycatHost() {
+  return getStoredBabycatHost() || getConfiguredBabycatHost() || getBrowserHost()
 }
 
-function getBackendHost() {
-  return getStoredBackendHost() || getConfiguredBackendHost()
-}
-
-function getServiceUrl(configName, port, path) {
-  const configuredUrl = getConfiguredUrl(configName)
-  if (configuredUrl && !getStoredBackendHost()) return `${configuredUrl}${path}`
-  const backendHost = getBackendHost()
-  if (backendHost) return `http://${backendHost}:${port}${path}`
-  return path
+function getApiUrl(path) {
+  return `http://${getBabycatHost()}:8000${path}`
 }
 
 export const API_ENDPOINTS = {
   get login() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/api/login')
+    return getApiUrl('/api/login')
   },
   get refresh() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/api/refresh')
+    return getApiUrl('/api/refresh')
   },
   get logout() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/api/logout')
+    return getApiUrl('/api/logout')
   },
   get changePassword() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/api/change-password')
+    return getApiUrl('/api/change-password')
   },
   get camera() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/camera')
+    return getApiUrl('/camera')
   },
   get clips() {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, '/clips')
+    return getApiUrl('/clips')
   },
   clipFile(name) {
-    return getServiceUrl('VITE_BABYCAT_API_URL', 8000, `/clips/${encodeURIComponent(name)}`)
+    return getApiUrl(`/clips/${encodeURIComponent(name)}`)
   },
 }
 
 export const APP_ENDPOINTS = {
-  get prompt() {
-    return getServiceUrl('VITE_BABYCAT_APP_URL', 8080, '/prompt')
-  },
-  get ptz() {
-    return getServiceUrl('VITE_BABYCAT_APP_URL', 8080, '/ptz')
-  },
-  get events() {
-    return getServiceUrl('VITE_BABYCAT_APP_URL', 8080, '/events')
-  },
-  get mjpeg() {
-    return getServiceUrl('VITE_BABYCAT_APP_URL', 8080, '/stream')
-  },
-  get vlmSwitch() {
-    return getServiceUrl('VITE_BABYCAT_APP_URL', 8080, '/vlm/switch')
-  },
+  prompt: '/prompt',
+  ptz: '/ptz',
+  events: '/events',
+  mjpeg: '/stream',
+  vlmSwitch: '/vlm/switch',
 }
 
 export function getBrowserHost() {
   return window.location.hostname
 }
 
-export function getEditableBackendHost() {
-  return getStoredBackendHost() || getConfiguredBackendHost() || (hasWindow() ? getBrowserHost() : '')
+export function getEditableBabycatHost() {
+  return getStoredBabycatHost() || getConfiguredBabycatHost() || (hasWindow() ? getBrowserHost() : '')
 }
 
-export function setStoredBackendHost(host) {
+export function setStoredBabycatHost(host) {
   if (!hasWindow()) return ''
   const normalizedHost = normalizeHost(host)
   if (normalizedHost) {
-    window.localStorage.setItem(BACKEND_HOST_STORAGE_KEY, normalizedHost)
+    window.localStorage.setItem(BABYCAT_HOST_STORAGE_KEY, normalizedHost)
   } else {
-    window.localStorage.removeItem(BACKEND_HOST_STORAGE_KEY)
+    window.localStorage.removeItem(BABYCAT_HOST_STORAGE_KEY)
   }
   return normalizedHost
 }
 
 export function getStreamHost() {
-  return getBackendHost() || getBrowserHost()
+  return getBabycatHost()
 }
 
 export function getHlsUrl(host = getStreamHost()) {
-  const configuredUrl = getConfiguredUrl('VITE_BABYCAT_HLS_URL')
-  if (configuredUrl && !getStoredBackendHost()) return configuredUrl
   return `http://${host}:8888/live/index.m3u8`
 }
 
 export function getWhepUrl(host = getStreamHost()) {
-  const configuredUrl = getConfiguredUrl('VITE_BABYCAT_WHEP_URL')
-  if (configuredUrl && !getStoredBackendHost()) return configuredUrl
   return `http://${host}:8889/live/whep`
 }
 
