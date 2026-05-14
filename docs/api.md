@@ -149,6 +149,8 @@
 
 **URL**: `http://<host>:8888/live/index.m3u8`
 
+`web`은 로그인 화면에서 저장한 백엔드 호스트를 우선 사용한다. 저장값이 없으면 Vite 개발 기본값 `VITE_BABYCAT_HOST` 또는 `VITE_BABYCAT_HLS_URL`을 사용하고, 둘 다 없으면 브라우저 접속 호스트를 사용한다. 같은 호스트 배치에서는 기존 상대 경로/proxy 동작이 유지된다.
+
 **프론트엔드 사용법** (hls.js):
 
 ```html
@@ -767,3 +769,4 @@ babycat-mediamtx:
 
 > **클립 공유**: App과 API가 동일한 호스트 경로(`./data`)를 마운트한다. App은 ffmpeg로 `{YYYY}/{MM}/*.mp4`에 녹화하고, API는 같은 트리를 rglob하여 목록/다운로드/삭제를 제공한다.
 > **`HOST_IP`**: MediaMTX 컨테이너는 호스트 NIC를 볼 수 없으므로 `.env`의 `HOST_IP`가 WebRTC ICE 후보로 광고된다. 설정 누락 시 외부에서 WebRTC 접속 불가.
+> **`VITE_BABYCAT_HOST`**: `web` 개발 기본값이다. 브라우저 런타임에서는 로그인 화면에서 저장한 백엔드 호스트가 이 값을 override한다.

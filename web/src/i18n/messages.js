@@ -17,6 +17,7 @@ export const messages = {
 
   'login.usernamePlaceholder': { en: 'Username', ko: '아이디' },
   'login.passwordPlaceholder': { en: 'Password', ko: '비밀번호' },
+  'login.backendHostPlaceholder': { en: 'Backend IP or Hostname', ko: '백엔드 IP 또는 호스트명' },
   'login.rememberMe': { en: 'Remember login', ko: '로그인 정보 저장' },
   'login.findAccount': { en: 'Find username | password', ko: '아이디 | 비밀번호 찾기' },
   'login.submit': { en: 'Log In', ko: '로그인' },

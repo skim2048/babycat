@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useTheme } from '../composables/useTheme.js'
+import { getEditableBackendHost, setStoredBackendHost } from '../endpoints.js'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
@@ -13,12 +14,18 @@ const { theme } = useTheme()
 
 const username = ref('')
 const password = ref('')
+const backendHost = ref(getEditableBackendHost())
 const rememberMe = ref(false)
 const error = ref('')
 const loading = ref(false)
 
+function handleBackendHostInput() {
+  backendHost.value = setStoredBackendHost(backendHost.value)
+}
+
 async function handleLogin() {
   error.value = ''
+  handleBackendHostInput()
   loading.value = true
   try {
     await login(username.value, password.value, rememberMe.value)
@@ -57,6 +64,15 @@ async function handleLogin() {
         class="login-input"
         autocomplete="current-password"
         required
+      />
+      <input
+        v-model="backendHost"
+        type="text"
+        :placeholder="t('login.backendHostPlaceholder')"
+        class="login-input"
+        autocomplete="off"
+        spellcheck="false"
+        @change="handleBackendHostInput"
       />
 
       <div class="login-options">
