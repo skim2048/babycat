@@ -36,7 +36,7 @@
   - PTZ, prompt, SSE, and VLM switch routes remain mapped to `app`
   - clip routes remain mapped to `api`
   - HLS and WHEP playback URLs remain mapped to MediaMTX ports `8888` and `8889`
-  - HLS/WebRTC host resolution supports login-page localStorage override, `VITE_BABYCAT_HOST`, and same-host fallback
+  - babycat host resolution supports login-page localStorage override, `VITE_BABYCAT_HOST`, and same-host fallback
   - `node --check` passed for the new endpoint module and the updated plain JavaScript composables
 - What was not validated:
   - `npm run build` could not run because `web/node_modules/.bin/vite` is not present in the current workspace

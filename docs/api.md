@@ -34,9 +34,9 @@
 
 ### CORS
 
-**API Server(:8000)**는 CORS를 활성화한다. 허용 origin은 localhost/127.0.0.1, 사설 IP 대역(10.*, 172.16~31.*, 192.168.*), `capacitor://localhost`이며, `allow_credentials=False`다. 외부 도메인에서 접근할 경우 `CORS_EXTRA_ORIGINS` 환경변수에 콤마로 나열한다.
+**API Server(:8000)**와 **App(:8080)**는 CORS를 활성화한다. 허용 origin은 localhost/127.0.0.1, 사설 IP 대역(10.*, 172.16~31.*, 192.168.*), `capacitor://localhost`이며, API 서버는 `allow_credentials=False`다. 외부 도메인에서 접근할 경우 `CORS_EXTRA_ORIGINS` 환경변수에 콤마로 나열한다.
 
-**App(:8080)**에는 CORS 미들웨어가 없으므로 동일 origin에서 호출하거나 프록시를 경유해야 한다.
+App 서버는 `/events` SSE와 오류 응답에도 CORS 헤더를 붙이고, `POST`/`DELETE` 요청의 브라우저 preflight를 위해 `OPTIONS`에 `204 No Content`로 응답한다.
 
 ---
 
@@ -149,7 +149,7 @@
 
 **URL**: `http://<host>:8888/live/index.m3u8`
 
-`web`은 로그인 화면에서 저장한 호스트를 우선 사용한다. 저장값이 없으면 Vite 개발 기본값 `VITE_BABYCAT_HOST`를 사용하고, 그 값도 없으면 브라우저 접속 호스트를 사용한다. 이 호스트 설정은 HLS/WebRTC 재생 URL에만 적용되며, API/App 경로는 기존 상대 경로/proxy 동작을 유지한다.
+`web`은 로그인 화면에서 저장한 호스트를 우선 사용한다. 저장값이 없으면 Vite 개발 기본값 `VITE_BABYCAT_HOST`를 사용하고, 그 값도 없으면 브라우저 접속 호스트를 사용한다. 이 호스트 설정은 API 서버와 HLS/WebRTC 재생 URL에 적용된다.
 
 **프론트엔드 사용법** (hls.js):
 
@@ -769,4 +769,4 @@ babycat-mediamtx:
 
 > **클립 공유**: App과 API가 동일한 호스트 경로(`./data`)를 마운트한다. App은 ffmpeg로 `{YYYY}/{MM}/*.mp4`에 녹화하고, API는 같은 트리를 rglob하여 목록/다운로드/삭제를 제공한다.
 > **`HOST_IP`**: MediaMTX 컨테이너는 호스트 NIC를 볼 수 없으므로 `.env`의 `HOST_IP`가 WebRTC ICE 후보로 광고된다. 설정 누락 시 외부에서 WebRTC 접속 불가.
-> **`VITE_BABYCAT_HOST`**: `web`의 HLS/WebRTC 호스트 개발 기본값이다. 브라우저 런타임에서는 로그인 화면에서 저장한 호스트가 이 값을 override한다.
+> **`VITE_BABYCAT_HOST`**: `web`의 babycat 호스트 개발 기본값이다. 브라우저 런타임에서는 로그인 화면에서 저장한 호스트가 이 값을 override한다.
