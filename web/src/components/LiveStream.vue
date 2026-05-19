@@ -288,6 +288,15 @@ function browserPlaybackNeedsReconnect(referenceTime = null) {
   return status !== 'healthy' && status !== 'inactive'
 }
 
+function clearVideoElementMedia() {
+  const video = videoRef.value
+  if (!video) return
+  video.pause()
+  video.srcObject = null
+  video.removeAttribute('src')
+  video.load()
+}
+
 function schedulePipelineRecovery() {
   const baselineTime = videoRef.value?.currentTime ?? null
   if (pipelineRecoveryTimer) clearTimeout(pipelineRecoveryTimer)
@@ -400,10 +409,8 @@ async function initWebRTC() {
       const state = pc.connectionState
       if (state === 'connected') {
         onPlaying()
-      } else if ((state === 'failed' || state === 'disconnected') && Date.now() < connectDeadline) {
-        retryTimer = setTimeout(() => {
-          if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
-        }, 3000)
+      } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        handleWebRTCConnectionLoss(mySession)
       }
     }
 
@@ -433,6 +440,24 @@ async function initWebRTC() {
   }
 }
 
+function handleWebRTCConnectionLoss(mySession) {
+  if (mySession !== sessionId) return
+  clearVideoElementMedia()
+  stopStats()
+  setDisconnected()
+  if (stopped.value) return
+  if (Date.now() < connectDeadline) {
+    loading.value = true
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = setTimeout(() => {
+      if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
+    }, 3000)
+  } else {
+    loading.value = false
+    timedOut.value = true
+  }
+}
+
 function destroyWebRTC() {
   if (pc) {
     pc.ontrack = null
@@ -440,8 +465,7 @@ function destroyWebRTC() {
     pc.close()
     pc = null
   }
-  const video = videoRef.value
-  if (video) video.srcObject = null
+  clearVideoElementMedia()
 }
 
 // ── Common handlers ──
