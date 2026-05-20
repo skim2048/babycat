@@ -29,11 +29,15 @@ function getConfiguredBabycatHost() {
 }
 
 function getBabycatHost() {
-  return getStoredBabycatHost() || getConfiguredBabycatHost() || getBrowserHost()
+  return getConfiguredBabycatHost() || getStoredBabycatHost() || getBrowserHost()
 }
 
 function getApiUrl(path) {
   return `http://${getBabycatHost()}:8000${path}`
+}
+
+function getAppUrl(path) {
+  return `http://${getBabycatHost()}:8080${path}`
 }
 
 export const API_ENDPOINTS = {
@@ -61,11 +65,21 @@ export const API_ENDPOINTS = {
 }
 
 export const APP_ENDPOINTS = {
-  prompt: '/prompt',
-  ptz: '/ptz',
-  events: '/events',
-  mjpeg: '/stream',
-  vlmSwitch: '/vlm/switch',
+  get prompt() {
+    return getAppUrl('/prompt')
+  },
+  get ptz() {
+    return getAppUrl('/ptz')
+  },
+  get events() {
+    return getAppUrl('/events')
+  },
+  get mjpeg() {
+    return getAppUrl('/stream')
+  },
+  get vlmSwitch() {
+    return getAppUrl('/vlm/switch')
+  },
 }
 
 export function getBrowserHost() {
@@ -73,11 +87,16 @@ export function getBrowserHost() {
 }
 
 export function getEditableBabycatHost() {
-  return getStoredBabycatHost() || getConfiguredBabycatHost() || (hasWindow() ? getBrowserHost() : '')
+  return getConfiguredBabycatHost() || getStoredBabycatHost() || (hasWindow() ? getBrowserHost() : '')
 }
 
 export function setStoredBabycatHost(host) {
   if (!hasWindow()) return ''
+  const configuredHost = getConfiguredBabycatHost()
+  if (configuredHost) {
+    window.localStorage.removeItem(BABYCAT_HOST_STORAGE_KEY)
+    return configuredHost
+  }
   const normalizedHost = normalizeHost(host)
   if (normalizedHost) {
     window.localStorage.setItem(BABYCAT_HOST_STORAGE_KEY, normalizedHost)

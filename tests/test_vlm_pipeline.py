@@ -10,7 +10,7 @@ Run inside the app container:
   python /app/test_vlm_pipeline.py
 
 Environment variables:
-  MEDIAMTX_URL   RTSP source URL         (default: rtsp://babycat-mediamtx:8554/live)
+  MEDIAMTX_URL   RTSP source URL         (default: rtsp://mtx:8554/live)
   VLM_MODEL      NanoLLM model id        (default: Efficient-Large-Model/VILA1.5-3b)
   N_INFERENCES   number of inferences    (default: 5)
   TARGET_FPS     videorate target FPS    (default: 1.0)
@@ -31,7 +31,7 @@ HAS_NANO_LLM = importlib.util.find_spec("nano_llm") is not None
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-MEDIAMTX_URL  = os.getenv("MEDIAMTX_URL",  "rtsp://babycat-mediamtx:8554/live")
+MEDIAMTX_URL  = os.getenv("MEDIAMTX_URL",  "rtsp://mtx:8554/live")
 MODEL_ID      = os.getenv("VLM_MODEL",     "Efficient-Large-Model/VILA1.5-3b")
 N_INFERENCES  = int(os.getenv("N_INFERENCES", "5"))
 TARGET_FPS    = float(os.getenv("TARGET_FPS",  "1.0"))

@@ -731,8 +731,8 @@ Android 앱이 FCM 토큰을 등록·갱신하기 위한 CRUD 엔드포인트입
 ```yaml
 app:
   environment:
-    - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
-    - VLM_MODELS=${VLM_MODELS:-Efficient-Large-Model/VILA1.5-3b}
+    - JWT_SECRET=${JWT_SECRET:?required}
+    - VLM_MODELS=${VLM_MODELS:?required}
     # - FCM_CREDENTIALS=/run/fcm/credentials.json
     # - FCM_TOKEN=<device_fcm_registration_token>
   volumes:
@@ -746,9 +746,11 @@ api:
   environment:
     - CAM_DIR=/data
     - DB_PATH=/data/db/babycat.db
-    - JWT_SECRET=${JWT_SECRET:-babycat-default-secret}
-    - DEFAULT_USER=${DEFAULT_USER:-admin}
-    - DEFAULT_PASS=${DEFAULT_PASS:-admin}
+    - JWT_SECRET=${JWT_SECRET:?required}
+    - JWT_EXPIRY=${JWT_EXPIRY:?required}
+    - REFRESH_EXPIRY=${REFRESH_EXPIRY:?required}
+    - DEFAULT_USER=${DEFAULT_USER:?required}
+    - DEFAULT_PASS=${DEFAULT_PASS:?required}
     # - CORS_EXTRA_ORIGINS=https://example.com
   volumes:
     - ./data:/data           # 클립 + SQLite (App과 동일 경로)
@@ -757,9 +759,9 @@ api:
   depends_on:
     - app
 
-babycat-mediamtx:
+mtx:
   environment:
-    - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-}
+    - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
   ports:
     - "8554:8554"      # RTSP
     - "8888:8888"      # HLS

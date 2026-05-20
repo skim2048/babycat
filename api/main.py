@@ -67,7 +67,7 @@ from schemas import (
 )
 import json
 
-APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://babycat-app:8080")
+APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://app:8080")
 
 CAM_DIR = os.environ.get("CAM_DIR", "/data")
 MIN_CLIP_SIZE = 10240  # @claude 10KB — excludes partially-written files from an in-progress ffmpeg recording.
@@ -159,7 +159,7 @@ def health():
     return {"status": "ok"}
 
 
-# ── Camera profile (proxied to babycat-app) ──────────────────────────────────
+# ── Camera profile (proxied to App) ──────────────────────────────────────────
 
 
 def _token_out(result: dict) -> TokenOut:
@@ -192,7 +192,7 @@ def get_camera(request: Request, _=Depends(require_auth)):
 
 @app.post("/camera", response_model=ApplyResultOut)
 def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
-    """Apply a camera profile; babycat-app persists it and restarts the pipeline. @claude"""
+    """Apply a camera profile; App persists it and restarts the pipeline. @claude"""
     payload = body.model_dump()
     status, data = proxy_app(APP_INTERNAL_URL, "POST", "/camera", request_auth_header(request), payload)
     return camera_apply_out(status, data)

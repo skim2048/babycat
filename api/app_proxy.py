@@ -22,7 +22,7 @@ def proxy_app(
     body: dict | None = None,
     timeout: int = 10,
 ):
-    """Proxy a request to babycat-app's internal HTTP server; returns (status, json)."""
+    """Proxy a request to the App container's internal HTTP server; returns (status, json)."""
     url = f"{app_internal_url}{path}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)

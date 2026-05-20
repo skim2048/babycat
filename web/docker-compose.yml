@@ -7,18 +7,18 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    container_name: babycat-web
     restart: unless-stopped
     environment:
       - TZ=Asia/Seoul
+      - VITE_BABYCAT_HOST=${VITE_BABYCAT_HOST:?required}
     ports:
-      - "5173:5173"    # @claude Vite dev server.
+      - "5173:5173"    # Vite 개발 서버입니다.
     volumes:
-      - .:/app         # @claude Live-mount for HMR (web/ itself). node_modules lands under ./node_modules.
+      - .:/app         # HMR을 위해 web/ 디렉토리를 실시간 마운트합니다. node_modules는 ./node_modules 아래에 생성됩니다.
     networks:
       - babycat
 
 networks:
   babycat:
-    name: babycat
+    name: babycat_default
     external: true
