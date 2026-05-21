@@ -239,7 +239,7 @@ es.onmessage = (e) => {
   "disk_path": "/data",
   "gpu_load": 62.3,
   "cpu_temp": 51.2,
-  "gpu_temp": 53.8,
+  "gpu_temp": null,
 
   "ring_len": 4,
   "ring_size": 30,
@@ -290,8 +290,8 @@ es.onmessage = (e) => {
 | `ram_used_mb`, `ram_total_mb` | int | RAM 사용량/총량 (MB) |
 | `disk_used_mb`, `disk_total_mb`, `disk_free_mb` | int | 활성 클립 저장 경로가 올라간 파일시스템의 사용량/총량/남은 용량 (MB) |
 | `disk_path` | string | 디스크 사용량 측정에 사용한 실제 경로. 활성 클립 저장 경로가 아직 없으면 존재하는 가장 가까운 상위 경로 |
-| `gpu_load` | float | GPU 사용률 (%) |
-| `cpu_temp`, `gpu_temp` | float | CPU/GPU 온도 (℃) |
+| `gpu_load` | float \| null | GPU 사용률 (%). Jetson sysfs 센서가 일시적으로 unavailable이면 `null` |
+| `cpu_temp`, `gpu_temp` | float \| null | CPU/GPU 온도 (℃). Jetson sysfs 센서가 일시적으로 unavailable이면 `null` |
 | `ring_len` | int | 현재 Ring Buffer에 있는 프레임 수 |
 | `ring_size` | int | Ring Buffer 최대 크기 |
 | `uptime` | string | App 컨테이너 가동 시간 |

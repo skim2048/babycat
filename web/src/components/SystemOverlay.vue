@@ -17,6 +17,10 @@ const diskPercent = computed(() =>
     ? Math.round((state.disk_used_mb / state.disk_total_mb) * 100)
     : 0,
 )
+
+function formatMetric(value, suffix = '') {
+  return typeof value === 'number' ? `${value}${suffix}` : '—'
+}
 </script>
 
 <template>
@@ -24,13 +28,13 @@ const diskPercent = computed(() =>
     <div v-if="open" class="system-panel">
       <div class="sys-row">
         <span class="sys-label">CPU</span>
-        <span class="sys-value">{{ state.cpu_percent }}%</span>
-        <span class="sys-temp">{{ state.cpu_temp }}°</span>
+        <span class="sys-value">{{ formatMetric(state.cpu_percent, '%') }}</span>
+        <span class="sys-temp">{{ formatMetric(state.cpu_temp, '°') }}</span>
       </div>
       <div class="sys-row">
         <span class="sys-label">GPU</span>
-        <span class="sys-value">{{ state.gpu_load }}%</span>
-        <span class="sys-temp">{{ state.gpu_temp }}°</span>
+        <span class="sys-value">{{ formatMetric(state.gpu_load, '%') }}</span>
+        <span class="sys-temp">{{ formatMetric(state.gpu_temp, '°') }}</span>
       </div>
       <div class="sys-row">
         <span class="sys-label">RAM</span>

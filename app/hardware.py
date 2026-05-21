@@ -20,11 +20,31 @@ MB = 1024 * 1024
 
 
 def _read_sysfs(path: str) -> Optional[str]:
+    """Read a small sysfs node without letting transient EAGAIN break callers."""
     try:
-        with open(path) as f:
-            return f.read().strip()
-    except (OSError, IOError):
+        with open(path, "rb", buffering=0) as f:
+            raw = f.read(4096)
+        if not raw:
+            return None
+        return raw.decode("utf-8").strip() or None
+    except Exception as e:
+        log.debug("sysfs read failed for %s: %s", path, e)
         return None
+
+
+def _scaled_sysfs_float(path: str, divisor: float) -> float | None:
+    value = _read_sysfs(path)
+    if value is None:
+        return None
+    try:
+        return int(value) / divisor
+    except (TypeError, ValueError) as e:
+        log.debug("sysfs parse failed for %s: %s", path, e)
+        return None
+
+
+def _round_or_none(value: float | None, digits: int = 1) -> float | None:
+    return round(value, digits) if value is not None else None
 
 
 def _nearest_existing_path(path: Path) -> Path | None:
@@ -107,17 +127,14 @@ class HardwareMonitor:
             log.debug("RAM usage read failed: %s", e)
             return (0, 0)
 
-    def gpu_load(self) -> float:
-        val = _read_sysfs(GPU_LOAD_PATH)
-        return int(val) / 10.0 if val else 0.0
+    def gpu_load(self) -> float | None:
+        return _scaled_sysfs_float(GPU_LOAD_PATH, 10.0)
 
-    def cpu_temp(self) -> float:
-        val = _read_sysfs(CPU_THERMAL_PATH)
-        return int(val) / 1000.0 if val else 0.0
+    def cpu_temp(self) -> float | None:
+        return _scaled_sysfs_float(CPU_THERMAL_PATH, 1000.0)
 
-    def gpu_temp(self) -> float:
-        val = _read_sysfs(GPU_THERMAL_PATH)
-        return int(val) / 1000.0 if val else 0.0
+    def gpu_temp(self) -> float | None:
+        return _scaled_sysfs_float(GPU_THERMAL_PATH, 1000.0)
 
     def snapshot(self) -> dict:
         ram_used, ram_total = self.ram_usage()
@@ -125,7 +142,7 @@ class HardwareMonitor:
             "cpu_percent": round(self.cpu_percent(), 1),
             "ram_used_mb": ram_used,
             "ram_total_mb": ram_total,
-            "gpu_load":    round(self.gpu_load(), 1),
-            "cpu_temp":    round(self.cpu_temp(), 1),
-            "gpu_temp":    round(self.gpu_temp(), 1),
+            "gpu_load":    _round_or_none(self.gpu_load()),
+            "cpu_temp":    _round_or_none(self.cpu_temp()),
+            "gpu_temp":    _round_or_none(self.gpu_temp()),
         }

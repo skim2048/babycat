@@ -70,6 +70,15 @@ def allowed_cors_origin(origin: str | None) -> str:
     return ""
 
 
+def snapshot_sse_message() -> bytes:
+    try:
+        snap = app_state.snapshot()
+    except Exception:
+        log.exception("SSE snapshot failed")
+        return b": snapshot_unavailable\n\n"
+    return f"data: {json.dumps(snap, ensure_ascii=False)}\n\n".encode()
+
+
 class AppHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
@@ -233,8 +242,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     q.get(timeout=1)
                 except queue.Empty:
                     pass
-                snap = app_state.snapshot()
-                self.wfile.write(f"data: {json.dumps(snap, ensure_ascii=False)}\n\n".encode())
+                self.wfile.write(snapshot_sse_message())
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
             pass

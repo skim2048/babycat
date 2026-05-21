@@ -64,3 +64,13 @@ def test_app_options_preflight_returns_no_content():
     assert responses == [204]
     assert ("Content-Length", "0") in sent
     assert ended == [True]
+
+
+def test_snapshot_sse_message_returns_comment_when_snapshot_fails(monkeypatch):
+    class BrokenState:
+        def snapshot(self):
+            raise RuntimeError("snapshot unavailable")
+
+    monkeypatch.setattr(server_module, "app_state", BrokenState())
+
+    assert server_module.snapshot_sse_message() == b": snapshot_unavailable\n\n"

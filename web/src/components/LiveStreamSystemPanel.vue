@@ -56,6 +56,10 @@ function formatStorageValue(valueMb, unit) {
   return convertedValue.toFixed(1)
 }
 
+function formatMetric(value, suffix = '') {
+  return typeof value === 'number' ? `${value}${suffix}` : '—'
+}
+
 function toggleSection(sectionName) {
   openSections.value[sectionName] = !openSections.value[sectionName]
   nextTick(redrawSidebar)
@@ -154,8 +158,8 @@ onMounted(() => {
           </div>
           <canvas ref="cpuCanvasRef" class="vsb-canvas"></canvas>
           <div class="vsb-footer">
-            <span class="vsb-pct vsb-cpu">{{ sseState.cpu_percent }}%</span>
-            <span class="vsb-deg">{{ sseState.cpu_temp }}°</span>
+            <span class="vsb-pct vsb-cpu">{{ formatMetric(sseState.cpu_percent, '%') }}</span>
+            <span class="vsb-deg">{{ formatMetric(sseState.cpu_temp, '°') }}</span>
           </div>
         </div>
       </div>
@@ -180,8 +184,8 @@ onMounted(() => {
           </div>
           <canvas ref="gpuCanvasRef" class="vsb-canvas"></canvas>
           <div class="vsb-footer">
-            <span class="vsb-pct vsb-gpu">{{ sseState.gpu_load }}%</span>
-            <span class="vsb-deg">{{ sseState.gpu_temp }}°</span>
+            <span class="vsb-pct vsb-gpu">{{ formatMetric(sseState.gpu_load, '%') }}</span>
+            <span class="vsb-deg">{{ formatMetric(sseState.gpu_temp, '°') }}</span>
           </div>
         </div>
       </div>
