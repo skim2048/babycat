@@ -9,7 +9,6 @@ Pipeline:
 @claude
 """
 
-import gc
 import logging
 import os
 import queue
@@ -28,9 +27,9 @@ from gi.repository import Gst, GLib
 
 import numpy as np
 from PIL import Image
-from nano_llm import NanoLLM, ChatHistory
 
 import camera
+from vlm_worker import VlmProcess
 from clip_storage import (
     ClipStoragePolicy,
     bytes_to_mb,
@@ -622,15 +621,18 @@ def save_trigger_clip(
 
 class ModelHolder:
     """
-    Current VLM model plus any pending switch request. The worker checks
-    pop_request() at the top of each iteration, so a switch only happens
-    between inferences, never mid-generation (atomicity).
+    Carries the current VLM model name plus any pending switch request
+    across threads. The model object itself lives in a child process
+    (see vlm_worker.VlmProcess); this holder only mediates the switch
+    request between the HTTP handler thread and the inference worker.
+
+    The worker checks pop_request() at the top of each iteration, so a
+    switch only happens between inferences, never mid-generation.
 
     @claude
     """
-    def __init__(self, model, name: str):
+    def __init__(self, name: str):
         self._lock = threading.Lock()
-        self.model = model
         self.name = name
         self._switch_to: str | None = None
 
@@ -647,11 +649,6 @@ class ModelHolder:
         with self._lock:
             target, self._switch_to = self._switch_to, None
             return target
-
-
-def _load_model(model_id: str):
-    """Load via NanoLLM (q4f16_ft MLC). Exceptions bubble up. @claude"""
-    return NanoLLM.from_pretrained(model_id, api="mlc", quantization="q4f16_ft")
 
 
 def _so_path(model_id: str) -> Path:
@@ -721,11 +718,14 @@ def _precompile_all(models: list[str]) -> list[str]:
     return available
 
 
-def _perform_switch(holder: ModelHolder, target: str) -> None:
+def _perform_switch(holder: ModelHolder, vlm_proc: VlmProcess, target: str) -> None:
     """
-    Replace the holder's model with `target`. Assumes any in-flight
-    inference has already finished. Attempts to roll back to the previous
-    model on failure.
+    Switch the live VLM child to `target`. vlm_proc.switch() kills the
+    current child first, so the previous model's CUDA/TVM/TensorRT memory
+    is reclaimed by the OS before the new model loads. Rolls back to the
+    previous model on failure.
+
+    Assumes any in-flight inference has already finished.
 
     @claude
     """
@@ -734,17 +734,14 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
     app_state.set_vlm_state("switching")
     app_state.set_vlm_current_model(target)  # @claude Pre-apply the target to the UI so the selector reflects intent.
 
-    holder.model = None
-    gc.collect()
-
     try:
-        new_model = _load_model(target)
+        vlm_proc.switch(target)
     except Exception as e:
         log.error("VLM switch failed (%s → %s): %s", prev, target, e)
         app_state.set_vlm_state("error", f"{target}: {str(e)[:200]}")
         # @claude Rollback attempt to the previous model.
         try:
-            holder.model = _load_model(prev)
+            vlm_proc.switch(prev)
             app_state.set_vlm_current_model(prev)
             app_state.set_vlm_state("ready")
             log.info("Rolled back to %s", prev)
@@ -752,55 +749,19 @@ def _perform_switch(holder: ModelHolder, target: str) -> None:
             log.error("Rollback to %s also failed: %s", prev, e2)
         return
 
-    holder.model = new_model
     holder.name = target
     app_state.set_vlm_state("ready")
     log.info("VLM switch complete: %s", target)
 
 
-# ── VLM inference ────────────────────────────────────────────────────────────
-
-def run_inference(model: NanoLLM, frames: list) -> str:
-    """
-    Run VLM inference over a list of PIL frames using the ChatHistory API
-    (the correct multimodal entry point for NanoLLM). chat.reset() and
-    gc.collect() are mandatory — see NanoLLM GitHub issue #39 on memory
-    leaks.
-
-    @claude
-    """
-    chat = ChatHistory(model)
-    for img in frames:
-        chat.append('user', image=img)
-    chat.append('user', text=app_state.get_prompt())
-
-    embedding, _ = chat.embed_chat()
-    tokens = []
-    for token in model.generate(embedding, max_new_tokens=32, streaming=True):
-        tokens.append(token)
-
-    raw = "".join(tokens)
-    # @claude Truncate at any stop token (vicuna-v1 </s>, ChatML <|im_end|>) and at common
-    # @claude roleplay artifacts (###, <|im_start|>, assistant:, user:) when they appear.
-    for marker in ("<|im_end|>", "</s>", "<|im_start|>", "###", "assistant:", "user:"):
-        idx = raw.find(marker)
-        if idx >= 0:
-            raw = raw[:idx]
-    raw = raw.strip()
-    chat.reset()
-    gc.collect()
-
-    return raw
-
-
 # ── Inference worker thread ──────────────────────────────────────────────────
 
-def inference_worker(holder: "ModelHolder", ring: RingBuffer,
+def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuffer,
                      infer_queue: queue.Queue) -> None:
     """
     When the appsink callback signals infer_queue, pull the latest
-    N_FRAMES from `ring`, run VLM inference, match keywords, and record a
-    trigger clip if needed.
+    N_FRAMES from `ring`, run VLM inference in the child process, match
+    keywords, and record a trigger clip if needed.
 
     Each iteration starts by consulting holder.pop_request() so model
     switches are only performed between inferences, never mid-generation.
@@ -812,7 +773,7 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
         # @claude Handle pending switch requests at the boundary between inferences.
         target = holder.pop_request()
         if target and target != holder.name:
-            _perform_switch(holder, target)
+            _perform_switch(holder, vlm_proc, target)
 
         try:
             infer_queue.get(timeout=5)
@@ -820,10 +781,6 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
             continue
 
         if ptz_is_moving():
-            continue
-
-        if holder.model is None:
-            # @claude Both switch and rollback failed — skip this iteration.
             continue
 
         samples = ring.latest_samples(N_FRAMES)
@@ -834,7 +791,9 @@ def inference_worker(holder: "ModelHolder", ring: RingBuffer,
 
         inference_started_at = time.time()
         try:
-            raw = run_inference(holder.model, frames)
+            # @claude vlm_proc.infer() respawns a crashed child on its own; a
+            # @claude failure here (incl. switch+rollback both failed) just skips.
+            raw = vlm_proc.infer(frames, app_state.get_prompt())
         except Exception as e:
             log.error("VLM inference error: %s", e)
             continue
@@ -1071,21 +1030,23 @@ def main() -> None:
 
     log.info("Loading default VLM: %s", MODEL_ID)
     app_state.set_vlm_current_model(MODEL_ID)
-    # @claude Load the precompiled/downloaded model into memory. "loading" is scoped to
-    # @claude this single stage — previously it covered downloading+compiling too, which made
-    # @claude the UI look stuck.
+    # @claude Load the precompiled model into a dedicated child process. "loading" is
+    # @claude scoped to this single stage — download/compile are separate earlier stages.
+    # @claude The VLM runs in a child so a model switch can free the previous model's
+    # @claude CUDA/TVM/TensorRT memory by terminating the process (see vlm_worker).
     app_state.set_vlm_state("loading")
     t0 = time.time()
+    vlm_proc = VlmProcess()
     try:
-        model = _load_model(MODEL_ID)
+        vlm_proc.start(MODEL_ID)
     except Exception as e:
         app_state.set_vlm_state("error", str(e)[:240])
         raise
     log.info("Model loaded (%.1fs)", time.time() - t0)
     app_state.set_vlm_state("ready")
 
-    # @claude Shared holder between the inference worker and the /vlm/switch handler.
-    holder = ModelHolder(model, MODEL_ID)
+    # @claude Carries switch requests from the /vlm/switch handler to the worker.
+    holder = ModelHolder(MODEL_ID)
     _set_holder(holder)
 
     ring    = RingBuffer(maxlen=RING_SIZE)
@@ -1112,7 +1073,7 @@ def main() -> None:
 
     worker = threading.Thread(
         target=inference_worker,
-        args=(holder, ring, infer_q),
+        args=(holder, vlm_proc, ring, infer_q),
         daemon=True,
     )
     worker.start()
@@ -1134,6 +1095,8 @@ def main() -> None:
                 _pipeline.set_state(Gst.State.NULL)
         app_state.mark_pipeline_stopped("shutdown")
         log.info("Pipeline stopped")
+        vlm_proc.stop()
+        log.info("VLM child stopped")
 
 
 if __name__ == '__main__':
