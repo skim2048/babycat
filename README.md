@@ -38,7 +38,7 @@ $EDITOR .env   # HOST_IP 에 젯슨 IP 입력
 # 3. 메인 스택 실행 (app + mediamtx + api)
 docker compose up -d --build
 
-# 4. 웹 대시보드 실행 (별도 스택, 메인 스택 먼저 실행 필요)
+# 4. 웹 대시보드 실행 (별도 스택, 독립 실행 가능)
 cd web
 docker compose up -d --build
 ```
@@ -48,7 +48,7 @@ docker compose up -d --build
 - **기본 계정**: `admin` / `admin`
 - 로그인 후 대시보드 상단 **비밀번호 변경** 버튼으로 즉시 변경하세요.
 
-`web` 스택은 메인 스택이 생성한 Docker 네트워크 `babycat`에 합류합니다. 메인 스택을 먼저 올린 뒤 `web`을 올려야 합니다.
+`web` 스택은 메인 스택과 독립적으로 동작하며 공유 Docker 네트워크가 필요 없습니다. 별도 호스트에서 실행할 수 있고, 브라우저는 `web/.env`의 `VITE_BABYCAT_HOST`(또는 로그인 화면에서 입력한 호스트)로 백엔드에 직접 접속합니다.
 
 Camera 패널에서 IP, 포트, 인증 정보를 입력하면 MediaMTX 소스와 PTZ 모듈에 즉시 적용되고 `config/cam_profile.json`에 저장됩니다.
 

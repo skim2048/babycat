@@ -34,7 +34,7 @@ H "3. app service — last 60 lines (model load / traceback / restart loop clues
 docker compose -f docker-compose.yml logs --no-log-prefix --tail 60 app 2>&1 | sed 's/^/  /'
 
 # ── 4. web service logs ──────────────────────────────────────────────────────
-H "4. web service — last 30 lines (vite proxy errors)"
+H "4. web service — last 30 lines (vite dev server)"
 docker compose -f web/docker-compose.yml logs --no-log-prefix --tail 30 web 2>&1 | sed 's/^/  /'
 
 # ── 5. api service logs ──────────────────────────────────────────────────────
