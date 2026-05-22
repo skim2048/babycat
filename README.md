@@ -204,7 +204,7 @@ babycat/
 | `REFRESH_EXPIRY` | `2592000` | 리프레시 토큰 유효 시간 (초) |
 | `DEFAULT_USER` | `admin` | 최초 부팅 시 생성되는 관리자 계정 이름 |
 | `DEFAULT_PASS` | `admin` | 최초 부팅 시 생성되는 관리자 비밀번호 |
-| `BABYCAT_APP_URL` | `http://babycat-app:8080` | 카메라 프록시가 사용하는 App 내부 URL |
+| `BABYCAT_APP_URL` | `http://app:8080` | 카메라 프록시가 사용하는 App 내부 URL (Compose 서비스명 `app`) |
 | `CORS_EXTRA_ORIGINS` | — | API 서버에 추가 허용할 CORS 오리진 |
 
 ## 알려진 제한 사항

@@ -26,17 +26,20 @@ git log --oneline -7 2>&1 | sed 's/^/  /'
 H "2. docker container status (watch for Up / Restarting / Exited)"
 docker ps -a --format "table {{.Names}}\t{{.Status}}" 2>&1 | sed 's/^/  /'
 
-# ── 3. babycat-app logs ──────────────────────────────────────────────────────
-H "3. babycat-app last 60 lines (model load / traceback / restart loop clues)"
-docker logs babycat-app --tail 60 2>&1 | sed 's/^/  /'
+# ── 3. app service logs ──────────────────────────────────────────────────────
+# @claude Address containers by Compose service, not name: services have no
+# @claude container_name so Compose auto-names them <project>-<service>-N
+# @claude (e.g. babycat-app-1), which a bare `docker logs babycat-app` misses.
+H "3. app service — last 60 lines (model load / traceback / restart loop clues)"
+docker compose -f docker-compose.yml logs --no-log-prefix --tail 60 app 2>&1 | sed 's/^/  /'
 
-# ── 4. babycat-web logs ──────────────────────────────────────────────────────
-H "4. babycat-web last 30 lines (vite proxy errors)"
-docker logs babycat-web --tail 30 2>&1 | sed 's/^/  /'
+# ── 4. web service logs ──────────────────────────────────────────────────────
+H "4. web service — last 30 lines (vite proxy errors)"
+docker compose -f web/docker-compose.yml logs --no-log-prefix --tail 30 web 2>&1 | sed 's/^/  /'
 
-# ── 5. babycat-api logs ──────────────────────────────────────────────────────
-H "5. babycat-api last 30 lines"
-docker logs babycat-api --tail 30 2>&1 | sed 's/^/  /'
+# ── 5. api service logs ──────────────────────────────────────────────────────
+H "5. api service — last 30 lines"
+docker compose -f docker-compose.yml logs --no-log-prefix --tail 30 api 2>&1 | sed 's/^/  /'
 
 # ── 6. Health endpoints ──────────────────────────────────────────────────────
 H "6. /health status codes (200 = ok, ERR = unreachable)"
