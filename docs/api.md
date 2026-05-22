@@ -149,7 +149,7 @@ App 서버는 `/events` SSE와 오류 응답에도 CORS 헤더를 붙이고, `PO
 
 **URL**: `http://<host>:8888/live/index.m3u8`
 
-`web`은 로그인 화면에서 저장한 호스트를 우선 사용한다. 저장값이 없으면 Vite 개발 기본값 `VITE_BABYCAT_HOST`를 사용하고, 그 값도 없으면 브라우저 접속 호스트를 사용한다. 이 호스트 설정은 API 서버와 HLS/WebRTC 재생 URL에 적용된다.
+`web`은 로그인 화면에서 입력해 저장한 호스트를 사용한다. 저장값이 없으면 브라우저 접속 호스트(페이지를 서빙한 호스트)를 사용한다. 입력한 호스트는 백엔드가 응답하면(로그인 성공·실패 무관) 브라우저 `localStorage`에 저장된다. 이 호스트 설정은 API 서버와 HLS/WebRTC 재생 URL에 적용된다.
 
 **프론트엔드 사용법** (hls.js):
 
@@ -771,4 +771,4 @@ mtx:
 
 > **클립 공유**: App과 API가 동일한 호스트 경로(`./data`)를 마운트한다. App은 ffmpeg로 `{YYYY}/{MM}/*.mp4`에 녹화하고, API는 같은 트리를 rglob하여 목록/다운로드/삭제를 제공한다.
 > **`HOST_IP`**: MediaMTX 컨테이너는 호스트 NIC를 볼 수 없으므로 `.env`의 `HOST_IP`가 WebRTC ICE 후보로 광고된다. 설정 누락 시 외부에서 WebRTC 접속 불가.
-> **`VITE_BABYCAT_HOST`**: `web`의 babycat 호스트 개발 기본값이다. 브라우저 런타임에서는 로그인 화면에서 저장한 호스트가 이 값을 override한다.
+> **babycat 호스트**: `web`은 백엔드 위치를 환경 변수로 받지 않는다. 로그인 화면에서 입력하며, 연결에 성공하면 브라우저 `localStorage`에 저장된다.

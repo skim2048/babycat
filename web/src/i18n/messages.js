@@ -31,6 +31,10 @@ export const messages = {
     ko: '로그인 시도가 너무 많습니다. {seconds}초 후 다시 시도하세요.',
   },
   'login.error.unsupported': { en: 'Not supported yet.', ko: '아직 지원되지 않습니다.' },
+  'login.error.hostUnreachable': {
+    en: 'Cannot reach the backend host. Check the IP or hostname.',
+    ko: '백엔드 호스트에 연결할 수 없습니다. IP 또는 호스트명을 확인하세요.',
+  },
 
   'camera.field.username': { en: 'Camera ID', ko: '카메라 ID' },
   'camera.field.password': { en: 'Camera Password', ko: '카메라 비밀번호' },

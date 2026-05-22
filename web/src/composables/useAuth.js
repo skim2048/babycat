@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from 'vue'
-import { API_ENDPOINTS } from '../endpoints.js'
+import { API_ENDPOINTS, persistBabycatHost } from '../endpoints.js'
 
 const WARNING_LEAD_MS = 60_000
 const AUTO_REFRESH_LEAD_MS = 60_000
@@ -314,11 +314,20 @@ export function useAuth() {
   )
 
   async function login(username, password, rememberMe = false) {
-    const res = await fetch(API_ENDPOINTS.login, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, remember_me: rememberMe }),
-    })
+    let res
+    try {
+      res = await fetch(API_ENDPOINTS.login, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, remember_me: rememberMe }),
+      })
+    } catch {
+      // @claude Network-level failure: the backend host was never reached. Do not
+      // @claude persist it so the operator can correct the host and retry.
+      throw new Error('host unreachable')
+    }
+    // @claude The host responded (even on 401/429), so it is reachable — remember it.
+    persistBabycatHost()
     if (res.status === 429) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || 'too many attempts')

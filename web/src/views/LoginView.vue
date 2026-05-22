@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useTheme } from '../composables/useTheme.js'
-import { getEditableBabycatHost, setStoredBabycatHost } from '../endpoints.js'
+import { getEditableBabycatHost, applyBabycatHost } from '../endpoints.js'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
@@ -19,19 +19,22 @@ const rememberMe = ref(false)
 const error = ref('')
 const loading = ref(false)
 
-function handleBabycatHostInput() {
-  babycatHost.value = setStoredBabycatHost(babycatHost.value)
+// @claude Reflect the normalized host back into the field on blur; does not persist.
+function normalizeHostField() {
+  babycatHost.value = applyBabycatHost(babycatHost.value)
 }
 
 async function handleLogin() {
   error.value = ''
-  handleBabycatHostInput()
+  applyBabycatHost(babycatHost.value)
   loading.value = true
   try {
     await login(username.value, password.value, rememberMe.value)
     router.push({ name: 'dashboard' })
   } catch (e) {
-    if (e.message.startsWith('too many attempts')) {
+    if (e.message === 'host unreachable') {
+      error.value = t('login.error.hostUnreachable')
+    } else if (e.message.startsWith('too many attempts')) {
       const seconds = e.message.replace('too many attempts, retry after ', '').replace('s', '')
       error.value = t('login.error.tooManyAttempts', { seconds })
     } else {
@@ -72,7 +75,7 @@ async function handleLogin() {
         class="login-input"
         autocomplete="off"
         spellcheck="false"
-        @change="handleBabycatHostInput"
+        @change="normalizeHostField"
       />
 
       <div class="login-options">

@@ -24,12 +24,13 @@ function getStoredBabycatHost() {
   return normalizeHost(window.localStorage.getItem(BABYCAT_HOST_STORAGE_KEY))
 }
 
-function getConfiguredBabycatHost() {
-  return normalizeHost(import.meta.env.VITE_BABYCAT_HOST)
-}
+// @claude Host typed on the login page for the current page load. Kept in memory so the
+// @claude login request can target it before the host is known to be reachable;
+// @claude persistBabycatHost() writes it to localStorage only after the backend responds.
+let sessionBabycatHost = ''
 
 function getBabycatHost() {
-  return getConfiguredBabycatHost() || getStoredBabycatHost() || getBrowserHost()
+  return sessionBabycatHost || getStoredBabycatHost() || getBrowserHost()
 }
 
 function getApiUrl(path) {
@@ -87,23 +88,26 @@ export function getBrowserHost() {
 }
 
 export function getEditableBabycatHost() {
-  return getConfiguredBabycatHost() || getStoredBabycatHost() || (hasWindow() ? getBrowserHost() : '')
+  return sessionBabycatHost || getStoredBabycatHost() || (hasWindow() ? getBrowserHost() : '')
 }
 
-export function setStoredBabycatHost(host) {
-  if (!hasWindow()) return ''
-  const configuredHost = getConfiguredBabycatHost()
-  if (configuredHost) {
-    window.localStorage.removeItem(BABYCAT_HOST_STORAGE_KEY)
-    return configuredHost
-  }
-  const normalizedHost = normalizeHost(host)
-  if (normalizedHost) {
-    window.localStorage.setItem(BABYCAT_HOST_STORAGE_KEY, normalizedHost)
+// @claude Activate a host for the current page load without persisting it. The login
+// @claude request targets this value; call persistBabycatHost() once the backend responds.
+export function applyBabycatHost(host) {
+  sessionBabycatHost = normalizeHost(host)
+  return sessionBabycatHost
+}
+
+// @claude Persist the active host once the backend has responded (i.e. the host is
+// @claude reachable). An empty host clears the stored value so resolution falls back
+// @claude to the browser host.
+export function persistBabycatHost() {
+  if (!hasWindow()) return
+  if (sessionBabycatHost) {
+    window.localStorage.setItem(BABYCAT_HOST_STORAGE_KEY, sessionBabycatHost)
   } else {
     window.localStorage.removeItem(BABYCAT_HOST_STORAGE_KEY)
   }
-  return normalizedHost
 }
 
 export function getStreamHost() {
