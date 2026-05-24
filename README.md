@@ -83,11 +83,14 @@ babycat/
 │   ├── trigger_clip_rollover.py # 세그먼트 롤오버 기반 클립 녹화
 │   ├── trigger_clip_diagnostics.py # 클립 메타데이터 + 진단 정보
 │   ├── ptz.py                  # ONVIF PTZ 제어
-│   └── holder.py               # VLM 모델 싱글턴 홀더
+│   ├── holder.py               # VLM 모델 싱글턴 홀더
+│   ├── vlm_worker.py           # VLM 추론 서브프로세스 (모델 전환 시 CUDA/TVM/TensorRT 메모리 회수)
+│   └── server_support.py       # 서버 보조 헬퍼 (JWT 검증, 클립 경로 해석, Range 파싱)
 ├── api/                        # API 서버 소스
 │   ├── main.py                 # FastAPI 엔드포인트
 │   ├── auth.py                 # JWT 인증 + 로그인 스로틀 + 리프레시 토큰 라이프사이클
 │   ├── app_proxy.py            # App 카메라 프로파일 프록시
+│   ├── clip_support.py         # 클립 경로 해석 + Range 헤더 파싱 헬퍼
 │   ├── database.py             # SQLite (WAL) 초기화
 │   └── schemas.py              # Pydantic 스키마
 ├── web/                        # 웹 대시보드 (Vue 3 + Vite)
@@ -101,7 +104,7 @@ babycat/
 ├── data/
 │   ├── {YYYY}/{MM}/            # 트리거 클립 (*.mp4 + *.json 사이드카)
 │   ├── db/                     # SQLite 데이터베이스 (users, events, devices)
-│   └── models/                 # NanoLLM 컴파일 모델 캐시 (.so)
+│   └── models/                 # 모델 캐시 (MLC 컴파일 `.so`, HuggingFace 스냅샷, clip_trt TensorRT 엔진)
 ├── docker/                     # 메인 스택 Dockerfile (app, api)
 ├── tests/                      # 테스트 모음 (API, 파이프라인, 하드웨어, VLM 벤치마크)
 ├── docs/                       # API 레퍼런스 + 아키텍처 경계 문서
@@ -177,7 +180,7 @@ babycat/
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `MEDIAMTX_URL` | `rtsp://babycat-mediamtx:8554/live` | MediaMTX RTSP URL |
+| `MEDIAMTX_URL` | `rtsp://mtx:8554/live` | MediaMTX RTSP URL (Compose 서비스명 `mtx`) |
 | `VLM_MODELS` | `Efficient-Large-Model/VILA1.5-3b` | 쉼표 구분 VLM 모델 ID 목록. 첫 번째가 부팅 기본값 |
 | `TARGET_FPS` | `1.0` | 프레임 샘플링 FPS |
 | `N_FRAMES` | `4` | 추론 1회당 프레임 수 |
