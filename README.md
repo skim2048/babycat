@@ -1,62 +1,64 @@
+> 🌐 **Language:** **English** · [한국어](README.ko.md)
+
 # Babycat
 
-RTSP 카메라 스트림을 실시간으로 분석하는 엣지 AI 시스템입니다. VLM(Vision Language Model)이 라이브 영상을 보고 사용자 정의 조건을 감지하면, 이벤트 클립을 저장하고 알림을 전송합니다.
+An edge AI system that analyzes RTSP camera streams in real time. A VLM (Vision Language Model) watches the live feed, and when it detects a user-defined condition, the system records an event clip and sends a notification.
 
-- **엣지 전용** — 감지부터 알림까지 모든 처리가 장치 로컬에서 실행됩니다. 클라우드 의존 없음.
-- **자유 형식 조건** — 이벤트 조건을 자연어로 표현합니다. 규칙을 코드에 하드코딩하지 않습니다.
-- **이중 스트리밍** — HLS / WebRTC 두 프로토콜로 브라우저 실시간 모니터링을 지원합니다.
-- **PTZ 연동** — ONVIF PTZ 카메라를 지원합니다.
+- **Edge-only** — every step from detection to notification runs locally on the device. No cloud dependency.
+- **Free-form conditions** — event conditions are expressed in natural language. No rules hard-coded into the codebase.
+- **Dual streaming** — HLS and WebRTC are both available for real-time monitoring in the browser.
+- **PTZ integration** — supports ONVIF PTZ cameras.
 
-## 아키텍처
+## Architecture
 
-| 컨테이너 | 포트 | 역할 |
+| Container | Port | Role |
 |---|---|---|
-| **App** | 8080 | GStreamer 파이프라인(감시 포함), VLM 추론, 트리거 감지, 이벤트 클립 녹화, PTZ 제어, 카메라 설정 적용, VLM 모델 전환 |
-| **MediaMTX** | 8554 / 8888 / 8889 / 8890 | RTSP / HLS / WebRTC 스트리밍 서버. 소스는 App이 내부 API(:9997)로 런타임 설정 |
-| **API Server** | 8000 | 인증, 세션 갱신/로그아웃, 카메라 프로파일 프록시, 클립·이벤트·디바이스 토큰 REST API (FastAPI + SQLite WAL) |
+| **App** | 8080 | GStreamer pipeline (with watchdog), VLM inference, trigger detection, event clip recording, PTZ control, camera profile application, VLM model switching |
+| **MediaMTX** | 8554 / 8888 / 8889 / 8890 | RTSP / HLS / WebRTC streaming server. Source is configured at runtime by App via the internal API (`:9997`) |
+| **API Server** | 8000 | Authentication, session refresh/logout, camera profile proxy, clip/event/device-token REST API (FastAPI + SQLite WAL) |
 
-웹 대시보드(`web/`)는 별도 Compose 스택으로 실행됩니다.
+The web dashboard (`web/`) runs as a separate Compose stack.
 
-## 요구 사항
+## Requirements
 
-| 항목 | 사양 |
+| Item | Spec |
 |---|---|
-| 엣지 AI 보드 | NVIDIA Jetson Orin NX 16 GB (JetPack 6.2, L4T R36.5.x) |
-| 카메라 | RTSP H.264 IP 카메라 (ONVIF PTZ 선택) |
-| 소프트웨어 | Docker, NVIDIA Container Runtime |
+| Edge AI board | NVIDIA Jetson Orin NX 16 GB (JetPack 6.2, L4T R36.5.x) |
+| Camera | RTSP H.264 IP camera (ONVIF PTZ optional) |
+| Software | Docker, NVIDIA Container Runtime |
 
-## 시작하기
+## Getting Started
 
 ```bash
-# 1. 패키지 업데이트 (Jetson)
+# 1. Package update (Jetson)
 sudo apt update && sudo apt install -y nvidia-jetpack
 
-# 2. 환경 변수 설정
+# 2. Configure environment variables
 cp .env.example .env
-$EDITOR .env   # HOST_IP 에 젯슨 IP 입력
+$EDITOR .env   # set HOST_IP to the Jetson's IP
 
-# 3. 메인 스택 실행 (app + mediamtx + api)
+# 3. Launch the main stack (app + mediamtx + api)
 docker compose up -d --build
 
-# 4. 웹 대시보드 실행 (별도 스택, 독립 실행 가능)
+# 4. Launch the web dashboard (separate stack, runs independently)
 cd web
 docker compose up -d --build
 ```
 
-브라우저에서 `http://<젯슨 IP>:5173` 을 엽니다. 로그인 화면으로 이동합니다.
+Open `http://<Jetson IP>:5173` in a browser. You'll land on the login screen.
 
-- **기본 계정**: `admin` / `admin`
-- 로그인 후 대시보드 상단 **비밀번호 변경** 버튼으로 즉시 변경하세요.
+- **Default account**: `admin` / `admin`
+- After logging in, change the password immediately using the **Change Password** button at the top of the dashboard.
 
-`web` 스택은 메인 스택과 독립적으로 동작하며 공유 Docker 네트워크가 필요 없습니다. 별도 호스트에서 실행할 수 있고, 브라우저가 접속할 백엔드 위치는 로그인 화면에서 입력합니다(연결 성공 시 브라우저에 저장되어 다음 접속부터 자동 입력).
+The `web` stack runs independently of the main stack and does not require a shared Docker network. It can run on a separate host; the backend address the browser should connect to is entered on the login screen (once a connection succeeds it is stored in the browser and auto-filled on subsequent visits).
 
-Camera 패널에서 IP, 포트, 인증 정보를 입력하면 MediaMTX 소스와 PTZ 모듈에 즉시 적용되고 `config/cam_profile.json`에 저장됩니다.
+When you enter IP, port, and credentials in the Camera panel, they are applied to the MediaMTX source and the PTZ module immediately and persisted to `config/cam_profile.json`.
 
-### 인증
+### Authentication
 
-`app:8080`과 `api:8000`의 보호 엔드포인트는 JWT Bearer 토큰이 필요합니다. 토큰이 없으면 `401`을 반환합니다.
+Protected endpoints on `app:8080` and `api:8000` require a JWT Bearer token. Requests without a token return `401`.
 
-인증 예외 엔드포인트:
+Endpoints exempted from authentication:
 
 - `GET app:8080/`
 - `GET api:8000/health`
@@ -64,159 +66,159 @@ Camera 패널에서 IP, 포트, 인증 정보를 입력하면 MediaMTX 소스와
 - `POST api:8000/api/refresh`
 - `POST api:8000/api/logout`
 
-- 로그인 실패 10회 연속 → 30분 잠금
-- 액세스 토큰 유효 시간: 10분 (`JWT_EXPIRY`로 조정)
-- 리프레시 토큰 유효 시간: 30일 (`REFRESH_EXPIRY`로 조정)
+- 10 consecutive failed logins → 30-minute lockout
+- Access token lifetime: 10 minutes (adjust via `JWT_EXPIRY`)
+- Refresh token lifetime: 30 days (adjust via `REFRESH_EXPIRY`)
 
-## 디렉터리 구조
+## Directory Layout
 
 ```
 babycat/
-├── app/                        # App 컨테이너 소스
-│   ├── main.py                 # 진입점 (GStreamer + VLM + 트리거 클립 + 감시 루프)
-│   ├── camera.py               # 카메라 설정 영속화 + MediaMTX 소스 API
-│   ├── server.py               # HTTP 서버 (SSE, MJPEG, PTZ, 카메라, 클립)
-│   ├── state.py                # 공유 상태 (링 버퍼, 추론 결과, 클립 캐시)
-│   ├── hardware.py             # Jetson 하드웨어 모니터 (CPU / GPU / RAM)
-│   ├── pipeline_lifecycle.py   # 파이프라인 생성·해제·재시작
-│   ├── clip_storage.py         # 디스크 여유 공간 관리 + 오래된 클립 정리
-│   ├── trigger_clip_rollover.py # 세그먼트 롤오버 기반 클립 녹화
-│   ├── trigger_clip_diagnostics.py # 클립 메타데이터 + 진단 정보
-│   ├── ptz.py                  # ONVIF PTZ 제어
-│   ├── holder.py               # VLM 모델 싱글턴 홀더
-│   ├── vlm_worker.py           # VLM 추론 서브프로세스 (모델 전환 시 CUDA/TVM/TensorRT 메모리 회수)
-│   └── server_support.py       # 서버 보조 헬퍼 (JWT 검증, 클립 경로 해석, Range 파싱)
-├── api/                        # API 서버 소스
-│   ├── main.py                 # FastAPI 엔드포인트
-│   ├── auth.py                 # JWT 인증 + 로그인 스로틀 + 리프레시 토큰 라이프사이클
-│   ├── app_proxy.py            # App 카메라 프로파일 프록시
-│   ├── clip_support.py         # 클립 경로 해석 + Range 헤더 파싱 헬퍼
-│   ├── database.py             # SQLite (WAL) 초기화
-│   └── schemas.py              # Pydantic 스키마
-├── web/                        # 웹 대시보드 (Vue 3 + Vite)
-│   ├── docker-compose.yml      # 독립 Compose 스택
+├── app/                        # App container source
+│   ├── main.py                 # Entry point (GStreamer + VLM + trigger clip + watchdog loop)
+│   ├── camera.py               # Camera profile persistence + MediaMTX source API
+│   ├── server.py               # HTTP server (SSE, MJPEG, PTZ, camera, clips)
+│   ├── state.py                # Shared state (ring buffer, inference results, clip cache)
+│   ├── hardware.py             # Jetson hardware monitor (CPU / GPU / RAM)
+│   ├── pipeline_lifecycle.py   # Pipeline creation, teardown, restart
+│   ├── clip_storage.py         # Free-space management + old-clip pruning
+│   ├── trigger_clip_rollover.py # Segment-rollover-based clip recording
+│   ├── trigger_clip_diagnostics.py # Clip metadata + diagnostic info
+│   ├── ptz.py                  # ONVIF PTZ control
+│   ├── holder.py               # VLM model singleton holder
+│   ├── vlm_worker.py           # VLM inference subprocess (reclaims CUDA/TVM/TensorRT memory on model switch)
+│   └── server_support.py       # Server helper utilities (JWT verification, clip path resolution, Range parsing)
+├── api/                        # API server source
+│   ├── main.py                 # FastAPI endpoints
+│   ├── auth.py                 # JWT auth + login throttling + refresh-token lifecycle
+│   ├── app_proxy.py            # App camera-profile proxy
+│   ├── clip_support.py         # Clip path resolution + Range header parsing helpers
+│   ├── database.py             # SQLite (WAL) initialization
+│   └── schemas.py              # Pydantic schemas
+├── web/                        # Web dashboard (Vue 3 + Vite)
+│   ├── docker-compose.yml      # Standalone Compose stack
 │   └── src/
 │       ├── views/              # LoginView, DashboardView
 │       ├── components/         # LiveStream, ClipsPanel, CameraPanel, PromptPanel, PtzOverlay, SystemOverlay, LiveStreamSystemPanel …
 │       ├── composables/        # useAuth, useCamera, useClips, useSSE, usePtz, useTheme, useFetch, useLocale …
-│       └── i18n/               # 한국어·영어 로케일
-├── config/                     # 런타임 설정 (cam_profile.json, mediamtx.yml)
+│       └── i18n/               # Korean / English locales
+├── config/                     # Runtime configuration (cam_profile.json, mediamtx.yml)
 ├── data/
-│   ├── {YYYY}/{MM}/            # 트리거 클립 (*.mp4 + *.json 사이드카)
-│   ├── db/                     # SQLite 데이터베이스 (users, events, devices)
-│   └── models/                 # 모델 캐시 (MLC 컴파일 `.so`, HuggingFace 스냅샷, clip_trt TensorRT 엔진)
-├── docker/                     # 메인 스택 Dockerfile (app, api)
-├── tests/                      # 테스트 모음 (API, 파이프라인, 하드웨어, VLM 벤치마크)
-├── docs/                       # API 레퍼런스 + 아키텍처 경계 문서
-└── docker-compose.yml          # 메인 스택 (app + mediamtx + api)
+│   ├── {YYYY}/{MM}/            # Trigger clips (*.mp4 + *.json sidecar)
+│   ├── db/                     # SQLite database (users, events, devices)
+│   └── models/                 # Model cache (MLC-compiled `.so`, HuggingFace snapshots, clip_trt TensorRT engine)
+├── docker/                     # Main-stack Dockerfiles (app, api)
+├── tests/                      # Test suite (API, pipeline, hardware, VLM benchmarks)
+├── docs/                       # API reference + architecture boundary docs
+└── docker-compose.yml          # Main stack (app + mediamtx + api)
 ```
 
-## 기술 스택
+## Tech Stack
 
-| 영역 | 선택 |
+| Area | Choice |
 |---|---|
-| VLM 추론 | NanoLLM + VILA1.5-3b (MLC, INT4 양자화) |
-| 비디오 파이프라인 | GStreamer + nvv4l2decoder (GPU 하드웨어 디코딩) |
-| 스트리밍 | MediaMTX (RTSP / HLS / WebRTC) |
-| 알림 | FCM HTTP v1 API (OAuth 2.0) |
-| API 서버 | FastAPI + SQLite (WAL) |
-| 인증 | JWT 액세스 토큰 + 리프레시 토큰 (HMAC-SHA256, PBKDF2 패스워드 해싱) |
-| 웹 대시보드 | Vue 3 + Vite + Vue Router |
-| PTZ 제어 | ONVIF SOAP (WS-Security) |
+| VLM inference | NanoLLM + VILA1.5-3b (MLC, INT4 quantization) |
+| Video pipeline | GStreamer + nvv4l2decoder (GPU hardware decoding) |
+| Streaming | MediaMTX (RTSP / HLS / WebRTC) |
+| Notifications | FCM HTTP v1 API (OAuth 2.0) |
+| API server | FastAPI + SQLite (WAL) |
+| Authentication | JWT access token + refresh token (HMAC-SHA256, PBKDF2 password hashing) |
+| Web dashboard | Vue 3 + Vite + Vue Router |
+| PTZ control | ONVIF SOAP (WS-Security) |
 
-## API 개요
+## API Overview
 
 ### App (:8080)
 
-| Method | Path | 설명 |
+| Method | Path | Description |
 |---|---|---|
-| GET | `/` | 헬스 체크 |
-| GET | `/events` | SSE (실시간 추론 결과 + 하드웨어 상태) |
-| GET | `/stream` | MJPEG 스트림 (VLM 입력 프레임) |
-| GET | `/camera` | 카메라 설정 조회 |
-| POST | `/camera` | 카메라 설정 적용 (변경 시 GStreamer 파이프라인 재시작) |
-| POST | `/prompt` | VLM 프롬프트 / 트리거 키워드 갱신 |
-| POST | `/ptz` | PTZ 제어 (move / stop / save / goto) |
-| POST | `/vlm/switch` | VLM 모델 전환 요청 |
-| GET | `/clips` | 클립 목록 조회 |
-| GET | `/clip/{name}` | 클립 다운로드 (Range 지원) |
-| DELETE | `/clips` | 선택 클립 삭제 (`.json` 사이드카 함께 삭제) |
+| GET | `/` | Health check |
+| GET | `/events` | SSE (live inference results + hardware status) |
+| GET | `/stream` | MJPEG stream (VLM input frames) |
+| GET | `/camera` | Get camera profile |
+| POST | `/camera` | Apply camera profile (restarts the GStreamer pipeline on change) |
+| POST | `/prompt` | Update VLM prompt / trigger keywords |
+| POST | `/ptz` | PTZ control (move / stop / save / goto) |
+| POST | `/vlm/switch` | Request a VLM model switch |
+| GET | `/clips` | List clips |
+| GET | `/clip/{name}` | Download clip (Range supported) |
+| DELETE | `/clips` | Delete selected clips (also removes the `.json` sidecar) |
 
-`/stream`과 `/events`는 `Authorization` 헤더를 설정할 수 없는 클라이언트(예: `EventSource`)를 위해 `?token=<jwt>` 쿼리 파라미터도 허용합니다.
+`/stream` and `/events` also accept a `?token=<jwt>` query parameter for clients that cannot set the `Authorization` header (e.g. `EventSource`).
 
 ### API Server (:8000)
 
-| Method | Path | 인증 | 설명 |
+| Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/login` | 불필요 | 로그인 (JWT 반환) |
-| POST | `/api/refresh` | 불필요 | 리프레시 토큰 교체 + 새 액세스 토큰 발급 |
-| POST | `/api/logout` | 불필요 | 리프레시 토큰 폐기 |
-| POST | `/api/change-password` | 필요 | 비밀번호 변경 |
-| GET | `/health` | 불필요 | 헬스 체크 |
-| GET | `/camera` | 필요 | 카메라 프로파일 조회 (App 프록시) |
-| POST | `/camera` | 필요 | 카메라 프로파일 적용 (App 프록시) |
-| GET | `/clips` | 필요 | 클립 목록 |
-| GET | `/clips/{name}` | 필요 | 클립 다운로드 (Range 지원) |
-| DELETE | `/clips` | 필요 | 선택 클립 삭제 |
-| DELETE | `/clips/all` | 필요 | 전체 클립 삭제 |
-| GET/POST/DELETE | `/events` | 필요 | 이벤트 이력 CRUD |
-| GET/POST | `/devices` | 필요 | FCM 디바이스 토큰 관리 |
-| DELETE | `/devices/{device_id}` | 필요 | 디바이스 토큰 삭제 |
+| POST | `/api/login` | none | Log in (returns JWT) |
+| POST | `/api/refresh` | none | Rotate refresh token + issue a new access token |
+| POST | `/api/logout` | none | Revoke refresh token |
+| POST | `/api/change-password` | required | Change password |
+| GET | `/health` | none | Health check |
+| GET | `/camera` | required | Get camera profile (App proxy) |
+| POST | `/camera` | required | Apply camera profile (App proxy) |
+| GET | `/clips` | required | List clips |
+| GET | `/clips/{name}` | required | Download clip (Range supported) |
+| DELETE | `/clips` | required | Delete selected clips |
+| DELETE | `/clips/all` | required | Delete all clips |
+| GET/POST/DELETE | `/events` | required | Event history CRUD |
+| GET/POST | `/devices` | required | Manage FCM device tokens |
+| DELETE | `/devices/{device_id}` | required | Delete device token |
 
-전체 스키마 레퍼런스: [docs/api.md](docs/api.md)
+Full schema reference: [docs/api.md](docs/api.md)
 
-아키텍처 경계 가이드: [docs/architecture-boundaries.md](docs/architecture-boundaries.md)
+Architecture boundary guide: [docs/architecture-boundaries.md](docs/architecture-boundaries.md)
 
-## 환경 변수
+## Environment Variables
 
-### 공통
+### Common
 
-| 변수 | 기본값 | 설명 |
+| Variable | Default | Description |
 |---|---|---|
-| `JWT_SECRET` | `babycat-default-secret` | JWT 서명 키 (App과 API 컨테이너 간 동일해야 함) |
-| `HOST_IP` | — | MediaMTX가 WebRTC ICE 후보로 광고할 호스트 IP. 복수 IP는 쉼표로 구분 |
+| `JWT_SECRET` | `babycat-default-secret` | JWT signing key (must match between App and API containers) |
+| `HOST_IP` | — | Host IP that MediaMTX advertises as a WebRTC ICE candidate. Comma-separated for multiple IPs |
 
 ### App
 
-| 변수 | 기본값 | 설명 |
+| Variable | Default | Description |
 |---|---|---|
-| `MEDIAMTX_URL` | `rtsp://mtx:8554/live` | MediaMTX RTSP URL (Compose 서비스명 `mtx`) |
-| `VLM_MODELS` | `Efficient-Large-Model/VILA1.5-3b` | 쉼표 구분 VLM 모델 ID 목록. 첫 번째가 부팅 기본값 |
-| `TARGET_FPS` | `1.0` | 프레임 샘플링 FPS |
-| `N_FRAMES` | `4` | 추론 1회당 프레임 수 |
-| `RING_SIZE` | `30` | 링 버퍼 크기 (프레임) |
-| `TRIGGER_COOLDOWN` | `30` | 트리거 클립 최소 간격 (초) |
-| `TRIGGER_CLIP_DUR` | `5` | 트리거 클립 길이 (초) |
-| `CLIP_MIN_FREE_MB` | `256` | 클립 녹화 전 최소 여유 디스크 (MB) |
-| `CLIP_TARGET_FREE_MB` | `512` | 공간 확보 정리 목표 여유량 (MB) |
-| `CLIP_PRUNE_MAX_FILES` | `20` | 1회 정리 패스당 최대 삭제 클립 수 |
-| `CONFIG_PATH` | `/config/cam_profile.json` | 카메라 프로파일 파일 경로 |
-| `DATA_DIR` | `/data` | 트리거 클립 기본 디렉터리 (`{YYYY}/{MM}/` 하위 생성) |
-| `FCM_CREDENTIALS` | — | FCM 서비스 계정 JSON 파일 경로 |
-| `FCM_TOKEN` | — | 대상 디바이스 FCM 토큰 |
-| `TRIGGER_ROLLOVER_ENABLED` | `0` | `1`로 설정 시 세그먼트 롤오버 기반 클립 녹화 활성화 |
-| `TRIGGER_SEGMENT_DIR` | `/run/babycat-segments/live` | 롤오버 세그먼트 임시 저장 디렉터리 (tmpfs 권장) |
+| `MEDIAMTX_URL` | `rtsp://mtx:8554/live` | MediaMTX RTSP URL (Compose service name `mtx`) |
+| `VLM_MODELS` | `Efficient-Large-Model/VILA1.5-3b` | Comma-separated VLM model IDs. The first entry is the boot default |
+| `TARGET_FPS` | `1.0` | Frame sampling FPS |
+| `N_FRAMES` | `4` | Frames per inference call |
+| `RING_SIZE` | `30` | Ring buffer size (frames) |
+| `TRIGGER_COOLDOWN` | `30` | Minimum interval between trigger clips (seconds) |
+| `TRIGGER_CLIP_DUR` | `5` | Trigger clip duration (seconds) |
+| `CLIP_MIN_FREE_MB` | `256` | Minimum free disk required before recording a clip (MB) |
+| `CLIP_TARGET_FREE_MB` | `512` | Free-space target after cleanup (MB) |
+| `CLIP_PRUNE_MAX_FILES` | `20` | Maximum clips deleted per cleanup pass |
+| `CONFIG_PATH` | `/config/cam_profile.json` | Camera profile file path |
+| `DATA_DIR` | `/data` | Base directory for trigger clips (created under `{YYYY}/{MM}/`) |
+| `FCM_CREDENTIALS` | — | Path to the FCM service-account JSON file |
+| `FCM_TOKEN` | — | Target device FCM token |
+| `TRIGGER_ROLLOVER_ENABLED` | `0` | Set to `1` to enable segment-rollover-based clip recording |
+| `TRIGGER_SEGMENT_DIR` | `/run/babycat-segments/live` | Temporary directory for rollover segments (tmpfs recommended) |
 
 ### API Server
 
-| 변수 | 기본값 | 설명 |
+| Variable | Default | Description |
 |---|---|---|
-| `CAM_DIR` | `/data` | 클립 조회 기준 디렉터리 (App의 `DATA_DIR`과 동일 볼륨) |
-| `DB_PATH` | `/data/db/babycat.db` | SQLite 데이터베이스 경로 |
-| `JWT_EXPIRY` | `600` | 액세스 토큰 유효 시간 (초) |
-| `REFRESH_EXPIRY` | `2592000` | 리프레시 토큰 유효 시간 (초) |
-| `DEFAULT_USER` | `admin` | 최초 부팅 시 생성되는 관리자 계정 이름 |
-| `DEFAULT_PASS` | `admin` | 최초 부팅 시 생성되는 관리자 비밀번호 |
-| `BABYCAT_APP_URL` | `http://app:8080` | 카메라 프록시가 사용하는 App 내부 URL (Compose 서비스명 `app`) |
-| `CORS_EXTRA_ORIGINS` | — | API 서버에 추가 허용할 CORS 오리진 |
+| `CAM_DIR` | `/data` | Base directory for clip lookups (same volume as App's `DATA_DIR`) |
+| `DB_PATH` | `/data/db/babycat.db` | SQLite database path |
+| `JWT_EXPIRY` | `600` | Access token lifetime (seconds) |
+| `REFRESH_EXPIRY` | `2592000` | Refresh token lifetime (seconds) |
+| `DEFAULT_USER` | `admin` | Admin account seeded on first boot |
+| `DEFAULT_PASS` | `admin` | Admin password seeded on first boot |
+| `BABYCAT_APP_URL` | `http://app:8080` | Internal App URL used by the camera proxy (Compose service name `app`) |
+| `CORS_EXTRA_ORIGINS` | — | Additional CORS origins to allow on the API server |
 
-## 알려진 제한 사항
+## Known Limitations
 
-| 항목 | 내용 |
+| Item | Detail |
 |---|---|
-| VLM 추론 지연 | Jetson Orin NX 16 GB 기준: 1프레임 ~1700 ms, 4프레임 ~4200 ms. 16 GB 보드에서는 CLIP TensorRT 내부 임계값(20 GB) 미달로 Transformers 폴백이 적용됨 |
-| VLM 출력 형식 | VILA1.5-3b는 `DETECTED:XX` 같은 엄격한 출력 양식을 일관되게 따르지 않음. 자유 형식 생성 후 트리거 키워드 매칭 방식이 실제로 더 안정적 |
-| 컨테이너 GPU 디코딩 | 컨테이너 내부에서 `nvv4l2decoder`를 사용하려면 `kmod` 패키지가 필요함. `lsmod`가 없으면 GStreamer가 `cuvidv4l2`로 폴백하는데, Jetson iGPU에서는 이 경로가 실패함 |
+| VLM inference latency | On Jetson Orin NX 16 GB: ~1700 ms for 1 frame, ~4200 ms for 4 frames. On a 16 GB board the CLIP TensorRT internal threshold (20 GB) is not met, so the Transformers fallback is used |
+| VLM output format | VILA1.5-3b does not reliably follow strict output formats such as `DETECTED:XX`. Free-form generation followed by trigger-keyword matching is more stable in practice |
+| In-container GPU decoding | Using `nvv4l2decoder` inside a container requires the `kmod` package. Without `lsmod`, GStreamer falls back to `cuvidv4l2`, which fails on the Jetson iGPU |
 
-## 라이선스
+## License
 GNU General Public License v3.0 (GPL-3.0)
