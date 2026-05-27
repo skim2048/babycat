@@ -1,9 +1,8 @@
 // Reactive shared state, hydrated by SSE.
 //
-// Components read directly from `state`. The SSE channel pushes playlist,
-// mode, and settings updates. The library is fetched once at boot via
-// `refreshLibrary()` because the backend does not currently emit a
-// library-changed event.
+// Components read directly from `state`. The SSE channel pushes library,
+// playlist, mode, and settings updates. The initial subscription includes
+// a snapshot of all four so the UI hydrates from a single connection.
 
 import { reactive } from 'vue'
 import { api, getApiBase } from './api.js'
@@ -23,19 +22,8 @@ export const state = reactive({
 let eventSource = null
 let reconnectTimer = null
 
-export async function refreshLibrary() {
-  try {
-    const res = await api.getLibrary()
-    state.library = res.tree
-    state.libraryError = ''
-  } catch (e) {
-    state.libraryError = String(e)
-  }
-}
-
 export function connect() {
   if (eventSource) return
-  refreshLibrary()
   openStream()
 }
 
@@ -63,6 +51,30 @@ export async function removeCheckedFromPlaylist() {
   } catch (e) {
     state.mutationError = String(e)
   }
+}
+
+async function safeCall(fn) {
+  state.mutationError = ''
+  try {
+    await fn()
+  } catch (e) {
+    state.mutationError = String(e)
+  }
+}
+
+export const playback = {
+  play: () => safeCall(() => api.play()),
+  stop: () => safeCall(() => api.stop()),
+  next: () => safeCall(() => api.next()),
+  prev: () => safeCall(() => api.prev()),
+  toggleShuffle: () =>
+    safeCall(() => api.setMode({ shuffle: !(state.mode?.shuffle ?? false) })),
+  cycleRepeat: () => {
+    const order = ['off', 'all', 'one']
+    const current = state.mode?.repeat ?? 'off'
+    const next = order[(order.indexOf(current) + 1) % order.length]
+    return safeCall(() => api.setMode({ repeat: next }))
+  },
 }
 
 function openStream() {
@@ -97,7 +109,8 @@ function openStream() {
     } catch {
       return
     }
-    if (ev.type === 'playlist') state.playlist = ev.playlist
+    if (ev.type === 'library') state.library = ev.tree
+    else if (ev.type === 'playlist') state.playlist = ev.playlist
     else if (ev.type === 'mode') state.mode = ev.mode
     else if (ev.type === 'settings') state.settings = ev.settings
   }

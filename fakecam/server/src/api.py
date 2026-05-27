@@ -151,6 +151,7 @@ def build_app(
         async def gen():
             q = event_bus.subscribe()
             try:
+                yield _format({"type": "library", "tree": library.scan(videos_dir).model_dump()})
                 yield _format({"type": "playlist", "playlist": playback.state().model_dump()})
                 yield _format({"type": "mode", "mode": playback.mode().model_dump()})
                 yield _format({"type": "settings", "settings": settings_store.get().model_dump()})

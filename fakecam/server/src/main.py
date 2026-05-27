@@ -18,8 +18,10 @@ import threading
 import uvicorn
 from gi.repository import GLib
 
+from . import library
 from .api import build_app
 from .events import EventBus
+from .library_watcher import LibraryWatcher
 from .playback import PlaybackController
 from .playlist import PlaylistStore
 from .rtsp_server import RtspServer
@@ -92,6 +94,13 @@ def main() -> None:
         event_bus.publish({"type": "playlist", "playlist": playback.state().model_dump()})
 
     playlist.subscribe(on_playlist_change)
+
+    def on_library_change():
+        tree = library.scan(videos_dir)
+        event_bus.publish({"type": "library", "tree": tree.model_dump()})
+
+    watcher = LibraryWatcher(videos_dir, on_library_change)
+    watcher.start()
 
     glib_loop = GLib.MainLoop()
     glib_thread = threading.Thread(

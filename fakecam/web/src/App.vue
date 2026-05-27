@@ -3,6 +3,7 @@ import { getApiBase } from './api.js'
 import { state } from './state.js'
 import FileTree from './components/FileTree.vue'
 import Playlist from './components/Playlist.vue'
+import BottomControls from './components/BottomControls.vue'
 
 const apiBase = getApiBase()
 </script>
@@ -20,6 +21,7 @@ const apiBase = getApiBase()
       <FileTree class="pane left" />
       <Playlist class="pane right" />
     </main>
+    <BottomControls />
   </div>
 </template>
 
