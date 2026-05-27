@@ -1,7 +1,8 @@
+name: fakecam
+
 services:
-  fakecam-server:
+  backend:
     build: ./server
-    container_name: fakecam-server
     network_mode: host
     volumes:
       - ./videos:/videos:ro

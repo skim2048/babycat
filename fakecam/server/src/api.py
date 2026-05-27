@@ -1,29 +1,44 @@
 """FastAPI app builder.
 
-Phase 1 surface:
-  - GET  /api/library          tree of mp4 files under VIDEOS_DIR
-  - GET  /api/settings         current settings snapshot
-  - PUT  /api/settings         partial update; persists to disk
-  - POST /api/_debug/play      Phase 1 only: { "path": "<rel>" } → stream
-  - POST /api/_debug/stop      Phase 1 only: clear current stream
+Phase 2 surface:
+  - GET  /api/library            tree of mp4 files under VIDEOS_DIR
+  - GET  /api/settings           current settings snapshot
+  - PUT  /api/settings           partial update; persists to disk
+  - GET  /api/playlist           current playlist + playback flag
+  - POST /api/playlist/add       add by paths (duplicates ignored)
+  - POST /api/playlist/remove    remove by paths
+  - POST /api/playback/play      start from first item
+  - POST /api/playback/stop      stop and reset to head
+  - POST /api/playback/next      advance per mode
+  - POST /api/playback/prev      step back per mode
+  - PUT  /api/playback/mode      update shuffle/repeat
+  - GET  /api/events             SSE: playlist / mode / settings updates
 
-The _debug endpoints exist so VLC can verify single-file RTSP output
-before the playlist + playback module land in Phase 2. They will be
-removed when the proper /api/playback endpoints take over.
+Mutations that require an idle RTSP session (transport-level settings,
+playlist add/remove during playback) return 409 Conflict.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from . import library
+from .events import EventBus
+from .playback import PlaybackController
+from .playlist import PlaylistStore
 from .rtsp_server import RtspServer
 from .schemas import (
     LibraryResponse,
+    PlaybackMode,
+    PlaybackModeUpdate,
     PlaylistMutation,
+    PlaylistState,
     Settings,
     SettingsUpdate,
 )
@@ -32,14 +47,19 @@ from .settings import SettingsStore
 
 log = logging.getLogger(__name__)
 
+TRANSPORT_FIELDS = ("port", "rtsp_path", "auth_user", "auth_password")
+
 
 def build_app(
     *,
     videos_dir: str,
     settings_store: SettingsStore,
     rtsp_server: RtspServer,
+    playlist: PlaylistStore,
+    playback: PlaybackController,
+    event_bus: EventBus,
 ) -> FastAPI:
-    app = FastAPI(title="fakecam", version="0.1.0")
+    app = FastAPI(title="fakecam", version="0.2.0")
 
     app.add_middleware(
         CORSMiddleware,
@@ -49,9 +69,17 @@ def build_app(
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    async def _capture_loop() -> None:
+        event_bus.attach_loop(asyncio.get_running_loop())
+
+    # ── library ──────────────────────────────────────────────────────────────
+
     @app.get("/api/library", response_model=LibraryResponse)
     def get_library() -> LibraryResponse:
         return LibraryResponse(tree=library.scan(videos_dir))
+
+    # ── settings ─────────────────────────────────────────────────────────────
 
     @app.get("/api/settings", response_model=Settings)
     def get_settings() -> Settings:
@@ -59,22 +87,88 @@ def build_app(
 
     @app.put("/api/settings", response_model=Settings)
     def put_settings(patch: SettingsUpdate) -> Settings:
+        if playback.is_playing():
+            patch_data = patch.model_dump(exclude_none=True)
+            if patch_data:
+                # @claude Any change while playing is rejected; the UI is expected to
+                # @claude stop playback first per the 사용자 사양.
+                raise HTTPException(
+                    status_code=409,
+                    detail="settings cannot change while playing; stop first",
+                )
         return settings_store.update(patch)
 
-    @app.post("/api/_debug/play")
-    def debug_play(body: PlaylistMutation) -> dict:
-        if not body.paths:
-            raise HTTPException(status_code=400, detail="paths must not be empty")
-        rel = body.paths[0]
-        abs_path = library.resolve(videos_dir, rel)
-        if abs_path is None:
-            raise HTTPException(status_code=404, detail=f"not found or not an mp4: {rel}")
-        rtsp_server.set_current(abs_path)
-        return {"ok": True, "current": rel}
+    # ── playlist ─────────────────────────────────────────────────────────────
 
-    @app.post("/api/_debug/stop")
-    def debug_stop() -> dict:
-        rtsp_server.clear_current()
-        return {"ok": True}
+    @app.get("/api/playlist", response_model=PlaylistState)
+    def get_playlist() -> PlaylistState:
+        return playback.state()
+
+    @app.post("/api/playlist/add", response_model=PlaylistState)
+    def add_to_playlist(body: PlaylistMutation) -> PlaylistState:
+        if playback.is_playing():
+            raise HTTPException(status_code=409, detail="cannot mutate playlist while playing")
+        playlist.add(body.paths, videos_dir)
+        return playback.state()
+
+    @app.post("/api/playlist/remove", response_model=PlaylistState)
+    def remove_from_playlist(body: PlaylistMutation) -> PlaylistState:
+        if playback.is_playing():
+            raise HTTPException(status_code=409, detail="cannot mutate playlist while playing")
+        playlist.remove(body.paths)
+        return playback.state()
+
+    # ── playback ─────────────────────────────────────────────────────────────
+
+    @app.post("/api/playback/play", response_model=PlaylistState)
+    def play() -> PlaylistState:
+        playback.play()
+        return playback.state()
+
+    @app.post("/api/playback/stop", response_model=PlaylistState)
+    def stop() -> PlaylistState:
+        playback.stop()
+        return playback.state()
+
+    @app.post("/api/playback/next", response_model=PlaylistState)
+    def next_() -> PlaylistState:
+        playback.next()
+        return playback.state()
+
+    @app.post("/api/playback/prev", response_model=PlaylistState)
+    def prev_() -> PlaylistState:
+        playback.prev()
+        return playback.state()
+
+    @app.put("/api/playback/mode", response_model=PlaybackMode)
+    def put_mode(body: PlaybackModeUpdate) -> PlaybackMode:
+        return playback.set_mode(shuffle=body.shuffle, repeat=body.repeat)
+
+    # ── SSE ──────────────────────────────────────────────────────────────────
+
+    @app.get("/api/events")
+    async def events(request: Request):
+        async def gen():
+            q = event_bus.subscribe()
+            try:
+                yield _format({"type": "playlist", "playlist": playback.state().model_dump()})
+                yield _format({"type": "mode", "mode": playback.mode().model_dump()})
+                yield _format({"type": "settings", "settings": settings_store.get().model_dump()})
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.wait_for(q.get(), timeout=15.0)
+                        yield _format(event)
+                    except asyncio.TimeoutError:
+                        yield b": keepalive\n\n"
+            finally:
+                event_bus.unsubscribe(q)
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
 
     return app
+
+
+def _format(event: dict) -> bytes:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()

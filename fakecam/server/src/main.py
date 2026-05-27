@@ -19,6 +19,9 @@ import uvicorn
 from gi.repository import GLib
 
 from .api import build_app
+from .events import EventBus
+from .playback import PlaybackController
+from .playlist import PlaylistStore
 from .rtsp_server import RtspServer
 from .settings import SettingsStore
 
@@ -34,7 +37,7 @@ def main() -> None:
     )
 
     videos_dir = os.environ.get("VIDEOS_DIR", "/videos")
-    state_path = os.environ.get("STATE_PATH", "/state.json")
+    state_path = os.environ.get("STATE_PATH", "/state/state.json")
     api_port = int(os.environ.get("API_PORT", "8090"))
 
     log.info("=== fakecam server start ===")
@@ -48,18 +51,21 @@ def main() -> None:
     rtsp_server.start(initial)
     prev_settings = initial
 
+    playlist = PlaylistStore()
+    playback = PlaybackController(playlist, rtsp_server, videos_dir)
+    event_bus = EventBus()
+    rtsp_server.set_eos_callback(playback.on_natural_eos)
+
     def on_settings_change(new):
-        # @claude Restart RTSP server when transport-level fields change;
-        # @claude encoding fields are picked up by apply_settings without a restart.
         nonlocal prev_settings
         rtsp_server.apply_settings(new)
-        transport_changed = (
-            prev_settings.port != new.port
-            or prev_settings.rtsp_path != new.rtsp_path
-            or prev_settings.auth_user != new.auth_user
-            or prev_settings.auth_password != new.auth_password
+        transport_changed = any(
+            getattr(prev_settings, f) != getattr(new, f) for f in (
+                "port", "rtsp_path", "auth_user", "auth_password",
+            )
         )
         prev_settings = new
+        event_bus.publish({"type": "settings", "settings": new.model_dump()})
         if transport_changed:
             log.info("settings: transport-level change — restarting RTSP server")
             try:
@@ -68,6 +74,12 @@ def main() -> None:
                 log.exception("RTSP server restart failed")
 
     settings_store.subscribe(on_settings_change)
+
+    def on_playback_state(state, mode):
+        event_bus.publish({"type": "playlist", "playlist": state.model_dump()})
+        event_bus.publish({"type": "mode", "mode": mode.model_dump()})
+
+    playback.subscribe(on_playback_state)
 
     glib_loop = GLib.MainLoop()
     glib_thread = threading.Thread(
@@ -79,6 +91,9 @@ def main() -> None:
         videos_dir=videos_dir,
         settings_store=settings_store,
         rtsp_server=rtsp_server,
+        playlist=playlist,
+        playback=playback,
+        event_bus=event_bus,
     )
 
     try:

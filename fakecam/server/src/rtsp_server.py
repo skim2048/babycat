@@ -62,6 +62,11 @@ class RtspServer:
         self._attach_id: Optional[int] = None
         self._settings: Optional[Settings] = None
         self._current_path: Optional[Path] = None
+        self._eos_callback: Optional[Callable[[], None]] = None
+
+    def set_eos_callback(self, cb: Callable[[], None]) -> None:
+        """Register a hook invoked from the GLib thread on pipeline EOS."""
+        self._eos_callback = cb
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -98,6 +103,8 @@ class RtspServer:
 
             mounts = server.get_mount_points()
             mounts.add_factory(settings.rtsp_path, factory)
+
+            factory.connect("media-configure", self._on_media_configure)
 
             self._attach_id = server.attach(None)
             self._server = server
@@ -155,3 +162,17 @@ class RtspServer:
             if self._current_path is None or self._settings is None:
                 return None
             return pipeline.build_launch(str(self._current_path), self._settings)
+
+    def _on_media_configure(self, _factory, media) -> None:
+        pipeline_elem = media.get_element()
+        bus = pipeline_elem.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::eos", self._on_bus_eos)
+
+    def _on_bus_eos(self, _bus, _msg) -> None:
+        cb = self._eos_callback
+        if cb is not None:
+            try:
+                cb()
+            except Exception:
+                log.exception("EOS callback failed")
