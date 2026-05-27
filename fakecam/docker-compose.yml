@@ -1,0 +1,13 @@
+services:
+  fakecam-server:
+    build: ./server
+    container_name: fakecam-server
+    network_mode: host
+    volumes:
+      - ./videos:/videos:ro
+      - ./server/state:/state
+    environment:
+      - VIDEOS_DIR=/videos
+      - STATE_PATH=/state/state.json
+      - API_PORT=8090
+    restart: unless-stopped
