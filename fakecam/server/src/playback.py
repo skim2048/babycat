@@ -175,6 +175,7 @@ class PlaybackController:
     def on_advance(self) -> None:
         """Called when concat advanced to the previously-queued input."""
         items = self._playlist.get()
+        new_initial: Path | None = None
         new_path: Path | None = None
         broadcast = False
         with self._lock:
@@ -187,10 +188,17 @@ class PlaybackController:
             self._cursor = self._queued_cursor
             self._queued_cursor = None
             broadcast = True
+            # @claude Sync the RTSP factory's initial source so that if VLC
+            # @claude disconnects and reconnects mid-playlist, the freshly-built
+            # @claude media resumes from the same logical position rather than
+            # @claude restarting from the original first item.
+            new_initial = self._resolve_at(items, self._order[self._cursor])
             lookahead = self._lookahead_locked(items)
             if lookahead is not None:
                 self._queued_cursor = lookahead
                 new_path = self._resolve_at(items, self._order[lookahead])
+        if new_initial is not None:
+            self._rtsp_server.set_initial(new_initial)
         if new_path is not None:
             self._rtsp_server.enqueue_next(new_path)
         if broadcast:

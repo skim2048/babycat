@@ -1,57 +1,43 @@
 <script setup>
-import { onMounted, ref } from 'vue'
-import { api, getApiBase } from './api.js'
+import { getApiBase } from './api.js'
+import { state } from './state.js'
+import FileTree from './components/FileTree.vue'
+import Playlist from './components/Playlist.vue'
 
-const apiBase = ref(getApiBase())
-const loading = ref(true)
-const error = ref('')
-const playlist = ref(null)
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    playlist.value = await api.getPlaylist()
-  } catch (e) {
-    error.value = String(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
+const apiBase = getApiBase()
 </script>
 
 <template>
-  <main>
-    <header>
+  <div class="app">
+    <header class="topbar">
       <h1>fakecam</h1>
-      <p class="meta">API base: <code>{{ apiBase }}</code></p>
+      <span class="meta">API: <code>{{ apiBase }}</code></span>
+      <span class="conn" :class="{ ok: state.sseConnected }">
+        {{ state.sseConnected ? '● 실시간' : '○ 연결 끊김' }}
+      </span>
     </header>
-
-    <section>
-      <button @click="load" :disabled="loading">{{ loading ? 'Loading…' : 'Reload /api/playlist' }}</button>
-    </section>
-
-    <section v-if="error" class="error">
-      <h2>Error</h2>
-      <pre>{{ error }}</pre>
-    </section>
-
-    <section v-else>
-      <h2>/api/playlist response</h2>
-      <pre>{{ JSON.stringify(playlist, null, 2) }}</pre>
-    </section>
-  </main>
+    <main class="panes">
+      <FileTree class="pane left" />
+      <Playlist class="pane right" />
+    </main>
+  </div>
 </template>
 
-<style>
-body { font-family: system-ui, sans-serif; margin: 0; background: #111; color: #eee; }
-main { max-width: 960px; margin: 0 auto; padding: 24px; }
-header h1 { margin: 0 0 4px; }
-.meta { color: #888; font-size: 0.9em; }
-button { padding: 8px 16px; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; }
-button:disabled { opacity: 0.5; cursor: default; }
-pre { background: #1a1a1a; padding: 12px; border-radius: 4px; overflow: auto; }
-.error pre { color: #f88; }
+<style scoped>
+.app { display: flex; flex-direction: column; height: 100%; }
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.topbar h1 { margin: 0; font-size: 16px; font-weight: 600; }
+.topbar .meta { color: var(--text-3); font-size: 12px; flex: 1; }
+.topbar .meta code { color: var(--text-2); font-size: 12px; }
+.topbar .conn { color: var(--text-4); font-size: 12px; }
+.topbar .conn.ok { color: var(--accent); }
+.panes { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+.pane.left { border-right: 1px solid var(--border); }
 </style>
