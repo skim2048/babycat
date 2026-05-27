@@ -83,6 +83,16 @@ def main() -> None:
 
     playback.subscribe(on_playback_state)
 
+    def on_playlist_change(_items):
+        # @claude PlaylistStore mutations (add/remove) only flow through
+        # @claude PlaybackController._broadcast while playing; when stopped the
+        # @claude controller's listener returns early. Subscribe to the store
+        # @claude directly so SSE clients see add/remove immediately even when
+        # @claude playback is idle.
+        event_bus.publish({"type": "playlist", "playlist": playback.state().model_dump()})
+
+    playlist.subscribe(on_playlist_change)
+
     glib_loop = GLib.MainLoop()
     glib_thread = threading.Thread(
         target=glib_loop.run, daemon=True, name="glib-mainloop"

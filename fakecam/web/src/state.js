@@ -15,6 +15,9 @@ export const state = reactive({
   settings: null,
   sseConnected: false,
   libraryError: '',
+  treeChecked: new Set(),
+  playlistChecked: new Set(),
+  mutationError: '',
 })
 
 let eventSource = null
@@ -34,6 +37,32 @@ export function connect() {
   if (eventSource) return
   refreshLibrary()
   openStream()
+}
+
+export async function addCheckedToPlaylist() {
+  const paths = Array.from(state.treeChecked)
+  if (paths.length === 0) return
+  state.mutationError = ''
+  try {
+    await api.addToPlaylist(paths)
+  } catch (e) {
+    state.mutationError = String(e)
+  }
+}
+
+export async function removeCheckedFromPlaylist() {
+  const paths = Array.from(state.playlistChecked)
+  if (paths.length === 0) return
+  state.mutationError = ''
+  try {
+    await api.removeFromPlaylist(paths)
+    // @claude Backend removed those items; drop their check entries so the
+    // @claude trash button doesn't keep stale references the user can no
+    // @claude longer see.
+    paths.forEach((p) => state.playlistChecked.delete(p))
+  } catch (e) {
+    state.mutationError = String(e)
+  }
 }
 
 function openStream() {
