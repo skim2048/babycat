@@ -11,4 +11,11 @@ services:
       - VIDEOS_DIR=/videos
       - STATE_PATH=/state/state.json
       - API_PORT=8090
+
+  web:
+    build: ./web
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./web:/app
     restart: unless-stopped
