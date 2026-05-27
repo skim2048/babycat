@@ -43,6 +43,38 @@ log = logging.getLogger(__name__)
 _ROLE = "fakecam-user"
 
 
+def _find_source_via_upstream(start_pad: Gst.Pad) -> Optional[Gst.Element]:
+    """Walk upstream from a source pad to find the chain's source element.
+
+    Handles both shapes of input chain:
+      - the initial parse_launch chain (flat elements in the outer bin)
+      - dynamically built chains (Gst.Bin with a ghost src pad)
+    by following sink-pad → peer src pad → element transitions until an
+    element with no sink pad is reached. Ghost pads are unwrapped to their
+    targets so the walk descends into chain bins transparently.
+    """
+    current: Optional[Gst.Pad] = start_pad
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, Gst.GhostPad):
+            target = current.get_target()
+            if target is not None:
+                current = target
+                continue
+        elem = current.get_parent_element()
+        if elem is None:
+            return None
+        sink = elem.get_static_pad("sink")
+        if sink is None:
+            return elem
+        peer = sink.get_peer()
+        if peer is None:
+            return None
+        current = peer
+    return None
+
+
 def _build_input_chain(file_path: str) -> Optional[Gst.Bin]:
     """Build an input chain as a Gst.Bin with a single ghost `src` pad.
 
@@ -247,6 +279,13 @@ class RtspServer:
         """Drop the queue and EOS the active input. Used to satisfy stop()."""
         GLib.idle_add(self._do_stop_streaming)
 
+    def restart_media(self) -> None:
+        """Unprepare the active media so the next client connection rebuilds
+        with whatever `set_initial` currently points at. Used by user-driven
+        jumps (prev / mode change) that cannot be expressed as a force_advance
+        on the already-queued lookahead."""
+        GLib.idle_add(self._do_restart_media)
+
     def apply_settings(self, settings: Settings) -> None:
         """Capture new encoding/transport fields. Applied on next media creation."""
         with self._lock:
@@ -286,10 +325,30 @@ class RtspServer:
             session.pipeline.remove(chain)
             session.concat.release_request_pad(sink_pad)
             return False
-        chain.sync_state_with_parent()
+        # @claude Drive the chain to PLAYING explicitly. sync_state_with_parent
+        # @claude returns a bool that hides whether a transition was queued; if
+        # @claude sync returns "no change" the subsequent get_state has nothing
+        # @claude to wait for and the chain stays in READY, which leaves the
+        # @claude dynamic qtdemux pad disconnected. set_state surfaces ASYNC vs
+        # @claude SUCCESS so we can actually block on completion.
+        change = chain.set_state(Gst.State.PLAYING)
+        if change == Gst.StateChangeReturn.FAILURE:
+            log.error("enqueue_next: set_state(PLAYING) failed; cleaning up")
+            session.pipeline.remove(chain)
+            session.concat.release_request_pad(sink_pad)
+            return False
+        ret, current, pending = chain.get_state(5 * Gst.SECOND)
+        if current != Gst.State.PLAYING:
+            log.warning(
+                "enqueue_next: chain only reached %s (pending=%s, ret=%s) after 5s",
+                current.value_nick, pending.value_nick, ret.value_nick,
+            )
         session.queued_bin = chain
         session.queued_sink_pad = sink_pad
-        log.info("enqueued next: %s (pad=%s)", abs_path, sink_pad.get_name())
+        log.info(
+            "enqueued next: %s (pad=%s, state=%s, change=%s)",
+            abs_path, sink_pad.get_name(), current.value_nick, change.value_nick,
+        )
         return False  # @claude single-shot idle_add
 
     def _do_force_advance(self) -> bool:
@@ -303,8 +362,21 @@ class RtspServer:
         peer = active.get_peer()
         if peer is None:
             return False
-        log.info("force_advance: EOS on %s", active.get_name())
-        peer.send_event(Gst.Event.new_eos())
+        # @claude Sending EOS to the ghost src pad from the GLib thread does
+        # @claude not reach concat in-band — the event gets stranded behind
+        # @claude already-queued buffers. Inject EOS at the chain's source
+        # @claude element instead so it flows downstream via the streaming
+        # @claude thread like a natural end-of-stream. The walker handles both
+        # @claude the initial parse_launch chain and dynamic chain bins.
+        src_elem = _find_source_via_upstream(peer)
+        if src_elem is None:
+            log.warning("force_advance: could not locate chain source element")
+            return False
+        log.info(
+            "force_advance: EOS via %s on %s",
+            src_elem.get_name(), active.get_name(),
+        )
+        src_elem.send_event(Gst.Event.new_eos())
         return False
 
     def _do_stop_streaming(self) -> bool:
@@ -318,6 +390,18 @@ class RtspServer:
             peer = active.get_peer()
             if peer is not None:
                 peer.send_event(Gst.Event.new_eos())
+        return False
+
+    def _do_restart_media(self) -> bool:
+        with self._lock:
+            session = self._session
+        if session is None:
+            return False
+        log.info("restart_media: unpreparing active media")
+        try:
+            session.media.unprepare()
+        except Exception:
+            log.exception("restart_media: unprepare failed")
         return False
 
     def _release_queued(self, session: _Session) -> None:

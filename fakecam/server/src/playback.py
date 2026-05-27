@@ -217,32 +217,37 @@ class PlaybackController:
 
     def _user_step(self, delta: int) -> None:
         items = self._playlist.get()
-        target_path: Path | None = None
-        need_enqueue = False
-        should_force = False
-        stopping = False
+        action: str = "noop"
+        restart_path: Path | None = None
         with self._lock:
             if not self._is_playing or not items:
                 return
             target = self._step_target_locked(items, delta)
             if target is None:
                 self._set_stopped_locked()
-                stopping = True
+                action = "stop"
+            elif self._queued_cursor == target:
+                # @claude Common case (most "next" presses): the natural
+                # @claude lookahead chain has already prerolled, so a force_advance
+                # @claude EOS on the active source switches concat to it cleanly.
+                action = "force"
             else:
-                should_force = True
-                # @claude If the chain we want is already the natural lookahead,
-                # @claude reuse it instead of releasing+rebuilding — the rebuild
-                # @claude races force_advance and produces double-advances or a
-                # @claude rapid-cycle storm when concat sees an empty new sink.
-                if self._queued_cursor != target:
-                    self._queued_cursor = target
-                    target_path = self._resolve_at(items, self._order[target])
-                    need_enqueue = True
-        if need_enqueue and target_path is not None:
-            self._rtsp_server.enqueue_next(target_path)
-        if should_force:
+                # @claude Non-matching jump (prev, or next when mode/playlist
+                # @claude changed the lookahead). concat cannot accept a freshly-
+                # @claude added chain on demand without cascade — the new chain
+                # @claude does not preroll under an inactive concat sink. Restart
+                # @claude the media so the next client connection rebuilds from
+                # @claude `set_initial`, which we point at the target.
+                self._cursor = target
+                self._queued_cursor = None
+                restart_path = self._resolve_at(items, self._order[target])
+                action = "restart"
+        if action == "force":
             self._rtsp_server.force_advance()
-        elif stopping:
+        elif action == "restart" and restart_path is not None:
+            self._rtsp_server.set_initial(restart_path)
+            self._rtsp_server.restart_media()
+        elif action == "stop":
             self._rtsp_server.set_initial(None)
             self._rtsp_server.stop_streaming()
         self._broadcast()
