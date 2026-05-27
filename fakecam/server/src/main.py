@@ -54,7 +54,9 @@ def main() -> None:
     playlist = PlaylistStore()
     playback = PlaybackController(playlist, rtsp_server, videos_dir)
     event_bus = EventBus()
-    rtsp_server.set_eos_callback(playback.on_natural_eos)
+    rtsp_server.set_post_configure_callback(playback.on_post_configure)
+    rtsp_server.set_advance_callback(playback.on_advance)
+    rtsp_server.set_exhausted_callback(playback.on_exhausted)
 
     def on_settings_change(new):
         nonlocal prev_settings

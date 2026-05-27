@@ -1,13 +1,23 @@
-"""gst-rtsp-server wrapper.
+"""gst-rtsp-server wrapper with concat-based seamless playlist transitions.
 
-Owns one `GstRtspServer.RTSPServer` instance with a single dynamic
-factory mounted at the configured RTSP path. Phase 1 supports
-streaming one mp4 at a time via `set_current(path)`; Phase 2 will
-replace the launch builder with a concat-based variant.
+Lifecycle:
+  - The `_DynamicFactory` produces a pipeline from `pipeline.build_initial_launch`,
+    which always includes a `concat` element named "concat" with the initial
+    file already linked to `concat.sink_0`.
+  - On `media-configure` the wrapper grabs references to the media's
+    pipeline and concat elements and stores them in `_session`. From that
+    point on, the playback controller can call `enqueue_next` and
+    `force_advance` to drive the playlist without restarting RTSP.
+  - When the media is unprepared (no more clients) the session is dropped.
+    The launch string for the *next* fresh media uses whatever `_initial`
+    was last set to.
 
-Authentication uses RTSP Basic auth seeded from `Settings`. The server
-must be restarted (call `stop()` then `start()`) for port or rtsp_path
-changes to take effect.
+Threading:
+  - All wrapper methods take `_lock` so the API thread and the GLib
+    callback thread cannot race on `_session` state.
+  - Any GStreamer manipulation that must happen on the GLib thread is
+    dispatched via `GLib.idle_add`; everything else can happen inline
+    because the relevant elements are thread-safe.
 """
 
 from __future__ import annotations
@@ -33,6 +43,52 @@ log = logging.getLogger(__name__)
 _ROLE = "fakecam-user"
 
 
+def _build_input_chain(file_path: str) -> Optional[Gst.Bin]:
+    """Build an input chain as a Gst.Bin with a single ghost `src` pad.
+
+    Construction is explicit rather than via `Gst.parse_bin_from_description`
+    because the latter's delayed-link mechanism for qtdemux's dynamic
+    pads is invalidated once the bin is reparented into another pipeline,
+    causing the video pad to never link. We replicate the same logical
+    pipeline (`filesrc ! qtdemux -[video]-> h264parse ! avdec_h264`)
+    with an explicit `pad-added` callback so the link is set up at
+    runtime against this chain's own elements.
+    """
+    chain = Gst.Bin.new(None)
+    filesrc = Gst.ElementFactory.make("filesrc", None)
+    qtdemux = Gst.ElementFactory.make("qtdemux", None)
+    h264parse = Gst.ElementFactory.make("h264parse", None)
+    avdec = Gst.ElementFactory.make("avdec_h264", None)
+    if not all((filesrc, qtdemux, h264parse, avdec)):
+        return None
+    filesrc.set_property("location", file_path)
+    for elem in (filesrc, qtdemux, h264parse, avdec):
+        chain.add(elem)
+    if not filesrc.link(qtdemux):
+        return None
+    if not h264parse.link(avdec):
+        return None
+
+    h264_sink = h264parse.get_static_pad("sink")
+
+    def on_pad_added(_demux, pad: Gst.Pad) -> None:
+        if h264_sink.is_linked():
+            return
+        caps = pad.query_caps(None)
+        struct = caps.get_structure(0) if caps and caps.get_size() > 0 else None
+        if struct is None or not struct.get_name().startswith("video/"):
+            return
+        pad.link(h264_sink)
+
+    qtdemux.connect("pad-added", on_pad_added)
+
+    src_pad = avdec.get_static_pad("src")
+    ghost = Gst.GhostPad.new("src", src_pad)
+    ghost.set_active(True)
+    chain.add_pad(ghost)
+    return chain
+
+
 class _DynamicFactory(GstRtspServer.RTSPMediaFactory):
     """Factory whose launch string follows a provider callback."""
 
@@ -53,6 +109,27 @@ class _DynamicFactory(GstRtspServer.RTSPMediaFactory):
             return None
 
 
+class _Session:
+    """Per-media state shared between the API thread and the GLib bus."""
+
+    __slots__ = (
+        "media",
+        "pipeline",
+        "concat",
+        "queued_bin",
+        "queued_sink_pad",
+        "previous_active_pad_name",
+    )
+
+    def __init__(self, media, pipeline_elem, concat):
+        self.media = media
+        self.pipeline = pipeline_elem
+        self.concat = concat
+        self.queued_bin: Optional[Gst.Element] = None
+        self.queued_sink_pad: Optional[Gst.Pad] = None
+        self.previous_active_pad_name: Optional[str] = None
+
+
 class RtspServer:
     def __init__(self):
         Gst.init(None)
@@ -61,12 +138,25 @@ class RtspServer:
         self._factory: Optional[_DynamicFactory] = None
         self._attach_id: Optional[int] = None
         self._settings: Optional[Settings] = None
-        self._current_path: Optional[Path] = None
-        self._eos_callback: Optional[Callable[[], None]] = None
+        self._initial: Optional[Path] = None
+        self._session: Optional[_Session] = None
+        self._post_configure_cb: Optional[Callable[[], None]] = None
+        self._advance_cb: Optional[Callable[[], None]] = None
+        self._exhausted_cb: Optional[Callable[[], None]] = None
 
-    def set_eos_callback(self, cb: Callable[[], None]) -> None:
-        """Register a hook invoked from the GLib thread on pipeline EOS."""
-        self._eos_callback = cb
+    # ── callback registration ────────────────────────────────────────────────
+
+    def set_post_configure_callback(self, cb: Callable[[], None]) -> None:
+        """Invoked from the GLib thread once per media construction."""
+        self._post_configure_cb = cb
+
+    def set_advance_callback(self, cb: Callable[[], None]) -> None:
+        """Invoked from the GLib thread when concat moves to a new active pad."""
+        self._advance_cb = cb
+
+    def set_exhausted_callback(self, cb: Callable[[], None]) -> None:
+        """Invoked when the entire concat (i.e. the playlist) reaches EOS."""
+        self._exhausted_cb = cb
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -79,8 +169,10 @@ class RtspServer:
             server.set_service(str(settings.port))
 
             factory = _DynamicFactory(self._current_launch)
-            # @claude `add_role` is a variadic C function and is not exposed by the
-            # @claude Python GI bindings; use the structure-based alternative.
+            # @claude Disable gst-rtsp-server's auto suspend; the suspend phase has a
+            # @claude documented FIXME for "dynamic pipelines" and corrupts the media
+            # @claude when we add concat inputs after prepare.
+            factory.set_suspend_mode(GstRtspServer.RTSPSuspendMode.NONE)
             perm_struct = Gst.Structure.new_from_string(
                 f"{_ROLE},"
                 "media.factory.access=(boolean)true,"
@@ -91,8 +183,6 @@ class RtspServer:
             factory.add_role_from_structure(perm_struct)
 
             auth = GstRtspServer.RTSPAuth()
-            # @claude Python GI exposes only `RTSPToken.new()` with no args; set
-            # @claude role fields explicitly afterwards.
             token = GstRtspServer.RTSPToken.new()
             token.set_string("media.factory.role", _ROLE)
             basic = GstRtspServer.RTSPAuth.make_basic(
@@ -103,7 +193,6 @@ class RtspServer:
 
             mounts = server.get_mount_points()
             mounts.add_factory(settings.rtsp_path, factory)
-
             factory.connect("media-configure", self._on_media_configure)
 
             self._attach_id = server.attach(None)
@@ -122,57 +211,212 @@ class RtspServer:
                 self._attach_id = None
             self._server = None
             self._factory = None
+            self._session = None
             log.info("RTSP server stopped")
 
     def restart(self, settings: Settings) -> None:
         self.stop()
         self.start(settings)
 
-    # ── current source ───────────────────────────────────────────────────────
+    # ── playlist driving ─────────────────────────────────────────────────────
 
-    def set_current(self, abs_path: Path) -> None:
-        with self._lock:
-            self._current_path = abs_path
-            log.info("RTSP current source: %s", abs_path)
+    def set_initial(self, abs_path: Optional[Path]) -> None:
+        """Set the file used by the next media construction.
 
-    def clear_current(self) -> None:
-        with self._lock:
-            self._current_path = None
-
-    def apply_settings(self, settings: Settings) -> None:
-        """Update encoding-affecting fields without restarting the server.
-
-        Port and auth changes require restart() and are not applied here.
+        Has no effect on an already-active session — the in-flight pipeline
+        keeps streaming whatever it was started with.
         """
         with self._lock:
-            if self._settings is None:
-                self._settings = settings
-                return
-            self._settings = self._settings.model_copy(update={
-                "resolution": settings.resolution,
-                "fps": settings.fps,
-                "bitrate_mbps": settings.bitrate_mbps,
-                "audio": settings.audio,
-            })
+            self._initial = abs_path
+            log.info("RTSP initial source: %s", abs_path)
 
-    # ── internals ────────────────────────────────────────────────────────────
+    def enqueue_next(self, abs_path: Optional[Path]) -> None:
+        """Queue a file as the next concat input, replacing any prior queue.
+
+        On the GLib thread to avoid racing with the streaming pipeline. If
+        no media is active this is a no-op (the file will play via
+        `set_initial` when a client next connects).
+        """
+        GLib.idle_add(self._do_enqueue_next, abs_path)
+
+    def force_advance(self) -> None:
+        """Force the active concat input to EOS so the queued input becomes active."""
+        GLib.idle_add(self._do_force_advance)
+
+    def stop_streaming(self) -> None:
+        """Drop the queue and EOS the active input. Used to satisfy stop()."""
+        GLib.idle_add(self._do_stop_streaming)
+
+    def apply_settings(self, settings: Settings) -> None:
+        """Capture new encoding/transport fields. Applied on next media creation."""
+        with self._lock:
+            self._settings = settings
+
+    def has_active_session(self) -> bool:
+        with self._lock:
+            return self._session is not None
+
+    # ── GStreamer-thread workers ─────────────────────────────────────────────
+
+    def _do_enqueue_next(self, abs_path: Optional[Path]) -> bool:
+        with self._lock:
+            session = self._session
+        if session is None:
+            return False
+        self._release_queued(session)
+        if abs_path is None:
+            return False
+        chain = _build_input_chain(str(abs_path))
+        if chain is None:
+            log.error("enqueue_next: failed to build input chain")
+            return False
+        sink_pad = session.concat.request_pad_simple("sink_%u")
+        if sink_pad is None:
+            log.error("enqueue_next: concat refused new sink pad")
+            return False
+        session.pipeline.add(chain)
+        if chain.get_parent() is not session.pipeline:
+            log.error("enqueue_next: chain failed to reparent into pipeline bin")
+            session.concat.release_request_pad(sink_pad)
+            return False
+        src_pad = chain.get_static_pad("src")
+        link_ret = src_pad.link(sink_pad)
+        if link_ret != Gst.PadLinkReturn.OK:
+            log.error("enqueue_next: pad link failed (%s)", link_ret)
+            session.pipeline.remove(chain)
+            session.concat.release_request_pad(sink_pad)
+            return False
+        chain.sync_state_with_parent()
+        session.queued_bin = chain
+        session.queued_sink_pad = sink_pad
+        log.info("enqueued next: %s (pad=%s)", abs_path, sink_pad.get_name())
+        return False  # @claude single-shot idle_add
+
+    def _do_force_advance(self) -> bool:
+        with self._lock:
+            session = self._session
+        if session is None:
+            return False
+        active = session.concat.get_property("active-pad")
+        if active is None:
+            return False
+        peer = active.get_peer()
+        if peer is None:
+            return False
+        log.info("force_advance: EOS on %s", active.get_name())
+        peer.send_event(Gst.Event.new_eos())
+        return False
+
+    def _do_stop_streaming(self) -> bool:
+        with self._lock:
+            session = self._session
+        if session is None:
+            return False
+        self._release_queued(session)
+        active = session.concat.get_property("active-pad")
+        if active is not None:
+            peer = active.get_peer()
+            if peer is not None:
+                peer.send_event(Gst.Event.new_eos())
+        return False
+
+    def _release_queued(self, session: _Session) -> None:
+        if session.queued_bin is None:
+            return
+        chain = session.queued_bin
+        sink_pad = session.queued_sink_pad
+        session.queued_bin = None
+        session.queued_sink_pad = None
+        try:
+            chain.set_state(Gst.State.NULL)
+            session.pipeline.remove(chain)
+        except Exception:
+            log.exception("release_queued: pipeline cleanup failed")
+        if sink_pad is not None:
+            try:
+                session.concat.release_request_pad(sink_pad)
+            except Exception:
+                log.exception("release_queued: pad release failed")
+
+    # ── media construction hooks ─────────────────────────────────────────────
 
     def _current_launch(self) -> Optional[str]:
         with self._lock:
-            if self._current_path is None or self._settings is None:
+            if self._initial is None or self._settings is None:
                 return None
-            return pipeline.build_launch(str(self._current_path), self._settings)
+            return pipeline.build_initial_launch(str(self._initial), self._settings)
 
     def _on_media_configure(self, _factory, media) -> None:
         pipeline_elem = media.get_element()
+        concat = pipeline_elem.get_by_name("concat") if pipeline_elem else None
+        if concat is None:
+            log.error("media-configure: concat element not found")
+            return
+        session = _Session(media, pipeline_elem, concat)
+        active = concat.get_property("active-pad")
+        if active is not None:
+            session.previous_active_pad_name = active.get_name()
+        concat.connect("notify::active-pad", self._on_active_pad_change)
         bus = pipeline_elem.get_bus()
         bus.add_signal_watch()
         bus.connect("message::eos", self._on_bus_eos)
+        bus.connect("message::error", self._on_bus_error)
+        bus.connect("message::warning", self._on_bus_warning)
+        media.connect("unprepared", self._on_unprepared)
+        media.connect("prepared", self._on_prepared)
+        with self._lock:
+            self._session = session
+        log.info("media configured; initial active=%s", session.previous_active_pad_name)
+
+    def _on_prepared(self, _media) -> None:
+        log.info("media prepared — running post_configure hook")
+        if self._post_configure_cb is not None:
+            try:
+                self._post_configure_cb()
+            except Exception:
+                log.exception("post_configure callback failed")
+
+    def _on_bus_error(self, _bus, msg) -> None:
+        err, debug = msg.parse_error()
+        log.error("pipeline error: %s | debug=%s", err, debug)
+
+    def _on_bus_warning(self, _bus, msg) -> None:
+        warn, debug = msg.parse_warning()
+        log.warning("pipeline warning: %s | debug=%s", warn, debug)
+
+    def _on_active_pad_change(self, concat, _pspec) -> None:
+        active = concat.get_property("active-pad")
+        if active is None:
+            return
+        new_name = active.get_name()
+        with self._lock:
+            session = self._session
+            if session is None:
+                return
+            prev_name = session.previous_active_pad_name
+            session.previous_active_pad_name = new_name
+            # @claude The freshly-active pad was the queued one. Clear the queue
+            # @claude reference so the next enqueue_next call doesn't try to
+            # @claude tear down a chain that is now the live source.
+            if session.queued_sink_pad is not None and session.queued_sink_pad.get_name() == new_name:
+                session.queued_bin = None
+                session.queued_sink_pad = None
+        log.info("concat advanced: %s → %s", prev_name, new_name)
+        if self._advance_cb is not None:
+            try:
+                self._advance_cb()
+            except Exception:
+                log.exception("advance callback failed")
 
     def _on_bus_eos(self, _bus, _msg) -> None:
-        cb = self._eos_callback
-        if cb is not None:
+        log.info("pipeline EOS")
+        if self._exhausted_cb is not None:
             try:
-                cb()
+                self._exhausted_cb()
             except Exception:
-                log.exception("EOS callback failed")
+                log.exception("exhausted callback failed")
+
+    def _on_unprepared(self, _media) -> None:
+        log.info("media unprepared")
+        with self._lock:
+            self._session = None

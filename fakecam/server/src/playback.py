@@ -1,13 +1,24 @@
 """Playback state machine.
 
-Owns the cursor through the playlist, shuffle/repeat modes, and the
-play/stop flag. Mutations call into the RTSP server to set or clear
-the currently-streamed file. State changes are broadcast to listeners
-so the SSE channel can forward them to web clients.
+Drives the concat-based RTSP pipeline:
 
-The controller is the single thread-safe gateway for all playback
-intent — both HTTP handlers and the GStreamer bus (on natural EOS)
-go through these methods.
+  - `play()` records the first file via `RtspServer.set_initial`, which
+    determines what gets parsed when a client first connects.
+  - On `on_post_configure`, called once per fresh media construction,
+    the controller enqueues the natural lookahead so concat has
+    something to switch to when the initial file ends.
+  - On `on_advance`, called every time concat changes its active pad,
+    the cursor is promoted to the queued cursor and a new lookahead
+    is enqueued.
+  - User-driven `next()`/`prev()` replace whatever was queued with
+    the chosen target and then force the current input to EOS,
+    triggering an in-session advance.
+  - `on_exhausted` fires when the pipeline as a whole reaches EOS
+    (no lookahead was queued, e.g. repeat=off at the end of the
+    playlist). It performs a clean stop.
+
+Mutations under `_lock`; broadcasts run outside the lock so listeners
+can call back without risk of deadlock.
 """
 
 from __future__ import annotations
@@ -44,6 +55,7 @@ class PlaybackController:
         self._shuffle = False
         self._repeat: RepeatMode = "off"
         self._cursor = 0
+        self._queued_cursor: int | None = None
         self._order: list[int] | None = None
         self._listeners: list[Listener] = []
         playlist.subscribe(self._on_playlist_changed)
@@ -73,41 +85,44 @@ class PlaybackController:
     # ── public mutations ─────────────────────────────────────────────────────
 
     def play(self) -> bool:
+        items = self._playlist.get()
+        if not items:
+            return False
+        first_path: Path | None
         with self._lock:
-            items = self._playlist.get()
-            if not items:
-                return False
+            if self._is_playing:
+                return True
             self._cursor = 0
+            self._queued_cursor = None
             self._order = self._fresh_order(len(items))
             self._is_playing = True
-            self._apply_current_locked(items)
+            first_path = self._resolve_at(items, self._order[0])
+        self._rtsp_server.set_initial(first_path)
         self._broadcast()
         return True
 
     def stop(self) -> None:
         with self._lock:
             self._set_stopped_locked()
+        self._rtsp_server.set_initial(None)
+        self._rtsp_server.stop_streaming()
         self._broadcast()
 
     def next(self) -> None:
-        self._step(+1)
+        self._user_step(+1)
 
     def prev(self) -> None:
-        self._step(-1)
-
-    def on_natural_eos(self) -> None:
-        """Hook invoked by the RTSP layer when the current file reaches EOS."""
-        if not self.is_playing():
-            return
-        self._step(+1)
+        self._user_step(-1)
 
     def set_mode(
         self,
         shuffle: bool | None = None,
         repeat: RepeatMode | None = None,
     ) -> PlaybackMode:
+        items = self._playlist.get()
+        new_lookahead_path: Path | None = None
+        broadcast = False
         with self._lock:
-            items = self._playlist.get()
             if shuffle is not None and shuffle != self._shuffle:
                 current_idx = self._current_index_locked(items)
                 self._shuffle = shuffle
@@ -124,62 +139,130 @@ class PlaybackController:
                 else:
                     self._order = list(range(len(items)))
                     self._cursor = current_idx if current_idx is not None else 0
-            if repeat is not None:
+                self._queued_cursor = None
+                broadcast = True
+            if repeat is not None and repeat != self._repeat:
                 self._repeat = repeat
-        self._broadcast()
+                self._queued_cursor = None
+                broadcast = True
+            if self._is_playing and self._queued_cursor is None:
+                lookahead = self._lookahead_locked(items)
+                if lookahead is not None:
+                    self._queued_cursor = lookahead
+                    new_lookahead_path = self._resolve_at(items, self._order[lookahead])
+        if self._is_playing:
+            self._rtsp_server.enqueue_next(new_lookahead_path)
+        if broadcast:
+            self._broadcast()
         return self.mode()
 
-    # ── internals ────────────────────────────────────────────────────────────
+    # ── hooks from RtspServer (GLib thread) ──────────────────────────────────
 
-    def _step(self, delta: int) -> None:
+    def on_post_configure(self) -> None:
+        """Called once per fresh media. Pre-queue the lookahead."""
+        items = self._playlist.get()
+        path: Path | None = None
         with self._lock:
-            if not self._is_playing:
+            if not self._is_playing or not items:
                 return
-            items = self._playlist.get()
-            if not items:
-                self._set_stopped_locked()
-            elif self._repeat == "one":
-                self._apply_current_locked(items)
-            else:
-                order = self._ensure_order_locked(items)
-                new_cursor = self._cursor + delta
-                if new_cursor >= len(order):
-                    if self._repeat == "all":
-                        new_cursor = 0
-                        if self._shuffle:
-                            self._order = self._fresh_order(len(items))
-                    else:
-                        self._set_stopped_locked()
-                        new_cursor = None
-                elif new_cursor < 0:
-                    new_cursor = len(order) - 1 if self._repeat == "all" else 0
-                if new_cursor is not None:
-                    self._cursor = new_cursor
-                    self._apply_current_locked(items)
-        self._broadcast()
+            lookahead = self._lookahead_locked(items)
+            if lookahead is not None:
+                self._queued_cursor = lookahead
+                path = self._resolve_at(items, self._order[lookahead])
+        if path is not None:
+            self._rtsp_server.enqueue_next(path)
 
-    def _on_playlist_changed(self, items: list[PlaylistItem]) -> None:
+    def on_advance(self) -> None:
+        """Called when concat advanced to the previously-queued input."""
+        items = self._playlist.get()
+        new_path: Path | None = None
         broadcast = False
         with self._lock:
             if not self._is_playing:
                 return
+            if self._queued_cursor is None:
+                # @claude Advance without a queued cursor — likely the result of
+                # @claude a settings change race. Stay put logically.
+                return
+            self._cursor = self._queued_cursor
+            self._queued_cursor = None
             broadcast = True
-            if not items:
-                self._set_stopped_locked()
-            else:
-                current = self._current_path_locked(items)
-                order = self._fresh_order(len(items))
-                self._order = order
-                if current is None:
-                    self._cursor = 0
-                else:
-                    self._cursor = next(
-                        (i for i, idx in enumerate(order) if items[idx].path == current),
-                        0,
-                    )
-                self._apply_current_locked(items)
+            lookahead = self._lookahead_locked(items)
+            if lookahead is not None:
+                self._queued_cursor = lookahead
+                new_path = self._resolve_at(items, self._order[lookahead])
+        if new_path is not None:
+            self._rtsp_server.enqueue_next(new_path)
         if broadcast:
             self._broadcast()
+
+    def on_exhausted(self) -> None:
+        """Pipeline EOS — concat ran out of inputs."""
+        with self._lock:
+            if not self._is_playing:
+                return
+            self._set_stopped_locked()
+        self._rtsp_server.set_initial(None)
+        self._broadcast()
+
+    # ── internals ────────────────────────────────────────────────────────────
+
+    def _user_step(self, delta: int) -> None:
+        items = self._playlist.get()
+        target_path: Path | None = None
+        with self._lock:
+            if not self._is_playing or not items:
+                return
+            target = self._step_target_locked(items, delta)
+            if target is None:
+                self._set_stopped_locked()
+            else:
+                self._queued_cursor = target
+                target_path = self._resolve_at(items, self._order[target])
+        if target_path is not None:
+            self._rtsp_server.enqueue_next(target_path)
+            self._rtsp_server.force_advance()
+        else:
+            self._rtsp_server.set_initial(None)
+            self._rtsp_server.stop_streaming()
+        self._broadcast()
+
+    def _step_target_locked(self, items: list[PlaylistItem], delta: int) -> int | None:
+        order = self._ensure_order_locked(items)
+        if self._repeat == "one":
+            return self._cursor
+        new_cursor = self._cursor + delta
+        if new_cursor >= len(order):
+            if self._repeat == "all":
+                if self._shuffle:
+                    self._order = self._fresh_order(len(items))
+                return 0
+            return None
+        if new_cursor < 0:
+            return len(order) - 1 if self._repeat == "all" else 0
+        return new_cursor
+
+    def _lookahead_locked(self, items: list[PlaylistItem]) -> int | None:
+        """Compute the cursor of the natural next item (no user override)."""
+        if not items:
+            return None
+        order = self._ensure_order_locked(items)
+        if self._repeat == "one":
+            return self._cursor
+        next_cursor = self._cursor + 1
+        if next_cursor >= len(order):
+            if self._repeat == "all":
+                # @claude Lookahead does not regenerate shuffle order — that only
+                # @claude happens on the actual wrap (handled in on_advance via the
+                # @claude same step_target logic).
+                return 0
+            return None
+        return next_cursor
+
+    def _on_playlist_changed(self, items: list[PlaylistItem]) -> None:
+        # Currently mutations are blocked during playback (409 in api.py), so
+        # this only fires while stopped. No action required.
+        pass
 
     def _fresh_order(self, n: int) -> list[int]:
         order = list(range(n))
@@ -205,23 +288,16 @@ class PlaybackController:
         idx = self._current_index_locked(items)
         return items[idx].path if idx is not None else None
 
-    def _apply_current_locked(self, items: list[PlaylistItem]) -> None:
-        idx = self._current_index_locked(items)
-        if idx is None:
-            self._rtsp_server.clear_current()
-            return
-        abs_path = library.resolve(self._videos_dir, items[idx].path)
-        if abs_path is None:
-            log.warning("playback: file disappeared, stopping: %s", items[idx].path)
-            self._set_stopped_locked()
-            return
-        self._rtsp_server.set_current(abs_path)
+    def _resolve_at(self, items: list[PlaylistItem], idx: int) -> Path | None:
+        if not (0 <= idx < len(items)):
+            return None
+        return library.resolve(self._videos_dir, items[idx].path)
 
     def _set_stopped_locked(self) -> None:
         self._is_playing = False
         self._cursor = 0
+        self._queued_cursor = None
         self._order = None
-        self._rtsp_server.clear_current()
 
     def _broadcast(self) -> None:
         snapshot = self.state()
