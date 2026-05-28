@@ -23,7 +23,6 @@ const { configured, connecting, connected, reconnectKey, ptzEnabled, setConnecte
 
 watch(reconnectKey, () => {
   if (!configured.value) return
-  stopCountdown()
   destroyAll()
   handleConnect()
 })
@@ -44,7 +43,6 @@ watch(() => sseState.pipeline_state, (nextState, prevState) => {
 const videoRef = ref(null)
 const videoWrapRef = ref(null)
 const loading = ref(false)
-const timedOut = ref(false)
 const stopped = ref(true)
 const fullscreen = ref(false)
 const inferOpen = ref(false)
@@ -119,16 +117,12 @@ function onFullscreenChange() {
 let hls = null
 let Hls = null
 let stallTimer = null
-let timeoutTimer = null
 let retryTimer = null
 let pipelineRecoveryTimer = null
-let countdownTimer = null
 let pc = null
 let sessionId = 0
-let connectDeadline = 0
-const remainingSec = ref(0)
 const STALL_TIMEOUT = 8000
-const CONNECT_TIMEOUT = 15000
+const RETRY_BACKOFF = 3000
 const DEFAULT_STREAM_PROTOCOL = 'hls'
 const STREAM_PROTOCOL_STORAGE_KEY = 'babycat_stream_protocol'
 const STREAM_PROTOCOLS = new Set(['hls', 'webrtc'])
@@ -155,7 +149,7 @@ function writeStoredProtocol(protocol) {
 const preferredProtocol = ref(readStoredProtocol())
 const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
-const isPlaying = computed(() => connected.value && !loading.value && !timedOut.value && !stopped.value)
+const isPlaying = computed(() => connected.value && !loading.value && !stopped.value)
 const showToolbarPtz = computed(() => ptzEnabled.value && !stopped.value)
 const canUseToolbarPtz = computed(() => showToolbarPtz.value && isPlaying.value)
 watch(canUseToolbarPtz, (nextValue) => {
@@ -183,44 +177,13 @@ function handleConnect() {
   stopped.value = false
   connecting.value = true
   resetRuntimeProtocol()
-  connectDeadline = Date.now() + CONNECT_TIMEOUT
-  startCountdown()
   restartStream()
-}
-
-function startCountdown() {
-  if (countdownTimer) clearInterval(countdownTimer)
-  const tick = () => {
-    const ms = Math.max(0, connectDeadline - Date.now())
-    remainingSec.value = Math.ceil(ms / 1000)
-    if (ms <= 0) {
-      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
-      if (loading.value) {
-        loading.value = false
-        timedOut.value = true
-        destroyHls()
-        destroyWebRTC()
-        stopStats()
-        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
-        if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
-        setDisconnected()
-      }
-    }
-  }
-  tick()
-  countdownTimer = setInterval(tick, 250)
-}
-
-function stopCountdown() {
-  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
-  remainingSec.value = 0
 }
 
 function handleDisconnect() {
   stopActivePtzMotion()
   ptzControlOpen.value = false
   stopped.value = true
-  stopCountdown()
   destroyAll()
   disconnect()
 }
@@ -247,11 +210,9 @@ function destroyAll() {
   destroyWebRTC()
   stopStats()
   loading.value = false
-  timedOut.value = false
 }
 
 function clearAllTimers() {
-  if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
   if (stallTimer) { clearInterval(stallTimer); stallTimer = null }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
   if (pipelineRecoveryTimer) { clearTimeout(pipelineRecoveryTimer); pipelineRecoveryTimer = null }
@@ -263,13 +224,11 @@ function selectProtocol(protocol) {
   activeProtocol.value = protocol
   writeStoredProtocol(protocol)
   if (stopped.value) return
-  connectDeadline = Date.now() + CONNECT_TIMEOUT
-  startCountdown()
   restartStream()
 }
 
 function browserPlaybackUnavailable() {
-  return !configured.value || stopped.value || loading.value || timedOut.value
+  return !configured.value || stopped.value || loading.value
 }
 
 function getVideoPlaybackStatus(referenceTime = null) {
@@ -322,7 +281,6 @@ async function initHls() {
   destroyHls()
   destroyWebRTC()
   loading.value = true
-  timedOut.value = false
 
   const video = videoRef.value
   if (!video) return
@@ -341,11 +299,10 @@ async function initHls() {
     hls.attachMedia(video)
     hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
     hls.on(HlsLib.Events.ERROR, (_, data) => {
-      if (data.fatal && mySession === sessionId && Date.now() < connectDeadline) {
-        retryTimer = setTimeout(() => {
-          if (mySession === sessionId && Date.now() < connectDeadline) initHls()
-        }, 3000)
-      }
+      if (!data.fatal || mySession !== sessionId) return
+      retryTimer = setTimeout(() => {
+        if (mySession === sessionId) initHls()
+      }, RETRY_BACKOFF)
     })
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     video.src = getHlsUrl()
@@ -386,7 +343,6 @@ async function initWebRTC() {
   destroyHls()
   destroyWebRTC()
   loading.value = true
-  timedOut.value = false
 
   const video = videoRef.value
   if (!video) return
@@ -432,11 +388,9 @@ async function initWebRTC() {
     await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: answerSdp }))
   } catch (e) {
     if (mySession !== sessionId) return
-    if (Date.now() < connectDeadline) {
-      retryTimer = setTimeout(() => {
-        if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
-      }, 3000)
-    }
+    retryTimer = setTimeout(() => {
+      if (mySession === sessionId) initWebRTC()
+    }, RETRY_BACKOFF)
   }
 }
 
@@ -446,16 +400,11 @@ function handleWebRTCConnectionLoss(mySession) {
   stopStats()
   setDisconnected()
   if (stopped.value) return
-  if (Date.now() < connectDeadline) {
-    loading.value = true
-    if (retryTimer) clearTimeout(retryTimer)
-    retryTimer = setTimeout(() => {
-      if (mySession === sessionId && Date.now() < connectDeadline) initWebRTC()
-    }, 3000)
-  } else {
-    loading.value = false
-    timedOut.value = true
-  }
+  loading.value = true
+  if (retryTimer) clearTimeout(retryTimer)
+  retryTimer = setTimeout(() => {
+    if (mySession === sessionId) initWebRTC()
+  }, RETRY_BACKOFF)
 }
 
 function destroyWebRTC() {
@@ -472,10 +421,7 @@ function destroyWebRTC() {
 
 function onPlaying() {
   loading.value = false
-  timedOut.value = false
   setConnected()
-  stopCountdown()
-  if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null }
   startStats()
 }
 
@@ -558,13 +504,7 @@ onBeforeUnmount(() => {
           <span class="overlay-text">
             {{ t('live.connectingPrefix', { protocol: activeProtocol.toUpperCase() }) }}
             <span class="inline-spinner" />
-            {{ t('live.connectingSuffix', { seconds: remainingSec }) }}
           </span>
-        </div>
-
-        <div v-else-if="timedOut" class="video-overlay">
-          <span class="overlay-text timeout">{{ t('live.timeout') }}</span>
-          <button class="retry-btn" @click="handleConnect">{{ t('live.retry') }}</button>
         </div>
 
         <InferenceOverlay :open="inferOpen && isPlaying" />
@@ -886,20 +826,6 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,0.7);
   font-weight: 500;
 }
-.overlay-text.timeout { color: var(--danger); }
-
-.retry-btn {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 6px 16px;
-  border: 1px solid rgba(255,255,255,0.3);
-  border-radius: var(--radius);
-  background: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.8);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.retry-btn:hover { background: rgba(255,255,255,0.2); }
 
 /* ── Video bar ── */
 .video-bar {

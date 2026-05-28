@@ -168,12 +168,6 @@ export const messages = {
   'live.sessionRemaining': { en: 'Session time left {time}', ko: '세션 남은 시간 {time}' },
   'live.connectIdle': { en: 'Waiting to connect', ko: '연결 대기중' },
   'live.connectingPrefix': { en: 'Connecting... {protocol}', ko: '연결 중... {protocol}' },
-  'live.connectingSuffix': { en: '{seconds}s', ko: '{seconds}초' },
-  'live.timeout': {
-    en: 'Check the network status or camera profile.',
-    ko: '네트워크 상태 또는 카메라 프로필을 확인하세요.',
-  },
-  'live.retry': { en: 'Reconnect', ko: '재연결' },
   'live.ptz': { en: 'PTZ Control', ko: 'PTZ 제어' },
   'live.disconnect': { en: 'Disconnect', ko: '연결 해제' },
   'live.inference': { en: 'Inference Results', ko: '추론 결과' },
