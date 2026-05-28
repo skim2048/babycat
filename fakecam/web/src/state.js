@@ -16,6 +16,9 @@ export const state = reactive({
   libraryError: '',
   treeChecked: new Set(),
   playlistChecked: new Set(),
+  treeQuery: '',
+  playlistQuery: '',
+  treeExpanded: new Set(['']),
   mutationError: '',
 })
 

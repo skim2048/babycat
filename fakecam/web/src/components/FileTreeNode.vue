@@ -1,16 +1,21 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { state } from '../state.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
   depth: { type: Number, default: 0 },
+  dirPath: { type: String, default: '' },
+  autoExpand: { type: Boolean, default: false },
 })
 
-const expanded = ref(props.depth === 0)
 const isFile = computed(() => props.node.type === 'file')
 const isDir = computed(() => props.node.type === 'dir')
 const disabled = computed(() => state.playlist?.is_playing === true)
+
+const expanded = computed(
+  () => props.autoExpand || state.treeExpanded.has(props.dirPath),
+)
 
 const checked = computed({
   get: () => isFile.value && state.treeChecked.has(props.node.path),
@@ -21,13 +26,15 @@ const checked = computed({
   },
 })
 
-function toggleExpand() {
-  if (isDir.value) expanded.value = !expanded.value
+function childDirPath(child) {
+  if (child.type !== 'dir') return ''
+  return props.dirPath ? `${props.dirPath}/${child.name}` : child.name
 }
 
 function onRowClick() {
   if (isDir.value) {
-    expanded.value = !expanded.value
+    if (expanded.value) state.treeExpanded.delete(props.dirPath)
+    else state.treeExpanded.add(props.dirPath)
   } else if (!disabled.value) {
     checked.value = !checked.value
   }
@@ -61,6 +68,8 @@ function onRowClick() {
         :key="(child.path || '') + child.name"
         :node="child"
         :depth="depth + 1"
+        :dir-path="childDirPath(child)"
+        :auto-expand="autoExpand"
       />
     </ul>
   </li>
