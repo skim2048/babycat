@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { state } from '../state.js'
+import Icon from './Icon.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -49,8 +50,12 @@ function onRowClick() {
       :style="{ paddingLeft: depth * 16 + 'px' }"
       @click="onRowClick"
     >
-      <span class="caret" :class="{ leaf: isFile }">
-        {{ isDir ? (expanded ? '▾' : '▸') : '·' }}
+      <span class="caret">
+        <Icon
+          v-if="isDir"
+          :name="expanded ? 'chevron-down' : 'chevron-right'"
+          :size="12"
+        />
       </span>
       <input
         v-if="isFile"
@@ -80,11 +85,16 @@ function onRowClick() {
 .children { padding: 0; margin: 0; }
 .row { display: flex; align-items: center; gap: 6px; padding: 2px 0; user-select: none; cursor: pointer; }
 .row:hover { background: var(--bg-hover); }
-.caret { width: 12px; display: inline-block; color: var(--text-3); text-align: center; }
-.caret.leaf { color: var(--text-4); }
+.caret {
+  width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+}
 .checkbox-spacer { display: inline-block; width: 13px; }
 input[type="checkbox"] { margin: 0; cursor: pointer; }
 input[type="checkbox"]:disabled { cursor: default; }
-.label.dir { color: var(--text-2); font-weight: 500; }
+.label.dir { color: var(--text-2); }
 .label.file { color: var(--accent); }
 </style>

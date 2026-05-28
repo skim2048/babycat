@@ -1,6 +1,10 @@
 <script setup>
 import { computed } from 'vue'
 import { state, removeCheckedFromPlaylist } from '../state.js'
+import { useLocale } from '../composables/useLocale.js'
+import Icon from './Icon.vue'
+
+const { t } = useLocale()
 
 const items = computed(() => state.playlist?.items ?? [])
 const isPlaying = computed(() => state.playlist?.is_playing ?? false)
@@ -45,19 +49,7 @@ function toggleSelectAll() {
 <template>
   <section class="pane">
     <header>
-      <h2>재생 목록</h2>
-      <span class="badge" :class="{ playing: isPlaying }">
-        {{ isPlaying ? '재생 중' : '정지' }}
-      </span>
-      <button
-        class="action"
-        :disabled="disabled || checkedCount === 0"
-        :title="disabled ? '재생 중에는 변경할 수 없습니다' : '체크된 항목을 재생 목록에서 제거'"
-        @click="removeCheckedFromPlaylist"
-      >
-        🗑
-        <span v-if="checkedCount > 0" class="count">{{ checkedCount }}</span>
-      </button>
+      <h2>{{ t('playlist.title') }}</h2>
     </header>
     <div class="toolbar">
       <label class="select-all" :class="{ disabled }">
@@ -68,14 +60,24 @@ function toggleSelectAll() {
           :disabled="disabled || filteredItems.length === 0"
           @change="toggleSelectAll"
         />
-        <span>전체</span>
+        <span>{{ t('common.selectAll') }}</span>
       </label>
       <input
         v-model="state.playlistQuery"
         type="search"
         class="search"
-        placeholder="이름/경로 검색"
+        :placeholder="t('playlist.search')"
       />
+      <button
+        class="action"
+        :disabled="disabled || checkedCount === 0"
+        :title="disabled ? t('common.disabledPlaying') : t('playlist.removeTitle')"
+        :aria-label="t('playlist.removeAria')"
+        @click="removeCheckedFromPlaylist"
+      >
+        <Icon name="remove" :size="14" />
+        <span v-if="checkedCount > 0" class="count">{{ checkedCount }}</span>
+      </button>
     </div>
     <ul v-if="filteredItems.length" class="list">
       <li
@@ -84,7 +86,6 @@ function toggleSelectAll() {
         :class="{ current: currentPath === item.path }"
         @click="toggleChecked(item.path)"
       >
-        <span class="indicator">{{ currentPath === item.path ? '▶' : '' }}</span>
         <input
           type="checkbox"
           :checked="state.playlistChecked.has(item.path)"
@@ -95,9 +96,9 @@ function toggleSelectAll() {
         <span class="path">{{ item.path }}</span>
       </li>
     </ul>
-    <div v-else-if="items.length" class="empty">일치하는 항목이 없습니다.</div>
-    <div v-else-if="state.playlist" class="empty">재생 목록이 비어 있습니다.</div>
-    <div v-else class="empty">불러오는 중…</div>
+    <div v-else-if="items.length" class="empty">{{ t('playlist.noMatch') }}</div>
+    <div v-else-if="state.playlist" class="empty">{{ t('playlist.empty') }}</div>
+    <div v-else class="empty">{{ t('common.loading') }}</div>
     <div v-if="state.mutationError" class="error">{{ state.mutationError }}</div>
   </section>
 </template>
@@ -109,14 +110,13 @@ header {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
 }
-header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
-.badge { font-size: 12px; color: var(--text-3); padding: 2px 10px; background: #2a2a2a; border-radius: 10px; }
-.badge.playing { color: var(--accent); }
-.action { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 1; }
+header h2 { margin: 0; font-size: 12px; flex: 1; }
+.action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1; padding: 4px 8px; }
 .action .count {
-  font-size: 11px;
+  font-size: 12px;
   background: var(--bg-active);
   color: var(--accent);
   padding: 1px 6px;
@@ -153,10 +153,10 @@ header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
   font-family: var(--font-ui);
 }
 .search:focus { outline: none; border-color: var(--accent); }
-.list { list-style: none; padding: 8px 0; margin: 0; overflow: auto; flex: 1; font-size: 13px; }
+.list { list-style: none; padding: 8px 0; margin: 0; overflow: auto; flex: 1; font-size: 12px; }
 .list li {
   display: grid;
-  grid-template-columns: 16px auto 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
@@ -165,7 +165,6 @@ header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
 }
 .list li:hover { background: var(--bg-hover); }
 .list li.current { background: var(--bg-active); }
-.indicator { color: var(--accent); text-align: center; }
 input[type="checkbox"] { margin: 0; cursor: pointer; }
 input[type="checkbox"]:disabled { cursor: default; }
 .name { color: var(--text-1); }

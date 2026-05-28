@@ -1,7 +1,11 @@
 <script setup>
 import { computed } from 'vue'
 import { state, addCheckedToPlaylist } from '../state.js'
+import { useLocale } from '../composables/useLocale.js'
 import FileTreeNode from './FileTreeNode.vue'
+import Icon from './Icon.vue'
+
+const { t } = useLocale()
 
 const disabled = computed(() => state.playlist?.is_playing === true)
 const checkedCount = computed(() => state.treeChecked.size)
@@ -58,16 +62,7 @@ function toggleSelectAll() {
 <template>
   <section class="pane">
     <header>
-      <h2>파일 트리</h2>
-      <button
-        class="action"
-        :disabled="disabled || checkedCount === 0"
-        :title="disabled ? '재생 중에는 변경할 수 없습니다' : '체크된 파일을 재생 목록에 추가'"
-        @click="addCheckedToPlaylist"
-      >
-        ＋
-        <span v-if="checkedCount > 0" class="count">{{ checkedCount }}</span>
-      </button>
+      <h2>{{ t('tree.title') }}</h2>
     </header>
     <div class="toolbar">
       <label class="select-all" :class="{ disabled }">
@@ -78,14 +73,24 @@ function toggleSelectAll() {
           :disabled="disabled || visibleFiles.length === 0"
           @change="toggleSelectAll"
         />
-        <span>전체</span>
+        <span>{{ t('common.selectAll') }}</span>
       </label>
       <input
         v-model="state.treeQuery"
         type="search"
         class="search"
-        placeholder="파일명 검색"
+        :placeholder="t('tree.search')"
       />
+      <button
+        class="action"
+        :disabled="disabled || checkedCount === 0"
+        :title="disabled ? t('common.disabledPlaying') : t('tree.addTitle')"
+        :aria-label="t('tree.addAria')"
+        @click="addCheckedToPlaylist"
+      >
+        <Icon name="add" :size="14" />
+        <span v-if="checkedCount > 0" class="count">{{ checkedCount }}</span>
+      </button>
     </div>
     <div v-if="state.libraryError" class="error">{{ state.libraryError }}</div>
     <ul v-else-if="filteredTree" class="tree">
@@ -96,8 +101,8 @@ function toggleSelectAll() {
         :auto-expand="state.treeQuery.trim().length > 0"
       />
     </ul>
-    <div v-else-if="state.library" class="empty">일치하는 파일이 없습니다.</div>
-    <div v-else class="empty">불러오는 중…</div>
+    <div v-else-if="state.library" class="empty">{{ t('tree.noMatch') }}</div>
+    <div v-else class="empty">{{ t('common.loading') }}</div>
   </section>
 </template>
 
@@ -108,12 +113,13 @@ header {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
+  background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
 }
-header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
-.action { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 1; }
+header h2 { margin: 0; font-size: 12px; flex: 1; }
+.action { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1; padding: 4px 8px; }
 .action .count {
-  font-size: 11px;
+  font-size: 12px;
   background: var(--bg-active);
   color: var(--accent);
   padding: 1px 6px;
@@ -150,7 +156,7 @@ header h2 { margin: 0; font-size: 14px; font-weight: 600; flex: 1; }
   font-family: var(--font-ui);
 }
 .search:focus { outline: none; border-color: var(--accent); }
-.tree { list-style: none; padding: 8px 0; margin: 0; overflow: auto; flex: 1; font-size: 13px; }
+.tree { list-style: none; padding: 8px 0; margin: 0; overflow: auto; flex: 1; font-size: 12px; }
 .error { color: var(--danger); padding: 12px; }
 .empty { color: var(--text-4); padding: 12px; }
 </style>
