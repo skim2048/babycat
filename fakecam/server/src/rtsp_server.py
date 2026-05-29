@@ -43,6 +43,21 @@ log = logging.getLogger(__name__)
 _ROLE = "fakecam-user"
 
 
+def _iter_sink_pads(element: Gst.Element):
+    """Yield every sink pad currently on `element`. Used to walk concat's
+    parse-launch-created sinks at media-configure time, since they predate
+    any pad-added subscription we could install."""
+    it = element.iterate_sink_pads()
+    while True:
+        result, pad = it.next()
+        if result == Gst.IteratorResult.OK:
+            yield pad
+        elif result == Gst.IteratorResult.RESYNC:
+            it.resync()
+        else:
+            return
+
+
 def _build_input_chain(file_path: str) -> Optional[Gst.Bin]:
     """Build an input chain as a Gst.Bin with a single ghost `src` pad.
 
@@ -239,21 +254,21 @@ class RtspServer:
         """
         GLib.idle_add(self._do_enqueue_next, abs_path)
 
-    def stop_streaming(self) -> None:
-        """Drop the queue and EOS the active input. Used to satisfy stop()."""
-        GLib.idle_add(self._do_stop_streaming)
-
     def apply_settings(self, settings: Settings) -> None:
         """Capture new encoding/transport fields. Applied on next media creation."""
         with self._lock:
             self._settings = settings
 
-    def refresh_media(self) -> None:
-        """Unprepare the active media so the next client connection rebuilds
-        the pipeline with the current settings. No-op if there is no active
-        session. Used when encoding settings change but the RTSP server
-        itself does not need a transport restart."""
-        GLib.idle_add(self._do_refresh_media)
+    def release_media(self) -> None:
+        """Unprepare the active media. Tears down every RTSP session attached
+        to this media so connected clients see a clean TEARDOWN instead of a
+        silent stream, and the next client connection rebuilds the pipeline
+        from `_current_launch`. No-op if there is no active session.
+
+        Used by playback stop and natural EOS (so clients are told the stream
+        is over) and by encoding-settings changes (so the new caps are picked
+        up on the next connection)."""
+        GLib.idle_add(self._do_release_media)
 
     def has_active_session(self) -> bool:
         with self._lock:
@@ -307,6 +322,7 @@ class RtspServer:
                 "enqueue_next: chain only reached %s (pending=%s, ret=%s) after 5s",
                 current.value_nick, pending.value_nick, ret.value_nick,
             )
+        self._attach_eos_probe(sink_pad)
         session.queued_bin = chain
         session.queued_sink_pad = sink_pad
         log.info(
@@ -315,29 +331,17 @@ class RtspServer:
         )
         return False  # @claude single-shot idle_add
 
-    def _do_refresh_media(self) -> bool:
-        with self._lock:
-            session = self._session
-        if session is None:
-            return False
-        log.info("refresh_media: unpreparing active media to apply new settings")
-        try:
-            session.media.unprepare()
-        except Exception:
-            log.exception("refresh_media: unprepare failed")
-        return False
-
-    def _do_stop_streaming(self) -> bool:
+    def _do_release_media(self) -> bool:
         with self._lock:
             session = self._session
         if session is None:
             return False
         self._release_queued(session)
-        active = session.concat.get_property("active-pad")
-        if active is not None:
-            peer = active.get_peer()
-            if peer is not None:
-                peer.send_event(Gst.Event.new_eos())
+        log.info("release_media: unpreparing active media")
+        try:
+            session.media.unprepare()
+        except Exception:
+            log.exception("release_media: unprepare failed")
         return False
 
     def _release_queued(self, session: _Session) -> None:
@@ -377,6 +381,13 @@ class RtspServer:
         if active is not None:
             session.previous_active_pad_name = active.get_name()
         concat.connect("notify::active-pad", self._on_active_pad_change)
+        # @claude Attach an EOS probe to the initial concat sink. concat does
+        # @claude not bubble downstream EOS when the last enqueued sink finishes
+        # @claude (it stays in a wait-for-more-inputs state), so the pipeline
+        # @claude bus never sees EOS and on_exhausted is never called. The probe
+        # @claude detects the last sink's EOS directly and invokes the callback.
+        for pad in _iter_sink_pads(concat):
+            self._attach_eos_probe(pad)
         bus = pipeline_elem.get_bus()
         bus.add_signal_watch()
         bus.connect("message::eos", self._on_bus_eos)
@@ -387,6 +398,30 @@ class RtspServer:
         with self._lock:
             self._session = session
         log.info("media configured; initial active=%s", session.previous_active_pad_name)
+
+    def _attach_eos_probe(self, pad: Gst.Pad) -> None:
+        pad.add_probe(Gst.PadProbeType.EVENT_DOWNSTREAM, self._on_concat_sink_event)
+
+    def _on_concat_sink_event(self, pad: Gst.Pad, info: Gst.PadProbeInfo) -> Gst.PadProbeReturn:
+        event = info.get_event()
+        if event is None or event.type != Gst.EventType.EOS:
+            return Gst.PadProbeReturn.OK
+        pad_name = pad.get_name()
+        with self._lock:
+            session = self._session
+            queued_name = (
+                session.queued_sink_pad.get_name()
+                if session is not None and session.queued_sink_pad is not None
+                else None
+            )
+        has_next = queued_name is not None and queued_name != pad_name
+        log.info("concat sink EOS on %s (has_next=%s)", pad_name, has_next)
+        if not has_next and self._exhausted_cb is not None:
+            try:
+                self._exhausted_cb()
+            except Exception:
+                log.exception("exhausted callback failed")
+        return Gst.PadProbeReturn.OK
 
     def _on_prepared(self, _media) -> None:
         log.info("media prepared — running post_configure hook")

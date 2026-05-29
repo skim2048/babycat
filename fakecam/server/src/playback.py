@@ -102,7 +102,7 @@ class PlaybackController:
         with self._lock:
             self._set_stopped_locked()
         self._rtsp_server.set_initial(None)
-        self._rtsp_server.stop_streaming()
+        self._rtsp_server.release_media()
         self._broadcast()
 
     def set_mode(
@@ -202,6 +202,10 @@ class PlaybackController:
                 return
             self._set_stopped_locked()
         self._rtsp_server.set_initial(None)
+        # @claude Tear the active media down so connected clients (e.g. babycat's
+        # @claude RTSP source) see a TEARDOWN and can distinguish "stream ended"
+        # @claude from "transport failure" instead of retrying indefinitely.
+        self._rtsp_server.release_media()
         self._broadcast()
 
     # ── internals ────────────────────────────────────────────────────────────

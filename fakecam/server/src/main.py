@@ -86,8 +86,8 @@ def main() -> None:
             # @claude into the launch string, and set_shared(True) keeps the
             # @claude active media alive while any client is connected. Force a
             # @claude rebuild so reconnecting clients pick up the new caps.
-            log.info("settings: encoding change — refreshing active media")
-            rtsp_server.refresh_media()
+            log.info("settings: encoding change — releasing active media")
+            rtsp_server.release_media()
 
     settings_store.subscribe(on_settings_change)
 
