@@ -68,8 +68,6 @@ async function safeCall(fn) {
 export const playback = {
   play: () => safeCall(() => api.play()),
   stop: () => safeCall(() => api.stop()),
-  next: () => safeCall(() => api.next()),
-  prev: () => safeCall(() => api.prev()),
   toggleShuffle: () =>
     safeCall(() => api.setMode({ shuffle: !(state.mode?.shuffle ?? false) })),
   cycleRepeat: () => {

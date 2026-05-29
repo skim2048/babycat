@@ -46,8 +46,6 @@ export const api = {
     request('/api/playlist/remove', { method: 'POST', body: JSON.stringify({ paths }) }),
   play: () => request('/api/playback/play', { method: 'POST' }),
   stop: () => request('/api/playback/stop', { method: 'POST' }),
-  next: () => request('/api/playback/next', { method: 'POST' }),
-  prev: () => request('/api/playback/prev', { method: 'POST' }),
   setMode: (patch) =>
     request('/api/playback/mode', { method: 'PUT', body: JSON.stringify(patch) }),
   updateSettings: (patch) =>

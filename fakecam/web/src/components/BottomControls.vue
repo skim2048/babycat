@@ -34,32 +34,12 @@ const playDisabled = computed(() => !isPlaying.value && itemCount.value === 0)
 
     <button
       class="ctl"
-      :title="t('controls.prev')"
-      :aria-label="t('controls.prev')"
-      :disabled="!isPlaying"
-      @click="playback.prev"
-    >
-      <Icon name="prev" :size="22" />
-    </button>
-
-    <button
-      class="ctl"
       :title="isPlaying ? t('controls.stop') : t('controls.play')"
       :aria-label="isPlaying ? t('controls.stop') : t('controls.play')"
       :disabled="playDisabled"
       @click="isPlaying ? playback.stop() : playback.play()"
     >
       <Icon :name="isPlaying ? 'stop' : 'play'" :size="22" />
-    </button>
-
-    <button
-      class="ctl"
-      :title="t('controls.next')"
-      :aria-label="t('controls.next')"
-      :disabled="!isPlaying"
-      @click="playback.next"
-    >
-      <Icon name="next" :size="22" />
     </button>
 
     <button

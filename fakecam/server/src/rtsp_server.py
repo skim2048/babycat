@@ -6,8 +6,8 @@ Lifecycle:
     file already linked to `concat.sink_0`.
   - On `media-configure` the wrapper grabs references to the media's
     pipeline and concat elements and stores them in `_session`. From that
-    point on, the playback controller can call `enqueue_next` and
-    `force_advance` to drive the playlist without restarting RTSP.
+    point on, the playback controller calls `enqueue_next` to feed the
+    next item into concat ahead of the natural EOS transition.
   - When the media is unprepared (no more clients) the session is dropped.
     The launch string for the *next* fresh media uses whatever `_initial`
     was last set to.
@@ -41,38 +41,6 @@ log = logging.getLogger(__name__)
 
 
 _ROLE = "fakecam-user"
-
-
-def _find_source_via_upstream(start_pad: Gst.Pad) -> Optional[Gst.Element]:
-    """Walk upstream from a source pad to find the chain's source element.
-
-    Handles both shapes of input chain:
-      - the initial parse_launch chain (flat elements in the outer bin)
-      - dynamically built chains (Gst.Bin with a ghost src pad)
-    by following sink-pad → peer src pad → element transitions until an
-    element with no sink pad is reached. Ghost pads are unwrapped to their
-    targets so the walk descends into chain bins transparently.
-    """
-    current: Optional[Gst.Pad] = start_pad
-    seen: set[int] = set()
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        if isinstance(current, Gst.GhostPad):
-            target = current.get_target()
-            if target is not None:
-                current = target
-                continue
-        elem = current.get_parent_element()
-        if elem is None:
-            return None
-        sink = elem.get_static_pad("sink")
-        if sink is None:
-            return elem
-        peer = sink.get_peer()
-        if peer is None:
-            return None
-        current = peer
-    return None
 
 
 def _build_input_chain(file_path: str) -> Optional[Gst.Bin]:
@@ -271,25 +239,21 @@ class RtspServer:
         """
         GLib.idle_add(self._do_enqueue_next, abs_path)
 
-    def force_advance(self) -> None:
-        """Force the active concat input to EOS so the queued input becomes active."""
-        GLib.idle_add(self._do_force_advance)
-
     def stop_streaming(self) -> None:
         """Drop the queue and EOS the active input. Used to satisfy stop()."""
         GLib.idle_add(self._do_stop_streaming)
-
-    def restart_media(self) -> None:
-        """Unprepare the active media so the next client connection rebuilds
-        with whatever `set_initial` currently points at. Used by user-driven
-        jumps (prev / mode change) that cannot be expressed as a force_advance
-        on the already-queued lookahead."""
-        GLib.idle_add(self._do_restart_media)
 
     def apply_settings(self, settings: Settings) -> None:
         """Capture new encoding/transport fields. Applied on next media creation."""
         with self._lock:
             self._settings = settings
+
+    def refresh_media(self) -> None:
+        """Unprepare the active media so the next client connection rebuilds
+        the pipeline with the current settings. No-op if there is no active
+        session. Used when encoding settings change but the RTSP server
+        itself does not need a transport restart."""
+        GLib.idle_add(self._do_refresh_media)
 
     def has_active_session(self) -> bool:
         with self._lock:
@@ -351,32 +315,16 @@ class RtspServer:
         )
         return False  # @claude single-shot idle_add
 
-    def _do_force_advance(self) -> bool:
+    def _do_refresh_media(self) -> bool:
         with self._lock:
             session = self._session
         if session is None:
             return False
-        active = session.concat.get_property("active-pad")
-        if active is None:
-            return False
-        peer = active.get_peer()
-        if peer is None:
-            return False
-        # @claude Sending EOS to the ghost src pad from the GLib thread does
-        # @claude not reach concat in-band — the event gets stranded behind
-        # @claude already-queued buffers. Inject EOS at the chain's source
-        # @claude element instead so it flows downstream via the streaming
-        # @claude thread like a natural end-of-stream. The walker handles both
-        # @claude the initial parse_launch chain and dynamic chain bins.
-        src_elem = _find_source_via_upstream(peer)
-        if src_elem is None:
-            log.warning("force_advance: could not locate chain source element")
-            return False
-        log.info(
-            "force_advance: EOS via %s on %s",
-            src_elem.get_name(), active.get_name(),
-        )
-        src_elem.send_event(Gst.Event.new_eos())
+        log.info("refresh_media: unpreparing active media to apply new settings")
+        try:
+            session.media.unprepare()
+        except Exception:
+            log.exception("refresh_media: unprepare failed")
         return False
 
     def _do_stop_streaming(self) -> bool:
@@ -390,18 +338,6 @@ class RtspServer:
             peer = active.get_peer()
             if peer is not None:
                 peer.send_event(Gst.Event.new_eos())
-        return False
-
-    def _do_restart_media(self) -> bool:
-        with self._lock:
-            session = self._session
-        if session is None:
-            return False
-        log.info("restart_media: unpreparing active media")
-        try:
-            session.media.unprepare()
-        except Exception:
-            log.exception("restart_media: unprepare failed")
         return False
 
     def _release_queued(self, session: _Session) -> None:

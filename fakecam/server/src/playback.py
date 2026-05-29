@@ -10,9 +10,6 @@ Drives the concat-based RTSP pipeline:
   - On `on_advance`, called every time concat changes its active pad,
     the cursor is promoted to the queued cursor and a new lookahead
     is enqueued.
-  - User-driven `next()`/`prev()` replace whatever was queued with
-    the chosen target and then force the current input to EOS,
-    triggering an in-session advance.
   - `on_exhausted` fires when the pipeline as a whole reaches EOS
     (no lookahead was queued, e.g. repeat=off at the end of the
     playlist). It performs a clean stop.
@@ -107,12 +104,6 @@ class PlaybackController:
         self._rtsp_server.set_initial(None)
         self._rtsp_server.stop_streaming()
         self._broadcast()
-
-    def next(self) -> None:
-        self._user_step(+1)
-
-    def prev(self) -> None:
-        self._user_step(-1)
 
     def set_mode(
         self,
@@ -215,58 +206,6 @@ class PlaybackController:
 
     # ── internals ────────────────────────────────────────────────────────────
 
-    def _user_step(self, delta: int) -> None:
-        items = self._playlist.get()
-        action: str = "noop"
-        restart_path: Path | None = None
-        with self._lock:
-            if not self._is_playing or not items:
-                return
-            target = self._step_target_locked(items, delta)
-            if target is None:
-                self._set_stopped_locked()
-                action = "stop"
-            elif self._queued_cursor == target:
-                # @claude Common case (most "next" presses): the natural
-                # @claude lookahead chain has already prerolled, so a force_advance
-                # @claude EOS on the active source switches concat to it cleanly.
-                action = "force"
-            else:
-                # @claude Non-matching jump (prev, or next when mode/playlist
-                # @claude changed the lookahead). concat cannot accept a freshly-
-                # @claude added chain on demand without cascade — the new chain
-                # @claude does not preroll under an inactive concat sink. Restart
-                # @claude the media so the next client connection rebuilds from
-                # @claude `set_initial`, which we point at the target.
-                self._cursor = target
-                self._queued_cursor = None
-                restart_path = self._resolve_at(items, self._order[target])
-                action = "restart"
-        if action == "force":
-            self._rtsp_server.force_advance()
-        elif action == "restart" and restart_path is not None:
-            self._rtsp_server.set_initial(restart_path)
-            self._rtsp_server.restart_media()
-        elif action == "stop":
-            self._rtsp_server.set_initial(None)
-            self._rtsp_server.stop_streaming()
-        self._broadcast()
-
-    def _step_target_locked(self, items: list[PlaylistItem], delta: int) -> int | None:
-        order = self._ensure_order_locked(items)
-        if self._repeat == "one":
-            return self._cursor
-        new_cursor = self._cursor + delta
-        if new_cursor >= len(order):
-            if self._repeat == "all":
-                if self._shuffle:
-                    self._order = self._fresh_order(len(items))
-                return 0
-            return None
-        if new_cursor < 0:
-            return len(order) - 1 if self._repeat == "all" else 0
-        return new_cursor
-
     def _lookahead_locked(self, items: list[PlaylistItem]) -> int | None:
         """Compute the cursor of the natural next item (no user override)."""
         if not items:
@@ -277,9 +216,9 @@ class PlaybackController:
         next_cursor = self._cursor + 1
         if next_cursor >= len(order):
             if self._repeat == "all":
-                # @claude Lookahead does not regenerate shuffle order — that only
-                # @claude happens on the actual wrap (handled in on_advance via the
-                # @claude same step_target logic).
+                # @claude Wrap reuses the existing shuffle order; the order is
+                # @claude only regenerated on the play()→stop()→play() cycle
+                # @claude or on a shuffle toggle via set_mode.
                 return 0
             return None
         return next_cursor

@@ -4,10 +4,8 @@ import settings from '../assets/settings.svg?raw'
 import add from '../assets/add.svg?raw'
 import remove from '../assets/remove.svg?raw'
 import shuffle from '../assets/shuffle.svg?raw'
-import prev from '../assets/prev.svg?raw'
 import play from '../assets/play.svg?raw'
 import stop from '../assets/stop.svg?raw'
-import next_ from '../assets/next.svg?raw'
 import repeat from '../assets/repeat.svg?raw'
 import repeatOne from '../assets/repeat-one.svg?raw'
 import chevronDown from '../assets/chevron-down.svg?raw'
@@ -18,10 +16,8 @@ const icons = {
   add,
   remove,
   shuffle,
-  prev,
   play,
   stop,
-  next: next_,
   repeat,
   'repeat-one': repeatOne,
   'chevron-down': chevronDown,

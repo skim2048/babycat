@@ -68,6 +68,11 @@ def main() -> None:
                 "port", "rtsp_path", "auth_user", "auth_password",
             )
         )
+        encoding_changed = any(
+            getattr(prev_settings, f) != getattr(new, f) for f in (
+                "resolution", "fps", "bitrate_mbps", "audio",
+            )
+        )
         prev_settings = new
         event_bus.publish({"type": "settings", "settings": new.model_dump()})
         if transport_changed:
@@ -76,6 +81,13 @@ def main() -> None:
                 rtsp_server.restart(new)
             except Exception:
                 log.exception("RTSP server restart failed")
+        elif encoding_changed:
+            # @claude pipeline.build_initial_launch bakes resolution/fps/bitrate
+            # @claude into the launch string, and set_shared(True) keeps the
+            # @claude active media alive while any client is connected. Force a
+            # @claude rebuild so reconnecting clients pick up the new caps.
+            log.info("settings: encoding change — refreshing active media")
+            rtsp_server.refresh_media()
 
     settings_store.subscribe(on_settings_change)
 

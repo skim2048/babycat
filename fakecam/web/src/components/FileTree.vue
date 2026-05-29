@@ -107,7 +107,7 @@ function toggleSelectAll() {
 </template>
 
 <style scoped>
-.pane { display: flex; flex-direction: column; min-width: 0; }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 header {
   display: flex;
   align-items: center;

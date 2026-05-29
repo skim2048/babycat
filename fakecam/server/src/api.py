@@ -9,8 +9,6 @@ Phase 2 surface:
   - POST /api/playlist/remove    remove by paths
   - POST /api/playback/play      start from first item
   - POST /api/playback/stop      stop and reset to head
-  - POST /api/playback/next      advance per mode
-  - POST /api/playback/prev      step back per mode
   - PUT  /api/playback/mode      update shuffle/repeat
   - GET  /api/events             SSE: playlist / mode / settings updates
 
@@ -128,16 +126,6 @@ def build_app(
     @app.post("/api/playback/stop", response_model=PlaylistState)
     def stop() -> PlaylistState:
         playback.stop()
-        return playback.state()
-
-    @app.post("/api/playback/next", response_model=PlaylistState)
-    def next_() -> PlaylistState:
-        playback.next()
-        return playback.state()
-
-    @app.post("/api/playback/prev", response_model=PlaylistState)
-    def prev_() -> PlaylistState:
-        playback.prev()
         return playback.state()
 
     @app.put("/api/playback/mode", response_model=PlaybackMode)

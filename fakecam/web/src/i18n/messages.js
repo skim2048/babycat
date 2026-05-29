@@ -58,8 +58,6 @@ export const messages = {
   // ── Bottom controls ──────────────────────────────────────────────────────
   'controls.play':        { en: 'Stream',       ko: '송출' },
   'controls.stop':        { en: 'Stop',         ko: '정지' },
-  'controls.prev':        { en: 'Previous',     ko: '이전 파일' },
-  'controls.next':        { en: 'Next',         ko: '다음 파일' },
   'controls.shuffleOn':   { en: 'Turn shuffle off', ko: '셔플 끄기' },
   'controls.shuffleOff':  { en: 'Turn shuffle on',  ko: '셔플 켜기' },
   'controls.shuffleAria': { en: 'Shuffle',      ko: '셔플' },
