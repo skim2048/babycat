@@ -8,14 +8,15 @@
 ## 1.2 프로젝트 범위; Project Scope
 
 - 프로젝트 이름은 babycat이다.
-- babycat은 비디오 분석이 요구되는 분야에 VLM(Vision Language Model)을 적용할 수 있는지 빠르게 프로토타이핑 하기 위한 범용 소프트웨어이다.
-- babycat은 IP 카메라로부터 RTSP(Real-Time Streaming Protocol)를 통해 송신된 비디오 스트림을 VLM으로 분석하고, 미리 정의된 키워드에 따라 이벤트를 감지하여 이를 비디오 클립으로 저장하는 백엔드이다.
+- babycat은 비디오 분석이 요구되는 분야에 VLM을 적용할 수 있는지 빠르게 프로토타이핑 하기 위한 범용 소프트웨어이다.
+- babycat은 IP 카메라로부터 RTSP를 통해 송신된 비디오 스트림을 VLM으로 분석하고, 미리 정의된 키워드에 따라 이벤트를 감지하여 이를 비디오 클립으로 저장하는 백엔드이다.
 - babycat은 둘 이상의 IP 카메라로부터 동시에 비디오를 수신할 수 없다.
 - babycat은 H.264 코덱으로 인코딩된 실시간 스트림만을 비디오 입력 소스로 인식하며, 다른 코덱(H.265/HEVC)이나 비디오 파일 포맷(mp4)은 아직 지원 대상이 아니다.
-- babycat은 Jetson Orin NX 급 이상의 단일 NVIDIA 엣지 디바이스에서 구동된다.
-- babycat은 하드웨어 디코딩/인코딩을 사용하므로 해당 디코더가 없는 Jetson Orin Nano 급 NVIDIA 엣지 디바이스는 지원 대상이 아니다.
+- babycat은 Jetson Orin NX 급 이상의 모듈이 탑재된, 단일 NVIDIA 엣지 디바이스에서 구동된다.
+- babycat은 하드웨어 디코딩/인코딩을 사용하므로 해당 디코더가 없는 Jetson Orin Nano 급 모듈이 탑재된, NVIDIA 엣지 디바이스는 지원 대상이 아니다.
 - babycat의 VLM 추론은 외부 클라우드 서비스 연결 없이 로컬에서만 이루어진다.
-- babycat은 ONVIF 프로토콜을 통해 PTZ(Pan-Tilt-Zoom) 카메라를 제어할 수 있다.
+- babycat의 VLM 추론은 모델 종류에 따라 하드웨어 메모리 요구량이 달라질 수 있다.
+- babycat은 ONVIF 프로토콜을 통해 PTZ 카메라를 제어할 수 있다.
 
 ## 1.3 문서 규약; Document Conventions
 
