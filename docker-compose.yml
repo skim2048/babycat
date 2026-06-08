@@ -37,6 +37,7 @@ services:
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
       - JWT_SECRET=${JWT_SECRET:?required}
       - VLM_MODELS=${VLM_MODELS:?required}
+      - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
       # FCM 알림 설정입니다. 값이 없으면 알림을 보내지 않고 로그만 남깁니다.
       # FCM 활성화 절차:
       #   1. Firebase 콘솔에서 서비스 계정 JSON 키를 발급하고 config/fcm_credentials.json에 저장합니다.

@@ -40,6 +40,9 @@ log = logging.getLogger(__name__)
 LOAD_TIMEOUT = float(os.getenv("VLM_LOAD_TIMEOUT", "1800"))
 # @claude One generate() call — a cold 13b on Orin NX is slow but not this slow.
 INFER_TIMEOUT = float(os.getenv("VLM_INFER_TIMEOUT", "120"))
+# @claude Upper bound on tokens per VLM generation. Stop markers (</s>, <|im_end|>,
+# @claude etc.) may truncate earlier; see _child_run_inference.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "32"))
 # @claude SIGTERM → SIGKILL grace when stopping a child.
 STOP_GRACE = 10.0
 # @claude Bound on how long the parent waits for the child to open its listener.
@@ -67,7 +70,7 @@ def _child_run_inference(model, ChatHistory, frames, prompt):
 
     embedding, _ = chat.embed_chat()
     tokens = []
-    for token in model.generate(embedding, max_new_tokens=32, streaming=True):
+    for token in model.generate(embedding, max_new_tokens=MAX_NEW_TOKENS, streaming=True):
         tokens.append(token)
 
     raw = "".join(tokens)
