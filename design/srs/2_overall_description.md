@@ -1,17 +1,17 @@
-# 2. 전체 설명; Overall Description
+# 2. Overall Description; 전체 설명
 
-## 2.1 프로젝트 조망; Project Perspective
+## 1. Product Perspective; 제품 조망
 
 babycat은 단일 엣지 디바이스에서 동작하는 독립 실행형 시스템이다. 외부와의 접점은 두 가지다.
 
-![Project Perspective](figs/2-1_project_perspective.jpg)
+![Product Perspective](figs/2-1_product_perspective.jpg)
 
 |인터페이스|설명|
 |---|---|
 |Web Browser|babycat과 상호작용하기 위한 웹 브라우저.|
 |IP Camera|babycat에 비디오 스트림을 제공하는 외부 장치. ONVIF 지원 시 PTZ 제어 대상.|
 
-## 2.2 전체 시스템 구성; Overall System Configuration
+## 2. Overall System Configuration; 전체 시스템 구성
 
 babycat은 다섯 가지 내부 컴포넌트로 구성된다.
 
@@ -25,7 +25,7 @@ babycat은 다섯 가지 내부 컴포넌트로 구성된다.
 |Web Server|웹 프론트엔드 정적 파일 제공 및 API 요청 중계 서버.|
 |Storage|비디오 클립과 메타데이터의 영속 저장소.|
 
-## 2.3 전체 동작; Overall Operation
+## 3. Overall Operation; 전체 동작 방식
 
 ### 카메라 프로필 저장
 
@@ -57,12 +57,12 @@ babycat은 다섯 가지 내부 컴포넌트로 구성된다.
 3. **Web Server**는 수신된 요청을 **API Server**에 전달한다.
 4. **API Server**는 수신된 요청에 따라 **Storage**에서 클립 목록을 조회하거나 삭제하고, 결과를 반환한다.
 
-## 2.4 주요 기능; Project Functions
+## 4. Project Functions; 제품 주요 기능
 
-## 2.5 사용자 분류 및 특성; User Classes and Characteristics
+## 5. User Classes and Characteristics; 사용자 계층과 특징
 
-## 2.6 가정 및 의존성; Assumptions and Dependencies
+## 6. Assumptions and Dependencies; 가정과 종속관계
 
-## 2.7 요구사항 배분; Apportioning of Requirements
+## 7. Apportioning of Requirements; 단계별 요구사항
 
-## 2.8 하위 호환성; Backward Compatibility
+## 8. Backward Compatibility; 하위 호환성
