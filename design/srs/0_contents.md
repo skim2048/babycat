@@ -10,7 +10,7 @@
 # 2. Overall Description; 전체 설명
 1. Product Perspective; 제품 조망
 2. Overall System Configuration; 전체 시스템 구성
-3. Overall Operation; 전체 동작방식
+3. Overall Operation; 전체 동작 방식
 4. Product Functions; 제품 주요 기능
 5. User Classes and Characteristics; 사용자 계층과 특징
 6. Assumptions and Dependencies; 가정과 종속관계

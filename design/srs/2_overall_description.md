@@ -17,7 +17,7 @@ Babycat은 네 가지 내부 컴포넌트로 구성된다.
 
 ![Overall System Configuration](figs/2-2_overall_system_conf.jpg)
 
-실선 화살표는 상시 연결을, 점선 화살표는 조건부 연결을 나타낸다. Storage 옆의 레이블(rw)은 해당 컴포넌트의 접근 권한을 나타낸다.
+Storage 옆의 레이블(rw)은 해당 컴포넌트의 접근 권한을 나타낸다. 화살표 규약은 1.3을 따른다.
 
 |항목|설명|
 |---|---|
@@ -53,12 +53,13 @@ Babycat은 네 가지 내부 컴포넌트로 구성된다.
 
 1. **User**가 **Client App**에서 라이브 스트리밍 재생을 요청한다.
 2. **Client App**은 **API Server**에 스트림 접속 정보를 요청한다.
-3. **API Server**는 **MediaMTX Server**의 스트림 접속 정보를 **Client App**에 반환한다.
-4. **Client App**은 **MediaMTX Server**에 직접 연결하여 HLS 또는 WebRTC 스트림을 수신한다.
+3. **API Server**는 **MediaMTX Server**의 스트림 접속 정보(스트림 URL과 JWT)를 **Client App**에 반환한다.
+4. **Client App**은 JWT를 사용하여 **MediaMTX Server**에 직접 연결한다.
+5. **MediaMTX Server**는 JWT 검증에 성공한 경우에만 HLS 또는 WebRTC 스트림을 송신한다.
 
 ### D. 비디오 분석 및 이벤트 클립 저장
 
-본 시나리오는 카메라 프로필이 저장되어 있는 경우에 한한다.
+본 시나리오는 카메라 프로필이 저장되어 있고, 이벤트 키워드가 설정되어 있는 경우에 한한다.
 
 1. **App Server**는 저장된 카메라 프로필의 소스를 **MediaMTX Server**에 전달하고 파이프라인을 재시작한다.
 2. **MediaMTX Server**는 RTSP를 통해 **RTSP Source**로부터 비디오 스트림을 수신하여 **App Server**에 송신한다.
@@ -81,15 +82,15 @@ Babycat은 네 가지 내부 컴포넌트로 구성된다.
 3. **API Server**는 **Storage**에서 클립 목록을 조회하거나 삭제하고 결과를 **Client App**에 반환한다.
 4. **Client App**은 요청 결과를 화면에 표시한다.
 
-## 2.4 Project Functions; 제품 주요 기능
+## 2.4 Product Functions; 제품 주요 기능
 
-작성 생략
+주요 기능은 2.3의 동작 방식과 2.7의 v1.0 기능 목록에 요약되어 있으므로, 중복을 피하기 위해 본 절은 작성을 생략한다.
 
 ## 2.5 User Classes and Characteristics; 사용자 계층과 특징
 
 ### 운영자(Operator)
 - 카메라가 설치된 현장을 관리하며 Client App을 통해 Babycat과 상호작용하는 주 사용자이다.
-- 카메라 프로필 설정, 라이브 스트림 모니터링, 이벤트 클립 조회 및 삭제를 주로 수행한다.
+- 카메라 프로필 및 이벤트 키워드 설정, 카메라 PTZ 제어, 라이브 스트림 모니터링, 이벤트 클립 조회·재생·삭제를 주로 수행한다.
 - VLM이나 AI에 대한 전문 지식 없이도 기본 기능을 사용할 수 있어야 한다.
 
 ### 시스템 관리자(System Administrator)
@@ -131,8 +132,9 @@ Babycat은 네 가지 내부 컴포넌트로 구성된다.
 |---|---|
 |다중 카메라 지원|단일 카메라를 전제한 파이프라인 구조 및 카메라 프로필 데이터 모델을 전면 재설계해야 한다.|
 |H.264 외 코덱(H.265 등) 지원|GStreamer 파이프라인에서 코덱 처리를 추상화해야 한다.|
-|Jetson 외 환경 지원|하드웨어 가속 의존성을 분리하고 소프트웨어 폴백을 구현해야 한다.|
-|장기 영상 트렌드 분석|현재 설계 범위 밖이다. (1.2 참조)|
+|이벤트 푸시 알림|외부 푸시 서비스(FCM 등) 연동이 추가되어 2.1의 외부 시스템 구성이 변경된다. API Server에 디바이스 토큰 관리가 필요하다.|
+
+장기 영상 트렌드 분석과 Jetson 외 환경 지원은 이후 버전으로 미루는 기능이 아니라 범위 밖이다. (1.2 참조)
 
 ## 2.8 Backward Compatibility; 하위 호환성
 
