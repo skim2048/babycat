@@ -25,6 +25,7 @@
 |`FR`|Functional Requirement(기능 요구사항)|시스템이 수행해야 하는 기능|
 |`NFR`|Non-Functional Requirement(비기능 요구사항)|성능·신뢰성·보안 등 품질 속성|
 |`CON`|Constraint(제약사항)|기술·환경·정책상 변경 불가 내용|
+|`IF`|Interface(인터페이스)|외부 시스템과의 인터페이스|
 
 식별자 형식은 `<접두어>-<세자리 번호>` 이다. (예: `FR-001`, `NFR-002`, `CON-001`)
 
