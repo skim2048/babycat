@@ -56,6 +56,7 @@
 |NVIDIA Container Toolkit|Docker 컨테이너에서 NVIDIA GPU에 접근할 수 있도록 하는 런타임 툴킷.|
 |Jetson Container|NVIDIA Jetson Platform 전용 Docker 이미지 빌드 시스템 및 사전 빌드 이미지 모음(dustynv/jetson-containers). NanoLLM을 비롯한 다수의 ML 프레임워크 이미지를 제공.|
 |NanoLLM|NVIDIA Jetson에서 VLM/LLM 추론을 위한 최적화 라이브러리. Jetson Container 이미지 형태로 제공.|
+|JWT|JSON 웹 토큰(JSON Web Token). RFC 7519로 정의된 개방형 표준으로, 당사자 간 정보 교환을 안전하게 처리한다. Babycat은 API 기반 사용자 인증 및 스트리밍 접근 제어에 사용한다.|
 
 ## 1.5 Related Documents; 관련 문서
 
