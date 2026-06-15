@@ -11,10 +11,11 @@ services:
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      - "8554:8554"      # RTSP
-      - "8888:8888"      # HLS
-      - "8889:8889"      # WebRTC HTTP
-      - "8890:8890/udp"  # WebRTC ICE
+      # RTSP(8554)는 호스트에 공개하지 않는다. App Server는 Docker 내부
+      # 네트워크(mtx:8554)로 접근하며, 외부 RTSP 접점은 존재하지 않는다.
+      - "8888:8888"      # HLS → (Client App)
+      - "8889:8889"      # WebRTC HTTP → (Client App)
+      - "8890:8890/udp"  # WebRTC ICE → (Client App)
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
 
