@@ -1,94 +1,30 @@
-# Babycat — Software Design Description (SDD)
+# 1. Introduction; 개요
+1. Purpose; 목적
+2. Document Organization; 문서 구성
+3. References; 참조
 
-본 문서는 **설계·구현 방식(How)** 을 기술한다. 요구사항(What)은 SRS(`design/srs/`)에 있으며, 본 문서는 SRS를 토대로 작성된다. 코드를 읽으면 알 수 있는 내용은 옮겨 적지 않고, 코드가 말해주지 않는 **계약·알고리즘·결정과 그 근거**를 남기는 데 집중한다.
+# 2. Components and Responsibilities; 컴포넌트와 책임
 
-구성 원칙: 설계 내용은 기능이 아니라 **컴포넌트와 그 사이 인터페이스** 기준으로 정리한다. 한 컴포넌트의 계약이 여러 기능에 걸쳐 쓰이므로, 컴포넌트 기준으로 한 번만 적고 기능 쪽에서 가리킨다. SRS 2.4의 각 기능은 아래 인터페이스 여러 개를 거쳐 실현된다.
+# 3. Interface Design; 인터페이스 설계
+1. #1 Client App - API Server
+2. #2 API Server - App Server
+3. #3 App Server - RTSP Source (조건부: ONVIF PTZ)
+4. #4 App Server - MediaMTX Server
+5. #5 MediaMTX Server - RTSP Source
+6. #6 MediaMTX Server - Client App
+7. #7 API Server - Storage
+8. #8 App Server - Storage
 
-참조: SRS 2.2(전체 구성), SRS 4(외부 인터페이스), `design/memo.txt`(미결 설계 재료).
+# 4. Runtime Behavior; 런타임 동작
+1. Pipeline Lifecycle; 파이프라인 수명주기
+2. Inference and Event Detection; 추론·이벤트 감지
+3. Trigger Clip Recording; 트리거 클립 녹화
+4. Failure Recovery; 장애 복구
 
----
+# 5. Data Design; 데이터 설계
+1. Clip Path Schema; 클립 경로 스키마
+2. Clip Metadata; 클립 메타데이터
+3. Database Schema; 데이터베이스 스키마
+4. Camera Profile; 카메라 프로필
 
-## 1. 컴포넌트와 책임
-
-SRS 2.2의 네 내부 컴포넌트에 대한 설계 관점의 책임 정의. (작성 예정)
-
-| 컴포넌트 | 책임 | 비고 |
-|---|---|---|
-| API Server | 단일 진입점. Client App의 HTTP 요청 처리. | 작성 예정 |
-| App Server | VLM 추론, 이벤트 감지, 클립 저장, 카메라/소스 제어. | 작성 예정 |
-| MediaMTX Server | RTSP 수신·재배포(HLS/WebRTC). | 작성 예정 |
-| Storage | 클립·메타데이터·DB·카메라 프로필 영속화. | 작성 예정 |
-
----
-
-## 2. 인터페이스 설계
-
-각 인터페이스는 다음 축으로 기술한다: **데이터 입출력 / 프로토콜·포트 / 종속성 / 계약(스키마)·알고리즘**.
-검토 순번은 "관심의 자연스러운 이동"을 따른다(SRS 2.2 화살표 기준).
-
-### #1 Client App → API Server
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: HTTP, JSON 본문, 포트 8000 (외부 공개)
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정 (엔드포인트 상세 명세의 집)
-
-### #2 API Server → App Server
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: HTTP, JSON 본문, 포트 8080 (Docker 내부 전용)
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
-### #3 App Server → RTSP Source  (조건부: ONVIF PTZ 지원 시)
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: ONVIF
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
-### #4 App Server → MediaMTX Server  (소스 설정·제어)
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: HTTP(MediaMTX 제어 API v3), 포트 9997 (Docker 내부 전용)
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
-### #5 MediaMTX Server → RTSP Source  (스트림 수신; 연결 개시 방향)
-- 데이터 입출력: 작성 예정 (연결 개시는 MediaMTX→Source, 비디오 데이터는 Source→MediaMTX)
-- 프로토콜·포트: RTSP(H.264), 포트 8554 (내부; 호스트 비공개)
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
-### #6 MediaMTX Server → Client App  (라이브 스트리밍; 데이터 경로)
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: HLS(8888), WebRTC(8889 + 8890/UDP) (외부 공개)
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정 (JWT 스트리밍 인증 — memo.txt 2부 참조)
-
-### #7 API Server → Storage  (rw)
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: 파일시스템 바인드 마운트 / SQLite
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
-### #8 App Server → Storage  (rw)
-- 데이터 입출력: 작성 예정
-- 프로토콜·포트: 파일시스템 바인드 마운트
-- 종속성: 작성 예정
-- 계약·알고리즘: 작성 예정
-
----
-
-## 3. 데이터 설계
-
-클립 파일 경로 스키마, 메타데이터(.json) 계약, DB 스키마, 카메라 프로필 스키마 등. (작성 예정)
-
----
-
-## 4. 설계 결정 기록 (Decision Log)
-
-"왜 이렇게 했는가"를 남긴다. 코드가 말해주지 않는, 가장 복원하기 비싼 정보. `design/memo.txt`의 미결 항목이 결정되면 이리로 옮긴다.
-
-| ID | 결정 | 대안 | 근거 | 상태 |
-|---|---|---|---|---|
-| D-A | (단일 진입점) 작성 예정 | | | 미결 |
-| D-B | (스트리밍 인증: HS256+HTTP콜백 vs RS256+JWKS) 작성 예정 | | | 미결 |
-| D-C | (Storage/데이터 계약) 작성 예정 | | | 미결 |
-| D-D | (App–API 내부 계약) 작성 예정 | | | 미결 |
+# 6. Design Decisions; 설계 결정 기록
