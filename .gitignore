@@ -29,7 +29,6 @@ __screenshots__/
 
 # Runtime
 data/
-config/cam_profile.json
 
 # OS
 .DS_Store
