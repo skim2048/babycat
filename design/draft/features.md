@@ -2,7 +2,6 @@
 
 ## 1. 전체 시스템 구성
 ![arch](arch.png)
-사용자의 모든 제어 및 기능 요청은 ***Client App***을 통해 단일 진입점인 ***API Server***를 거쳐 시스템으로 전달된다. 단, HLS/WebRTC 실시간 스트림은 트래픽 분리 및 효율성을 위해 ***MediaMTX Server***가 직접 ***Client App***로 송출한다. 
 
 ### 1.1 외부 시스템/요소
 
@@ -41,27 +40,36 @@
   - ***API Server***와 ***App Server***가 공유
   - 스스로 통신을 개시하지 않고 읽기·쓰기 요청에 응답만 가능
 
-### 1.3 컴포넌트 간 연결
-컴포넌트 간 연결은 프로토콜·포트와 방향을 아래와 같이 정의한다. 간선은 도식의 범례에 따라 세 종류로 구분되며, 종류마다 화살표가 가리키는 의미가 다르다.
+### 1.3 구성 요소 간 연결
 
-- **제어/요청** (실선): 한 컴포넌트가 다른 컴포넌트를 호출하는 동기적 요청·응답. 화살표는 요청을 *개시*하는 방향을 가리킨다.
-- **데이터/스트림** (점선): 연속적인 미디어가 한 방향으로 흐르는 경로. 화살표는 *데이터 흐름* 방향을 가리킨다(개시 방향과 반대일 수 있다).
-- **자원 접근** (이중선): 능동 컴포넌트가 수동 자원(Storage)을 읽고 쓰는 접근. 방향 없이 `rw`로 표기한다.
+구성 요소 간 연결은 「1.1 외부 시스템/요소」와 「1.2 내부 컴포넌트」의 요소들이 서로 통신하거나 자원에 접근하는 경로이며, 그 각각의 프로토콜·포트와 방향을 아래와 같이 정의한다.
 
-외부에 공개되는 포트는 (1) 8000과 라이브 스트리밍 (7)·(8)이며, (2)·(3)·(6)·(9)·(10)은 Docker 내부 전용, (4)·(5)는 카메라와의 LAN 구간이다.
+화살표는 데이터가 흐르는 방향이 아니라 **요청을 개시하는 방향**을 가리킨다. 한쪽만 요청을 개시하면 단방향(개시자 → 수신자)이고, 양 끝이 서로 요청을 개시할 수 있으면 양방향이다. 예컨대 라이브 영상은 ***MediaMTX Server***에서 ***Client App***으로 흐르지만, 연결을 여는 것은 ***Client App***이므로 화살표는 ***Client App*** → ***MediaMTX Server*** 방향이다. 한편 능동 컴포넌트가 수동 자원(***Storage***)을 읽고 쓰는 접근은 방향 없이 `rw`로 표기한다.
 
-|태그|프로토콜|포트|설명|
-|---|---|---|---|
-|(1)|HTTP|8000|Client App → API Server. 외부 공개. 요청·응답 본문은 JSON. 모든 클라이언트 요청의 단일 진입점(인증·계정·RTSP Source·클립·이벤트).|
-|(2)|HTTP|8080|API Server → App Server. Docker 내부 전용. 본문은 JSON. API가 일부 계약(RTSP Source 설정 등)을 App Server로 프록시한다.|
-|(3)|HTTP|9997|App Server → MediaMTX Server. 내부 전용. 제어 API v3로 MediaMTX 소스를 설정한다.|
-|(4)|ONVIF(HTTP/SOAP)|RTSP Source ONVIF 포트(예: 2020)|App Server → RTSP Source. 조건부(ONVIF 지원 소스에 한함). PTZ 제어.|
-|(5)|RTSP(H.264)|RTSP Source 포트(기본 554)|RTSP Source → MediaMTX Server. MediaMTX가 RTSP Source의 URL로 접속해 스트림을 수신한다(연결 개시는 MediaMTX→Source). LAN 구간.|
-|(6)|RTSP(H.264)|8554|MediaMTX Server → App Server. 내부 전용. App이 추론용 스트림을 수신한다.|
-|(7)|HLS|8888|MediaMTX Server → Client App. 외부 공개. 라이브 영상 재배포.|
-|(8)|WebRTC|8889 + 8890/UDP|MediaMTX Server → Client App. 외부 공개. 라이브 영상 재배포(ICE는 8890/UDP).|
-|(9)|파일시스템 / SQLite|—|API Server ↔ Storage. 자원 접근(rw). 이벤트·사용자 DB(`/data/db/babycat.db`) 및 클립 파일.|
-|(10)|파일시스템|—|App Server ↔ Storage. 자원 접근(rw). RTSP Source 프로필(`/data/config/cam_profile.json`), 클립·롤오버 세그먼트.|
+외부에 공개되는 포트는 (1)과 라이브 스트리밍 (7)·(8)·(9)이며, (2)·(3)·(6)은 Docker 내부 전용, (4)·(5)는 RTSP Source와의 LAN 구간이다. 자원 접근 (10)·(11)은 네트워크가 아닌 파일시스템 경로다.
+
+- **(1)** ***Client App*** → ***API Server*** · HTTP 8000 · 외부 공개
+  - ***Client App***이 개시한다. 본문은 JSON. 모든 클라이언트 요청이 거치는 유일한 외부 진입점이므로 호스트에 공개되며, 단일 진입점 원칙상 외부에 노출되는 제어 경로는 이 연결뿐이다.
+- **(2)** ***API Server*** → ***App Server*** · HTTP 8080 · 내부 전용
+  - ***API Server***가 개시한다. 본문은 JSON. App Server 소관의 요청을 프록시한다. 외부에서 App Server에 직접 닿지 못하도록 Docker 내부망 전용이며, 정당한 소비자는 ***API Server*** 하나다.
+- **(3)** ***App Server*** → ***MediaMTX Server*** · HTTP 9997 · 내부 전용
+  - ***App Server***가 개시한다. 본문은 JSON. MediaMTX 제어 API v3로 소스 경로(path)를 설정한다. 미디어 서버 관리 면이므로 내부망 전용이다.
+- **(4)** ***App Server*** → ***RTSP Source*** · ONVIF(HTTP/SOAP) 2020 · LAN
+  - ***App Server***가 개시해 PTZ를 제어한다. **조건부** — ONVIF를 지원하는 소스에 한한다. 소스와 같은 LAN 구간에서만 도달하며, 포트는 소스마다 달라 2020은 예시다.
+- **(5)** ***RTSP Source*** ↔ ***MediaMTX Server*** · RTSP(H.264) 554 · LAN
+  - 양방향 — RTSP는 양 끝이 모두 에이전트라 서로 요청을 개시할 수 있다. 실제 영상은 ***MediaMTX Server***가 소스 URL로 접속해 당겨오며 소스에서 흘러든다(H.264). 소스와 같은 LAN 구간이며, 554는 기본값으로 소스 설정에 따른다.
+- **(6)** ***MediaMTX Server*** ↔ ***App Server*** · RTSP(H.264) 8554 · 내부 전용
+  - 양방향 — (5)와 같이 RTSP 양 끝이 에이전트다. 실제 영상은 ***App Server***가 추론용으로 당겨오며 ***MediaMTX Server***에서 흘러든다(H.264). 내부망 전용이다.
+- **(7)** ***Client App*** → ***MediaMTX Server*** · HLS 8888 · 외부 공개
+  - ***Client App***이 HLS 클라이언트로 접속해 개시한다. 라이브 영상은 역방향(***MediaMTX Server*** → ***Client App***)으로 흐른다. 미디어 평면은 단일 진입점의 예외로, API를 거치지 않고 ***MediaMTX Server***가 직접 서빙하며 호스트에 공개된다.
+- **(8)** ***Client App*** → ***MediaMTX Server*** · WebRTC 시그널링(WHEP/HTTP) 8889 · 외부 공개
+  - ***Client App***이 SDP offer를 보내 WebRTC 세션을 협상하며 개시한다(WHEP는 HTTP 위에서 동작). (7)과 같이 미디어 평면이라 외부에 공개된다.
+- **(9)** ***Client App*** ↔ ***MediaMTX Server*** · WebRTC 미디어 8890/UDP · 외부 공개
+  - 양방향 — ICE 연결성 점검과 RTCP 피드백이 양쪽에서 오간다. 암호화된 미디어(SRTP)는 ***MediaMTX Server***에서 흘러오고, 수신 보고(SRTCP)는 ***Client App***에서 올라간다. (8)의 시그널링으로 협상된 뒤 이 경로로 미디어가 흐른다.
+- **(10)** ***API Server*** ↔ ***Storage*** · 자원 접근(rw) · 파일시스템/SQLite
+  - 무방향. ***API Server***가 `./data` 바인드 마운트의 이벤트·사용자 DB(`/data/db/babycat.db`)와 클립 파일을 직접 읽고 쓴다. 네트워크가 아닌 파일시스템 접근이므로 포트가 없다.
+- **(11)** ***App Server*** ↔ ***Storage*** · 자원 접근(rw) · 파일시스템
+  - 무방향. ***App Server***가 RTSP Source 프로필(`/data/config/cam_profile.json`)과 이벤트 클립·롤오버 세그먼트를 파일시스템으로 직접 읽고 쓴다.
 
 ## 2. 세부 기능
 
