@@ -1,0 +1,100 @@
+# 4. External Interface Requirements; 외부 인터페이스 요구사항
+
+본 장은 Babycat 경계를 넘는 외부 인터페이스를 정의한다. 내부 컴포넌트 간 인터페이스(API Server ↔ App Server 등)는 설계 문서의 범위로 한다. 외부 인터페이스에는 `IF` 식별자를 부여한다(1.3 참조).
+
+|ID|인터페이스|당사자|프로토콜|
+|---|---|---|---|
+|`IF-001`|HTTP API|Client App ↔ API Server|HTTP/JSON|
+|`IF-002`|비디오 스트림 수신|RTSP Source → MediaMTX Server|RTSP (H.264)|
+|`IF-003`|라이브 스트리밍|MediaMTX Server → Client App|HLS, WebRTC|
+|`IF-004`|PTZ 제어|App Server → RTSP Source|ONVIF|
+
+## 4.1 System Interface; 시스템 인터페이스
+
+### IF-001: HTTP API (Client App ↔ API Server)
+
+Client App이 사용하는 단일 제어 진입점이다. 요청·응답 본문은 JSON이며, 인증이 필요한 엔드포인트는 `Authorization: Bearer <JWT>` 헤더를 요구한다(헤더를 설정할 수 없는 클라이언트 기능을 위해 `?token=` 쿼리 파라미터를 허용한다).
+
+|엔드포인트|메서드|기능|인증|
+|---|---|---|---|
+|`/api/login`|POST|로그인. JWT 및 리프레시 토큰 발급.|불필요|
+|`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(토큰 회전).|불필요|
+|`/api/logout`|POST|리프레시 토큰 폐기.|불필요|
+|`/api/change-password`|POST|비밀번호 변경.|필요|
+|`/health`|GET|서버 상태 확인.|불필요|
+|`/camera`|GET|카메라 프로필 조회(비밀번호 마스킹).|필요|
+|`/camera`|POST|카메라 프로필 적용.|필요|
+|`/clips`|GET|클립 목록 조회(키워드·날짜 필터, 페이지네이션).|필요|
+|`/clips/{name}`|GET|클립 재생(HTTP Range 지원).|필요|
+|`/clips`|DELETE|선택 클립 삭제.|필요|
+|`/clips/all`|DELETE|전체 클립 삭제.|필요|
+|`/events`|GET|이벤트 이력 조회(페이지네이션).|필요|
+|`/events`|DELETE|이벤트 이력 전체 삭제.|필요|
+
+다음 엔드포인트는 재설계에서 API Server로 통합되어야 하는 것들로, 경로와 명세는 작성 보류이다.
+
+|기능|현재 위치|비고|
+|---|---|---|
+|PTZ 제어|App Server 직접 노출|단일 진입점 원칙에 따라 API Server 경유로 변경(2.3-B).|
+|VLM 프롬프트·이벤트 키워드 설정|App Server 직접 노출|2.3-D의 선행 조건을 충족하는 경로.|
+|스트림 접속 정보 발급(URL + JWT)|신규|2.3-C 1~3단계.|
+|시스템 상태 실시간 수신(SSE)|App Server 직접 노출|추론 결과 및 하드웨어 상태.|
+
+이벤트 푸시 알림용 디바이스 관리 API는 차기 버전으로 미룬다(2.7 참조).
+
+각 엔드포인트의 상세 명세(요청·응답 스키마, 에러 코드)의 작성 방식은 작성 보류 — 본 문서 부록 또는 별도 IRS 문서로의 분리를 검토한다.
+
+### IF-002: 비디오 스트림 수신 (RTSP Source → MediaMTX Server)
+
+- RTSP Source는 H.264로 인코딩된 비디오 스트림을 제공해야 한다(2.6 참조).
+- MediaMTX Server는 저장된 카메라 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 TCP 연결하여 스트림을 수신한다.
+- 발생 빈도: 카메라 프로필이 활성화된 동안 상시 연결.
+- 에러 처리: 연결 실패 시 재시도한다. 재시도 정책은 작성 보류.
+
+### IF-003: 라이브 스트리밍 (MediaMTX Server → Client App)
+
+- Client App은 API Server에서 발급받은 JWT를 사용하여 MediaMTX Server에 직접 연결한다(2.3-C).
+- 프로토콜: HLS(HTTP) 또는 WebRTC. WebRTC는 ICE 후보로 광고된 `HOST_IP`로 미디어 연결을 수립한다.
+- MediaMTX Server는 JWT 검증에 성공한 경우에만 스트림을 송신한다. JWT 전달 방식(Authorization 헤더 또는 쿼리 파라미터)은 작성 보류.
+
+### IF-004: PTZ 제어 (App Server → RTSP Source)
+
+- 조건부 인터페이스이다. RTSP Source가 ONVIF PTZ를 지원하는 경우에 한한다(2.3-B).
+- App Server는 카메라 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)·정지 명령을 전달한다.
+- 발생 빈도: 사용자 입력 시에만 발생.
+
+## 4.2 User Interface; 사용자 인터페이스
+
+이 시스템에는 사용자 인터페이스 요구사항이 없다. Babycat은 백엔드이며 사용자 인터페이스는 Client App의 책임이다. Babycat이 제공하는 것은 IF-001의 HTTP API뿐이다.
+
+## 4.3 Hardware Interface; 하드웨어 인터페이스
+
+이 시스템에는 하드웨어 인터페이스 요구사항이 없다. 카메라 제어는 네트워크 프로토콜(IF-004)로 수행하며, Jetson Board의 하드웨어 가속 장치 사용은 운영 환경 요구사항(3.1)에 해당한다.
+
+## 4.4 Software Interface; 소프트웨어 인터페이스
+
+|이름|버전|출처|용도|
+|---|---|---|---|
+|MediaMTX|작성 보류 (현재 `latest` 사용 중 — 버전 고정 필요)|Docker Hub (`bluenviron/mediamtx`)|RTSP 수신, HLS/WebRTC 송신. App Server가 제어 API(v3)로 소스를 설정한다.|
+|NanoLLM|`dustynv/nano_llm:r36.4.0`|jetson-containers|VLM 추론 스택(App Server 베이스 이미지).|
+|GStreamer|1.x (베이스 이미지 및 호스트 NVIDIA 플러그인)|JetPack / 베이스 이미지|비디오 파이프라인(디코딩, 프레임 추출, 클립 인코딩).|
+|SQLite|Python 내장 `sqlite3`|Python 표준 라이브러리|사용자·토큰·이벤트 영속화(6.4 참조).|
+|FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|API Server 프레임워크.|
+
+공유 데이터: API Server와 App Server는 `/data` 파일시스템(클립 mp4/json, SQLite DB, 카메라 프로필 JSON)을 바인드 마운트로 공유한다. 접근 권한은 2.2를 따른다.
+
+## 4.5 Communication Interface; 통신 인터페이스
+
+외부에 노출되는 포트는 다음과 같다.
+
+|포트|프로토콜|컴포넌트|용도|
+|---|---|---|---|
+|8000/tcp|HTTP|API Server|단일 제어 진입점(IF-001).|
+|8888/tcp|HTTP|MediaMTX Server|HLS 스트리밍(IF-003).|
+|8889/tcp|HTTP|MediaMTX Server|WebRTC 시그널링(IF-003).|
+|8890/udp|UDP|MediaMTX Server|WebRTC ICE.|
+|8554/tcp|RTSP|MediaMTX Server|RTSP 수신·재배포.|
+
+- App Server의 HTTP 포트(8080)는 내부 전용이며 재설계에서 외부에 노출하지 않는다.
+- 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다(6.9 참조).
+- 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성 보류.
