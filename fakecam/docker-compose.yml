@@ -1,0 +1,21 @@
+name: fakecam
+
+services:
+  backend:
+    build: ./server
+    network_mode: host
+    volumes:
+      - ./videos:/videos:ro
+      - ./server/state:/state
+    environment:
+      - VIDEOS_DIR=/videos
+      - STATE_PATH=/state/state.json
+      - API_PORT=8090
+
+  frontend:
+    build: ./web
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./web:/app
+    restart: unless-stopped

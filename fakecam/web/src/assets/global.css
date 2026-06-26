@@ -1,0 +1,110 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   FakeCam — Global Stylesheet
+   Light theme on :root, dark overrides on [data-theme="dark"].
+   Palette mirrors babycat-web so both apps feel consistent.
+   ────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  /* Background */
+  --bg-page:    #f0f1f4;
+  --bg-surface: #ffffff;
+  --bg-hover:   #ecedf1;
+  --bg-active:  #e0edfb;
+
+  /* Border */
+  --border:        #d8dae0;
+  --border-subtle: #e8e9ee;
+  --border-input:  #b8bcc6;
+
+  /* Text */
+  --text-1: #1a1c24;
+  --text-2: #4a4d58;
+  --text-3: #7c7f8c;
+  --text-4: #a0a3b0;
+
+  /* Accent / status */
+  --accent:        #3b82d6;
+  --danger:        #d03838;
+  --warning-bg:    #fdf5dc;
+  --warning-text:  #a07a00;
+
+  /* Control surfaces (buttons, pills, etc.) */
+  --ctl-bg:       #f6f7f9;
+  --ctl-bg-hover: #e8eaee;
+  --ctl-border:   #d0d4da;
+
+  --pill-bg:    #e8eaee;
+  --primary-bg: #e0edfb;
+  --primary-bg-hover: #cfe3fa;
+  --primary-border:   #9cc3ee;
+
+  --backdrop: rgba(0, 0, 0, 0.35);
+
+  /* Typography */
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-page:    #111;
+  --bg-surface: #181818;
+  --bg-hover:   #1f1f1f;
+  --bg-active:  #1f3a4a;
+
+  --border:        #2a2a2a;
+  --border-subtle: #1f1f1f;
+  --border-input:  #3a3a48;
+
+  --text-1: #eee;
+  --text-2: #c8c8c8;
+  --text-3: #888;
+  --text-4: #666;
+
+  --accent:       #9ccdff;
+  --danger:       #f88;
+  --warning-bg:   #3a2a1f;
+  --warning-text: #f6c47b;
+
+  --ctl-bg:       #2a2a2a;
+  --ctl-bg-hover: #333;
+  --ctl-border:   #444;
+
+  --pill-bg:    #2a2a2a;
+  --primary-bg: #1f3a4a;
+  --primary-bg-hover: #234252;
+  --primary-border:   #2a4a5a;
+
+  --backdrop: rgba(0, 0, 0, 0.55);
+}
+
+html, body, #app { height: 100%; margin: 0; }
+
+body {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  background: var(--bg-page);
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+button {
+  font-family: var(--font-ui);
+  padding: 6px 12px;
+  background: var(--ctl-bg);
+  color: var(--text-1);
+  border: 1px solid var(--ctl-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+button:hover:not(:disabled) { background: var(--ctl-bg-hover); }

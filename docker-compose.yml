@@ -11,11 +11,10 @@ services:
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      # RTSP(8554)는 호스트에 공개하지 않는다. App Server는 Docker 내부
-      # 네트워크(mtx:8554)로 접근하며, 외부 RTSP 접점은 존재하지 않는다.
-      - "8888:8888"      # HLS → (Client App)
-      - "8889:8889"      # WebRTC HTTP → (Client App)
-      - "8890:8890/udp"  # WebRTC ICE → (Client App)
+      - "8554:8554"      # RTSP
+      - "8888:8888"      # HLS
+      - "8889:8889"      # WebRTC HTTP
+      - "8890:8890/udp"  # WebRTC ICE
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
 
@@ -39,8 +38,6 @@ services:
       - JWT_SECRET=${JWT_SECRET:?required}
       - VLM_MODELS=${VLM_MODELS:?required}
       - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
-      # 카메라 프로필은 런타임 상태이므로 Storage(/data) 아래에 둔다(SRS 2.2).
-      - CONFIG_PATH=/data/config/cam_profile.json
       # FCM 알림 설정입니다. 값이 없으면 알림을 보내지 않고 로그만 남깁니다.
       # FCM 활성화 절차:
       #   1. Firebase 콘솔에서 서비스 계정 JSON 키를 발급하고 config/fcm_credentials.json에 저장합니다.
@@ -60,6 +57,7 @@ services:
       - ./data/models:/data/models # NanoLLM 모델 캐시입니다(MLC 컴파일 결과). 이식성을 위해 프로젝트 트리 안에 유지해야 합니다.
       #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM을 활성화할 때 주석을 해제합니다.
       - ./app:/app
+      - ./config:/config
       - ./data:/data
       # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다. 이미지 빌드 시점에는 설치할 수 없습니다.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
