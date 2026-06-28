@@ -7,14 +7,13 @@
 1.6. 독자대상과 읽는 법 (Intended Audience and Reading Suggestions)
 
 2. 전체 설명 (Overall Description)
-2.1. 프로젝트 조망 (Project Perspective)
-2.2. 전체 시스템 구성 (Overall System Configuration)
-2.3. 전체 동작 방식 (Overall Operation)
-2.4. 제품 주요 기능 (Product Functions)
-2.5. 사용자 계층과 특징 (User Classes and Characteristics)
-2.6. 가정과 종속 관계 (Assumptions and Dependencies)
-2.7. 단계별 요구사항 (Apportioning of Requirements)
-2.8. 하위 호환성 (Backward Compatibility)
+2.1. 전체 시스템 구성 (Overall System Configuration)
+2.2. 전체 동작 방식 (Overall Operation)
+2.3. 제품 주요 기능 (Product Functions)
+2.4. 사용자 계층과 특징 (User Classes and Characteristics)
+2.5. 가정과 종속 관계 (Assumptions and Dependencies)
+2.6. 단계별 요구사항 (Apportioning of Requirements)
+2.7. 하위 호환성 (Backward Compatibility)
 
 # 3. Environment; 환경
 1. Operating Environment; 운영 환경
