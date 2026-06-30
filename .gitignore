@@ -45,7 +45,7 @@ config/cam_profile.json
 *.sw?
 
 # Etc.
-tmp/
+#tmp/
 .env
 .codex
 .claude
