@@ -8,7 +8,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="figs/2-1_dark.jpg">
     <source media="(prefers-color-scheme: light)" srcset="figs/2-1_light.jpg">
-    <img alt="전체 시스템 구성" src="생략">
+    <img alt="전체 시스템 구성" src="figs/2-1_light.jpg">
   </picture>
   <figcaption><em>그림 2-1. 프로젝트 조망도</em></figcaption>
 </figure>
@@ -19,19 +19,17 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="figs/2-2_dark.jpg">
     <source media="(prefers-color-scheme: light)" srcset="figs/2-2_light.jpg">
-    <img alt="전체 시스템 구성" src="생략">
+    <img alt="전체 시스템 구성" src="figs/2-2_light.jpg">
   </picture>
   <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
 </figure>
 
-각 구성 요소의 세부 내용은 아래 표와 같다.
-
 |구분|이름|역할|
 |---|---|---|
-|외부 시스템/요소|***Client App***|`Babycat` 사용자용 프론트엔드 앱|
-|외부 시스템/요소|***Video Source***|`Babycat`에 라이브 비디오를 제공하는 외부 소스|
-|내부 컴포넌트|***Gateway***|단일 외부 진입점으로, 사용자 인증과 요청 처리·프록시|
-|내부 컴포넌트|***Engine***|VLM 추론, 장면 이벤트 감지·기록, 프로필 처리·PTZ 제어, 실시간 모니터링 피드 등|
+|외부 시스템/요소|***Client App***|`Babycat` 사용자용 프론트엔드 앱.|
+|외부 시스템/요소|***Video Source***|`Babycat`에 라이브 비디오를 제공하는 외부 소스.|
+|내부 컴포넌트|***Gateway***|단일 외부 진입점, 사용자 인증 및 요청 처리/프록시.|
+|내부 컴포넌트|***Engine***|VLM 추론, 이벤트 감지·기록, 프로필 관리, PTZ 제어 등|
 |내부 컴포넌트|***Media***|라이브 비디오 스트림의 처리·분배 (MediaMTX 기반)|
 |내부 자원|***Storage***|설정 파일이나 비디오 클립 저장, 데이터베이스 등 제공|
 
