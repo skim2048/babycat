@@ -6,8 +6,8 @@
 
 <figure align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="figs/2-1-dark.jpg">
-    <source media="(prefers-color-scheme: light)" srcset="figs/2-1-light.jpg">
+    <source media="(prefers-color-scheme: dark)" srcset="figs/2-1_dark.jpg">
+    <source media="(prefers-color-scheme: light)" srcset="figs/2-1_light.jpg">
     <img alt="전체 시스템 구성" src="생략">
   </picture>
   <figcaption><em>그림 2-1. 프로젝트 조망도</em></figcaption>
@@ -17,8 +17,8 @@
 
 <figure align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="figs/2-2-dark.jpg">
-    <source media="(prefers-color-scheme: light)" srcset="figs/2-2-light.jpg">
+    <source media="(prefers-color-scheme: dark)" srcset="figs/2-2_dark.jpg">
+    <source media="(prefers-color-scheme: light)" srcset="figs/2-2_light.jpg">
     <img alt="전체 시스템 구성" src="생략">
   </picture>
   <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
