@@ -2,13 +2,13 @@
 
 ## 2.1 전체 시스템 구성 (Overall System Configuration)
 
-`Babycat`은 특정 도메인에 VLM 적용 가능성 검토를 목표로 하며, 임베디드 환경을 고려하여 NVIDIA Jetson Board에서 구동되도록 설계되었다.
+`Babycat`은 현장 안전 감시나 이상 상황 감지 등 비디오에서 특정 상황을 인식해야 하는 분야에 VLM 적용 가능 여부를 검토하는 백엔드이다. NVIDIA Jetson Board에서 구동되도록 설계되었다.
 
 <figure align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="figs/2-1_dark.jpg">
     <source media="(prefers-color-scheme: light)" srcset="figs/2-1_light.jpg">
-    <img alt="전체 시스템 구성" src="figs/2-1_light.jpg">
+    <img alt="프로젝트 조망도" src="figs/2-1_light.jpg">
   </picture>
   <figcaption><em>그림 2-1. 프로젝트 조망도</em></figcaption>
 </figure>
@@ -19,16 +19,16 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="figs/2-2_dark.jpg">
     <source media="(prefers-color-scheme: light)" srcset="figs/2-2_light.jpg">
-    <img alt="전체 시스템 구성" src="figs/2-2_light.jpg">
+    <img alt="전체 시스템 구성도" src="figs/2-2_light.jpg">
   </picture>
   <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
 </figure>
 
 |구분|이름|역할|
 |---|---|---|
-|외부 시스템/요소|***Client App***|`Babycat` 사용자용 프론트엔드 앱.|
-|외부 시스템/요소|***Video Source***|`Babycat`에 라이브 비디오를 제공하는 외부 소스.|
-|내부 컴포넌트|***Gateway***|단일 외부 진입점, 사용자 인증 및 요청 처리/프록시.|
+|외부 시스템/요소|***Client App***|`Babycat` 사용자용 프론트엔드 앱|
+|외부 시스템/요소|***Video Source***|`Babycat`에 라이브 비디오를 제공하는 외부 소스|
+|내부 컴포넌트|***Gateway***|단일 외부 진입점, 사용자 인증 및 요청 처리·프록시|
 |내부 컴포넌트|***Engine***|VLM 추론, 이벤트 감지·기록, 프로필 관리, PTZ 제어 등|
 |내부 컴포넌트|***Media***|라이브 비디오 스트림의 처리·분배 (MediaMTX 기반)|
 |내부 자원|***Storage***|설정 파일이나 비디오 클립 저장, 데이터베이스 등 제공|
@@ -37,9 +37,9 @@
 
 `Babycat`은 상호작용과 자율분석 방식을 동시에 지원한다.
 
-**상호작용**: ***Video Source***와 이벤트 키워드를 설정하고, 라이브 비디오를 재생하며, 지원되는 카메라에 한하여 PTZ를 제어하고, 저장된 비디오 클립과 이벤트 발생 이력을 조회·관리한다. 또한 분석 과정과 하드웨어 상태를 실시간으로 확인한다.
+**상호작용**: ***Video Source*** 프로필과 이벤트 키워드를 설정하고, 라이브 비디오를 재생하며, 지원되는 카메라에 한하여 PTZ를 제어하고, 저장된 비디오 클립과 이벤트 발생 이력을 조회·관리한다. 또한 분석 과정과 하드웨어 상태를 실시간으로 확인한다.
 
-**자율분석**: ***Video Source***와 이벤트 키워드가 설정되면 자동으로 시작되며, 비디오를 지속적으로 분석하다가 설정된 키워드에 해당하는 장면이 나타나면 그 구간을 비디오 클립으로 자동 저장한다. 이 과정은 사용자의 개입 없이 상시 반복된다.
+**자율분석**: ***Video Source*** 프로필과 이벤트 키워드가 설정되면 자동으로 시작되며, 비디오를 지속적으로 분석하다가 설정된 키워드에 해당하는 이벤트가 발생하면 그 구간을 비디오 클립으로 저장한다. 이 과정은 사용자의 개입 없이 상시 반복된다.
 
 ## 2.3 주요 기능 (Functions)
 
@@ -49,8 +49,8 @@
 
 |기능|설명|
 |---|---|
-|1-1|로그인 할 수 있다.|
-|1-2|로그아웃 할 수 있다.|
+|1-1|로그인할 수 있다.|
+|1-2|로그아웃할 수 있다.|
 |1-3|로그인 상태를 유지할 수 있다.|
 |1-4|로그인 비밀번호를 변경할 수 있다.|
 
@@ -93,7 +93,7 @@
 
 ### (5) 장면 분석 및 이벤트 기록 기능
 
-지정한 VLM과 프롬프트를 바탕으로, 장면 분석을 통해 사용자가 설정한 키워드에 해당하는 이벤트를 감지하며, 발생 이력을 기록하고 그 구간을 비디오 클립으로 저장하는, `Babycat`의 핵심 기능군이다.
+지정한 VLM과 프롬프트로 장면을 분석하여, 사용자가 설정한 키워드에 해당하는 이벤트를 감지하고 그 발생 이력과 비디오 클립을 저장하는 `Babycat`의 핵심 기능군이다.
 
 |기능|설명|
 |---|---|

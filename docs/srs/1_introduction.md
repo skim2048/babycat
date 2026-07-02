@@ -9,11 +9,11 @@
 ## 1.2 프로젝트 범위 (Project Scope)
 
 - 프로젝트명은 `Babycat`이다.
-- `Babycat`은 특정 도메인에 VLM 적용 가능성을 검토하는 것을 목표로 한다.
+- `Babycat`은 어떤 도메인에 VLM 적용 가능 여부를 검토하는 백엔드이다.
 - `Babycat`은 키워드 매칭 방식의 장면 이벤트 탐지 기능을 제공한다.
 - `Babycat`은 장면 이벤트가 탐지된 구간을 비디오 클립으로 자동 저장하는 기능을 제공한다.
 - `Babycat`은 장기적인 비디오 변화 추이에 대한 요약 및 분석 기능은 제공하지 않는다.
-- `Babycat`은 임베디드 환경을 고려하여 NVIDIA Jetson Board에서 구동되도록 설계되었다.
+- `Babycat`은 NVIDIA Jetson Board에서 구동되도록 설계되었다.
 
 ## 1.3 문서 규칙 (Document Conventions)
 
@@ -65,10 +65,11 @@
 |ONVIF|Open Network Video Interface Forum. 네트워크 보안 카메라 장비의 상호운용성을 위한 개방형 표준 프로토콜.|
 |GStreamer|파이프라인 기반 멀티미디어 프레임워크. 비디오 디코딩 및 프레임 처리에 사용.|
 |MediaMTX|오픈소스 미디어 서버. 미디어 스트림의 라우팅, 중계, 변환 등을 수행.|
+|Edge Device|엣지 디바이스. 데이터가 발생하는 현장에서 직접 연산·추론을 수행하는 기기. 클라우드에 의존하지 않고 로컬에서 처리한다.|
 |Tegra|NVIDIA의 모바일 및 임베디드 기기용 SoC(System on Chip) 프로세서 라인업.|
 |L4T|NVIDIA가 Jetson Platform용으로 개발한, Ubuntu 기반 운영체제(Linux for Tegra).|
 |Jetson Module|NVIDIA의 SoM(System-on-Module) 제품으로, Tegra SoC, RAM, Storage를 소형 보드에 집적한 연산 모듈. 캐리어 보드 없이 단독 동작 불가.|
-|Jetson Board|NVIDIA Jetson Module과 캐리어 보드로 구성된 완전한 하드웨어 유닛.|
+|Jetson Board|NVIDIA Jetson Module과 캐리어 보드로 구성된 완전한 하드웨어 유닛. Edge Device의 일종이다.|
 |Jetson Platform|NVIDIA Jetson 제품군 전체를 아우르는 에코 시스템. Jetson Module, Jetson JetPack SDK, 파트너 하드웨어·소프트웨어를 포함하는 엣지 AI 컴퓨팅 환경.|
 |CUDA|NVIDIA의 병렬 컴퓨팅 플랫폼 및 프로그래밍 API. GPU 가속 연산에 사용.|
 |TensorRT|NVIDIA의 딥러닝 추론 최적화 엔진. 모델 양자화 및 최적화를 통해 추론 속도를 향상.|
