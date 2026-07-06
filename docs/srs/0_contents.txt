@@ -9,7 +9,7 @@
 2. 전체 설명 (Overall Description)
 2.1. 전체 시스템 구성 (Overall System Configuration)
 2.2. 전체 동작 방식 (Overall Operation)
-2.3. 제품 주요 기능 (Product Functions)
+2.3. 주요 기능 (Functions)
 2.4. 사용자 계층과 특징 (User Classes and Characteristics)
 2.5. 가정과 종속 관계 (Assumptions and Dependencies)
 2.6. 단계별 요구사항 (Apportioning of Requirements)
