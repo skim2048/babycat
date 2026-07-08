@@ -1,3 +1,3 @@
-# 9. Document Approvals; 최종 승인자
+# 9. 최종 승인자 (Document Approvals)
 
 1인 프로젝트이므로 별도의 승인 절차를 두지 않는다. 본 장은 작성을 생략한다.
