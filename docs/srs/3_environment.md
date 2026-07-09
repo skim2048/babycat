@@ -24,7 +24,7 @@ ls /dev/v4l2-nvdec /dev/v4l2-nvenc
 
 |항목|버전|비고|
 |---|---|---|
-|Jetson JetPack|6.2(L4T R36.x)|이외 버전에서의 동작은 보장하지 않는다(§2.6).|
+|Jetson JetPack|6.2(L4T R36.x)|이외 버전에서의 동작은 보장하지 않는다(§2.7).|
 |Docker|29.1.3 (검증 기준)|Docker Compose 플러그인(v5.0.0) 포함.|
 |NVIDIA Container Toolkit|1.16.2 (검증 기준)|컨테이너의 GPU 접근에 필수.|
 
