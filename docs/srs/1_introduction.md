@@ -51,18 +51,18 @@
 
 |용어 및 약어|설명|
 |---|---|
-|VLM (Vision-Language Model)|이미지와 텍스트를 함께 처리하는 멀티모달 언어 모델|
-|RTSP (Real-Time Streaming Protocol)|원격으로 미디어 스트림을 실시간 제어하는 프로토콜|
+|VLM(Vision-Language Model)|이미지와 텍스트를 함께 처리하는 멀티모달 언어 모델|
+|RTSP(Real-Time Streaming Protocol)|원격으로 미디어 스트림을 실시간 제어하는 프로토콜|
 |H.264|대중적인 비디오 압축 코덱(codec) 중 하나|
-|HLS (HTTP Live Streaming)|Apple이 개발한, HTTP 기반 비디오 스트리밍 프로토콜|
-|WebRTC (Web Real-Time Communication)|브라우저에서 플러그인 없이 실시간 데이터를 송수신하는 프로토콜|
-|PTZ (Pan·Tilt·Zoom)|카메라의 수평·수직 회전 및 광학 줌을 제어하는 기능|
-|ONVIF (Open Network Video Interface Forum)|네트워크 보안 카메라 장비의 상호운용성을 위한 개방형 표준 프로토콜|
+|HLS(HTTP Live Streaming)|Apple이 개발한, HTTP 기반 비디오 스트리밍 프로토콜|
+|WebRTC(Web Real-Time Communication)|브라우저에서 플러그인 없이 실시간 데이터를 송수신하는 프로토콜|
+|PTZ(Pan·Tilt·Zoom)|카메라의 수평·수직 회전 및 광학 줌을 제어하는 기능|
+|ONVIF(Open Network Video Interface Forum)|네트워크 보안 카메라 장비의 상호운용성을 위한 개방형 표준 프로토콜|
 |GStreamer|파이프라인을 기반으로 비디오를 처리하는 멀티미디어 프레임워크|
 |MediaMTX|미디어 스트림의 라우팅, 중계, 변환 등을 수행하는 오픈소스 미디어 서버|
 |Edge Device|데이터가 발생하는 현장에서 직접 연산·추론을 수행하는 장치|
 |Tegra|NVIDIA의 모바일 및 임베디드 기기용 SoC(System-on-Chip) 프로세서 라인업|
-|L4T (Linux for Tegra)|NVIDIA가 Jetson Platform용으로 개발한 Ubuntu 기반 운영체제|
+|L4T(Linux for Tegra)|NVIDIA가 Jetson Platform용으로 개발한 Ubuntu 기반 운영체제|
 |Jetson Module|Tegra SoC, RAM, Storage를 소형 보드에 집적한 SoM(System-on-Module) 제품|
 |Jetson Board|NVIDIA Jetson Module과 캐리어 보드로 구성된 하드웨어 유닛|
 |Jetson Platform|NVIDIA Jetson 제품군 전체를 아우르는 에코 시스템|
@@ -73,7 +73,7 @@
 |NVIDIA Container Toolkit|Docker 컨테이너에서 NVIDIA GPU에 접근할 수 있도록 하는 런타임 툴킷|
 |Jetson Container|NVIDIA Jetson Platform 전용 Docker 이미지 빌드 시스템 및 사전 빌드 이미지 모음|
 |NanoLLM|NVIDIA Jetson에서 VLM/LLM 추론을 위한 최적화 라이브러리|
-|JWT (JSON Web Token)|사용자의 로그인 인증 및 권한 확인에 주로 사용하는 웹 표준 토큰|
+|JWT(JSON Web Token)|사용자의 로그인 인증 및 권한 확인에 주로 사용하는 웹 표준 토큰|
 
 ## 1.4 관련 문서 (Related Documents)
 
@@ -84,7 +84,7 @@
 ### 설계자
   - 시스템의 범위와 구조를 파악하는 데 집중한다.
   - §1.1에서 문서의 목적을, §2.1에서 제품 범위를 확인한 뒤, §2.2와 §2.3에서 시스템 구조·컴포넌트 구성과 전체 동작 방식을 검토한다.
-  - 이후 §2.4에서 주요 기능을, §2.7에서 버전별 기능 범위를 확인하고, 4장에서 외부 인터페이스 요구사항을 살펴본다.
+  - 이후 §2.4에서 제공 기능을, §2.7에서 버전별 기능 범위를 확인하고, 4장에서 외부 인터페이스 요구사항을 살펴본다.
 
 ### 개발자
   - 구현에 필요한 요구사항을 파악하는 데 집중한다.
