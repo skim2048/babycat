@@ -46,7 +46,7 @@ config/cam_profile.json
 
 # Etc.
 #tmp/
-skill-srs/
+textbook/
 .env
 .codex
 .claude
