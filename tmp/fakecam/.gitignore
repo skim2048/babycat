@@ -1,4 +1,0 @@
-videos/*
-!videos/.gitkeep
-server/state/*
-!server/state/.gitkeep

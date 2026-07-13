@@ -45,7 +45,6 @@ config/cam_profile.json
 *.sw?
 
 # Etc.
-#tmp/
 textbook/
 .env
 .codex
