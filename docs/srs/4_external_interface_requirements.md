@@ -47,14 +47,14 @@
 ### IF-002: 비디오 스트림 수신 (***Video Source*** → ***Media***)
 
 - ***Video Source***는 H.264로 인코딩된 비디오 스트림을 제공해야 한다.
-- ***Media***는 저장된 카메라 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 TCP로 연결하여 스트림을 수신한다.
+- ***Media***는 저장된 카메라 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
 - 발생 빈도: 카메라 프로필이 활성화된 동안 상시 연결.
 - 에러 처리: 연결 실패 시 재시도한다. 재시도 정책은 작성을 보류한다.
 
 ### IF-003: 라이브 스트리밍 (***Media*** → ***Client App***)
 
 - ***Client App***은 ***Gateway***에서 발급받은 JWT를 사용하여 ***Media***에 직접 연결한다.
-- 프로토콜: HLS(HTTP) 또는 WebRTC. WebRTC는 ICE 후보로 광고된 `HOST_IP`로 미디어 연결을 수립한다.
+- 프로토콜: HLS/WebRTC. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
 - ***Media***는 JWT 검증에 성공한 경우에만 스트림을 송신한다. JWT 전달 방식(Authorization 헤더 또는 쿼리 파라미터)은 작성을 보류한다.
 
 ### IF-004: PTZ 제어 (***Engine*** → ***Video Source***)
@@ -75,13 +75,11 @@
 
 |이름|버전|출처|용도|
 |---|---|---|---|
-|MediaMTX|작성 보류 (현재 `latest` 사용 중 — 버전 고정 필요)|Docker Hub (`bluenviron/mediamtx`)|RTSP 수신, HLS/WebRTC 송신. ***Engine***이 제어 API(v3)로 소스를 설정한다.|
-|NanoLLM|`dustynv/nano_llm:r36.4.0`|jetson-containers|VLM 추론 스택(***Engine*** 베이스 이미지).|
+|MediaMTX|작성 보류 (버전 고정 필요)|Docker Hub (`bluenviron/mediamtx`)|RTSP 수신, HLS/WebRTC 송신.|
+|NanoLLM|작성 보류 (버전 고정 필요)|jetson-containers|VLM 추론 스택(***Engine*** 베이스 이미지).|
 |GStreamer|1.x (베이스 이미지 및 호스트 NVIDIA 플러그인)|JetPack / 베이스 이미지|비디오 파이프라인(디코딩, 프레임 추출, 클립 인코딩).|
 |SQLite|Python 내장 `sqlite3`|Python 표준 라이브러리|사용자, 토큰, 이벤트 영속화.|
 |FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|***Gateway*** 프레임워크.|
-
-공유 데이터: ***Gateway***와 ***Engine***은 `/data` 파일시스템(클립 mp4/json, SQLite DB, 카메라 프로필 JSON)을 바인드 마운트로 공유한다.
 
 ## 4.5 통신 인터페이스 (Communication Interface)
 
@@ -95,6 +93,5 @@
 |8890/udp|UDP|***Media***|WebRTC ICE.|
 |8554/tcp|RTSP|***Media***|RTSP 수신/재배포.|
 
-- ***Engine***의 HTTP 포트(8080)는 내부 전용이며 재설계에서 외부에 노출하지 않는다.
 - 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다.
 - 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성을 보류한다.
