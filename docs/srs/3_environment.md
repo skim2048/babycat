@@ -2,31 +2,28 @@
 
 ## 3.1 운영 환경 (Operating Environment)
 
-### 하드웨어 환경
+### (1) 하드웨어 환경
 
-최소사양은 모든 기능이 동작하는 사양을, 권장사양은 모든 기능이 원활히 동작하는 사양을 의미한다. 최소사양에서도 기능 누락은 없으나 VLM 추론 주기가 길어진다(§5.4).
+최소사양은 모든 기능이 동작하는 사양을, 권장사양은 모든 기능이 원활히 동작하는 사양을 의미한다. 최소사양에서도 기능 누락은 없으나 선택할 수 있는 VLM 목록의 폭이 좁아지고 추론이 더 지연될 수 있다. 한편 권장사양을 넘어서는 상위 Jetson Module을 하드웨어 환경에 추가하려는 경우, 후속 세대에서 비디오 디코더/인코더 하드웨어 가속기가 누락될 가능성을 배제할 수 없으므로, 해당 장비에서 `ls /dev/v4l2-nvdec /dev/v4l2-nvenc`를 실행하여 두 장치 노드가 모두 존재하는지 확인한다.
 
-|구분|최소|권장|
+|구분|권장|최소|
 |---|---|---|
-|Jetson Module|Orin NX 16 GB|AGX Orin 64 GB|
-|스토리지|NVMe SSD 256 GB|NVMe SSD 512 GB|
-|하드웨어 가속|비디오 디코더/인코더 탑재 필수|최소사양과 동일|
+|Jetson Module|AGX Orin 64 GB|Orin NX 16 GB|
+|스토리지|NVMe SSD 512 GB|NVMe SSD 256 GB|
 
-비디오 디코더/인코더의 탑재 여부는 Jetson Board에서 장치 노드의 존재로 확인한다.
+- 25-08-25, Jetson Thor 128 GB가 출시되었으나 구동 가능 여부는 확인되지 않음
 
-```bash
-ls /dev/v4l2-nvdec /dev/v4l2-nvenc
-```
-
-두 노드가 모두 존재해야 하며, 컨테이너에는 docker-compose.yml의 `devices` 설정으로 전달된다.
-
-### 소프트웨어 환경
+### (2) 소프트웨어 환경
 
 |항목|버전|비고|
 |---|---|---|
-|Jetson JetPack|6.2(L4T R36.x)|이외 버전에서의 동작은 보장하지 않는다(§2.7).|
-|Docker|29.1.3 (검증 기준)|Docker Compose 플러그인(v5.0.0) 포함.|
-|NVIDIA Container Toolkit|1.16.2 (검증 기준)|컨테이너의 GPU 접근에 필수.|
+|Jetson JetPack|6.2.1(L4T R36.x)|이외 버전은 동작 보장 불가|
+|Docker|29.1.3|Docker Compose 플러그인(v5.0.0) 포함|
+|NVIDIA Container Toolkit|1.16.2|-|
+
+- 25-08-27, Jetson Jetpack 7.0이 출시되었으나 구동 가능 여부는 확인되지 않음
+- 26-01-12, Jetson Jetpack 7.1이 출시되었으나 구동 가능 여부는 확인되지 않음
+- 26-06-01, Jetson Jetpack 7.2가 출시되었으나 구동 가능 여부는 확인되지 않음
 
 ## 3.2 제품 설치 및 설정 (Product Installation and Configuration)
 
@@ -57,8 +54,8 @@ ls /dev/v4l2-nvdec /dev/v4l2-nvenc
 
 - **마스터 구성**: GitHub 저장소가 마스터이다. 소스코드, Docker 빌드 파일(Dockerfile, docker-compose.yml), 설정 템플릿(`.env.example`, `config/mediamtx.yml`), 설계 문서를 포함한다. 사전 빌드된 이미지 레지스트리는 사용하지 않는다.
 - **배포 방법**: 대상 Jetson Board에서 저장소를 클론한 후 현장에서 이미지를 빌드한다. ***Engine***의 베이스 이미지(`dustynv/nano_llm`)는 빌드 시 Docker Hub에서 받아온다.
-- **설치 방법**: §3.2를 따른다.
-- **패치 및 업데이트 방법**: `git pull` 후 재빌드·재기동한다. 자동 업데이트는 제공하지 않는다.
+- **설치 방법**: 위 제품 설치 및 설정 절차를 따른다.
+- **패치 및 업데이트 방법**: `git pull` 후 재빌드 및 재기동한다. 자동 업데이트는 제공하지 않는다.
 
 ## 3.4 개발 환경 (Development Environment)
 
@@ -81,7 +78,15 @@ ls /dev/v4l2-nvdec /dev/v4l2-nvenc
 - **형상 관리 제외 대상**: `.env`(비밀키 포함), `data/`(런타임 상태) — 저장소에 포함하지 않는다.
 - **브랜치 정책**: `master`를 안정 브랜치로 유지하고, 작업은 별도 브랜치에서 수행 후 병합한다.
 - **태깅 정책**: 버전 릴리스 시 `vX.Y` 형식의 태그를 부여한다.
+- **디렉터리 구조**:
+  - `api/` — ***Gateway*** 소스(FastAPI 기반)
+  - `app/` — ***Engine*** 소스(VLM 추론, 파이프라인, PTZ 등)
+  - `config/` — ***Media***(MediaMTX) 설정
+  - `docker/` — 컴포넌트별 Dockerfile(최상위에 `docker-compose.yml`)
+  - `docs/` — SRS 등 문서
+  - `assets/` — 정적 리소스(배너 등)
+  - `data/` — 런타임 상태(형상 관리 제외)
 
 ## 3.7 버그트래킹 시스템 (Bugtrack System)
 
-GitHub Issues를 사용한다. 운영 정책(라벨, 템플릿 등)은 작성을 보류한다.
+GitHub Issues를 사용한다.
