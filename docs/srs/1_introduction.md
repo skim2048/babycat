@@ -23,8 +23,8 @@
 |접두어|요구사항 유형|설명|
 |---|---|---|
 |`FR`|Functional Requirement (기능 요구사항)|시스템이 수행해야 하는 기능|
-|`NFR`|Non-Functional Requirement (비기능 요구사항)|성능·신뢰성·보안 등 품질 속성|
-|`CON`|Constraint (제약사항)|기술·환경·정책상 변경 불가 내용|
+|`NFR`|Non-Functional Requirement (비기능 요구사항)|성능, 신뢰성, 보안 등 품질 속성|
+|`CON`|Constraint (제약사항)|기술, 환경, 정책상 변경 불가 내용|
 |`IF`|Interface (인터페이스)|외부 시스템과의 인터페이스|
 
 - 표기 형식은 `<접두어>-<세자리 번호>` 이다. (예: `FR-001`, `NFR-002`, `CON-001`)
@@ -54,7 +54,7 @@
 |ONVIF(Open Network Video Interface Forum)|네트워크 보안 카메라 장비의 상호운용성을 위한 개방형 표준 프로토콜|
 |GStreamer|파이프라인을 기반으로 비디오를 처리하는 멀티미디어 프레임워크|
 |MediaMTX|미디어 스트림의 라우팅, 중계, 변환 등을 수행하는 오픈소스 미디어 서버|
-|Edge Device|데이터가 발생하는 현장에서 직접 연산·추론을 수행하는 장치|
+|Edge Device|데이터가 발생하는 현장에서 직접 연산 및 추론을 수행하는 장치|
 |Tegra|NVIDIA의 모바일 및 임베디드 기기용 SoC(System-on-Chip) 프로세서 라인업|
 |L4T(Linux for Tegra)|NVIDIA가 Jetson Platform용으로 개발한 Ubuntu 기반 운영체제|
 |Jetson Module|Tegra SoC, RAM, Storage를 소형 보드에 집적한 SoM(System-on-Module) 제품|
