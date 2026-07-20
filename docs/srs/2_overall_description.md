@@ -5,7 +5,7 @@
 NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자체를, 넓게는 하드웨어와 소프트웨어를 포함한 에코시스템 전체를 뜻한다. 아래 조망도는 `Babycat`과 NVIDIA Jetson Platform, 그리고 외부 시스템인 ***Client App***과 ***Video Source***의 관계를 나타낸다. NVIDIA Jetson Platform은 `Babycat`의 배경 인프라이므로, 이 조망도 이후의 다이어그램에서는 표기를 생략한다.
 
 <figure align="center">
-  <img src="figs/2-1.drawio.svg" width="75%">
+  <img src="figs/2-1.drawio.svg" width="100%">
   <figcaption><em>그림 2-1. 제품 조망도</em></figcaption>
 </figure>
 
