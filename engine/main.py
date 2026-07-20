@@ -60,7 +60,7 @@ log = logging.getLogger(__name__)
 
 # ── Configuration ────────────────────────────────────────────────────────────
 
-MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://mtx:8554/live")
+MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://media:8554/live")
 
 # @claude VLM_MODELS / holder singletons live in a dedicated module to avoid the
 # @claude double-import trap caused by main.py being loaded both as __main__ and as `main`.

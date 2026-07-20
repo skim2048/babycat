@@ -22,7 +22,7 @@ import ptz
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
-MEDIAMTX_API = "http://mtx:9997"
+MEDIAMTX_API = "http://media:9997"
 MEDIAMTX_PATH_NAME = "live"
 
 # @claude Clip storage base directory; actual files live under {DATA_DIR}/{YYYY}/{MM}/.

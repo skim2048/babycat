@@ -1,16 +1,16 @@
-# App Layer Rules
+# Engine Layer Rules
 
 ## Ownership
 
-- `app/` owns the live pipeline, shared runtime state, VLM inference lifecycle, PTZ control, trigger clip recording, and MediaMTX source updates.
-- Do not move auth, event history, or device registration responsibilities into `app/`.
+- `engine/` owns the live pipeline, shared runtime state, VLM inference lifecycle, PTZ control, trigger clip recording, and MediaMTX source updates.
+- Do not move auth, event history, or device registration responsibilities into `engine/`.
 
 ## Change Checks
 
 - Before changing the pipeline entry or inference flow, check timing, worker/thread interaction, clip save flow, and model lifecycle impact.
 - Before changing shared runtime state or SSE fields, check impact on `web/` and `docs/api.md`.
 - Before changing camera/profile flow, check config persistence, PTZ reconfiguration, MediaMTX API update, and pipeline restart behavior.
-- Before changing clip naming or storage rules, check `api/` clip listing, lookup, and deletion compatibility.
+- Before changing clip naming or storage rules, check `gateway/` clip listing, lookup, and deletion compatibility.
 - Before changing PTZ behavior, check saved home position format and UI expectations.
 
 ## Validation

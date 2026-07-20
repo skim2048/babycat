@@ -5,7 +5,7 @@
 # @claude Log level.
 logLevel: info
 
-# @claude API server (the App container configures the RTSP source at runtime).
+# @claude API server (the Engine container configures the RTSP source at runtime).
 api: yes
 apiAddress: :9997
 

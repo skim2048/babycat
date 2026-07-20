@@ -2,7 +2,7 @@
 Babycat API server — clips, events, devices.
 
 Clip storage architecture:
-    Single-camera assumption. The app container's save_trigger_clip
+    Single-camera assumption. The Engine container's save_trigger_clip
     writes files (via ffmpeg re-recording from RTSP) to:
         {CAM_DIR}/{YYYY}/{MM}/{YYYYMMDD}_{HHMMSS}_{ms}.mp4
 
@@ -36,10 +36,10 @@ from auth import (
     revoke_refresh_token,
     rotate_refresh_token,
 )
-from app_proxy import (
+from engine_proxy import (
     camera_apply_out,
     camera_profile_out,
-    proxy_app,
+    proxy_engine,
     request_auth_header,
 )
 from database import DB_PATH, get_db, init_db
@@ -67,7 +67,7 @@ from schemas import (
 )
 import json
 
-APP_INTERNAL_URL = os.environ.get("BABYCAT_APP_URL", "http://app:8080")
+ENGINE_INTERNAL_URL = os.environ.get("BABYCAT_ENGINE_URL", "http://engine:8080")
 
 CAM_DIR = os.environ.get("CAM_DIR", "/data")
 MIN_CLIP_SIZE = 10240  # @claude 10KB — excludes partially-written files from an in-progress ffmpeg recording.
@@ -186,7 +186,7 @@ def _refresh_out(username: str, refresh_token: str) -> RefreshOut:
 @app.get("/camera", response_model=CameraProfileOut)
 def get_camera(request: Request, _=Depends(require_auth)):
     """Return the current camera profile; configured=False when unset. @claude"""
-    _, data = proxy_app(APP_INTERNAL_URL, "GET", "/camera", request_auth_header(request))
+    _, data = proxy_engine(ENGINE_INTERNAL_URL, "GET", "/camera", request_auth_header(request))
     return camera_profile_out(data)
 
 
@@ -194,7 +194,7 @@ def get_camera(request: Request, _=Depends(require_auth)):
 def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth)):
     """Apply a camera profile; App persists it and restarts the pipeline. @claude"""
     payload = body.model_dump()
-    status, data = proxy_app(APP_INTERNAL_URL, "POST", "/camera", request_auth_header(request), payload)
+    status, data = proxy_engine(ENGINE_INTERNAL_URL, "POST", "/camera", request_auth_header(request), payload)
     return camera_apply_out(status, data)
 
 

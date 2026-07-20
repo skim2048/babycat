@@ -2,7 +2,7 @@ name: babycat
 
 services:
 
-  mtx:
+  media:
     image: bluenviron/mediamtx:latest
     restart: unless-stopped
     environment:
@@ -18,11 +18,11 @@ services:
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
 
-  app:
+  engine:
     build:
       context: .
-      dockerfile: docker/app/Dockerfile
-    image: babycat-app
+      dockerfile: docker/engine/Dockerfile
+    image: babycat-engine
     restart: unless-stopped
     runtime: nvidia
     ports:
@@ -56,7 +56,7 @@ services:
     volumes:
       - ./data/models:/data/models # NanoLLM 모델 캐시입니다(MLC 컴파일 결과). 이식성을 위해 프로젝트 트리 안에 유지해야 합니다.
       #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM을 활성화할 때 주석을 해제합니다.
-      - ./app:/app
+      - ./engine:/app
       - ./config:/config
       - ./data:/data
       # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다. 이미지 빌드 시점에는 설치할 수 없습니다.
@@ -67,13 +67,13 @@ services:
       - /run/babycat-segments:size=64m,mode=1777
     ipc: host      # NvSciIPC가 호스트 IPC 네임스페이스의 POSIX shm/mqueue를 사용합니다.
     depends_on:
-      - mtx
+      - media
 
-  api:
+  gateway:
     build:
       context: .
-      dockerfile: docker/api/Dockerfile
-    image: babycat-api
+      dockerfile: docker/gateway/Dockerfile
+    image: babycat-gateway
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -89,4 +89,4 @@ services:
     volumes:
       - ./data:/data
     depends_on:
-      - app
+      - engine

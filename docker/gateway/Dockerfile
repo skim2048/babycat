@@ -1,4 +1,4 @@
-# @claude Babycat — API server container.
+# @claude Babycat — Gateway container.
 # @claude REST API (FastAPI) + SQLite (embedded).
 
 FROM python:3.11-slim
@@ -15,6 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir fastapi uvicorn[standard] pydantic
 
 WORKDIR /app
-COPY api/ .
+COPY gateway/ .
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

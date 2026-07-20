@@ -1,4 +1,4 @@
-"""Helpers for proxying selected app-container contracts through the API."""
+"""Helpers for proxying selected Engine-container contracts through the Gateway."""
 
 import json
 import urllib.error
@@ -10,12 +10,12 @@ from schemas import ApplyResultOut, CameraProfileOut
 
 
 def request_auth_header(request: Request) -> str | None:
-    """Preserve the inbound Authorization header for upstream app proxy calls."""
+    """Preserve the inbound Authorization header for upstream Engine proxy calls."""
     return request.headers.get("Authorization")
 
 
-def proxy_app(
-    app_internal_url: str,
+def proxy_engine(
+    engine_internal_url: str,
     method: str,
     path: str,
     auth_header: str | None,
@@ -23,7 +23,7 @@ def proxy_app(
     timeout: int = 10,
 ):
     """Proxy a request to the App container's internal HTTP server; returns (status, json)."""
-    url = f"{app_internal_url}{path}"
+    url = f"{engine_internal_url}{path}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     if data is not None:
