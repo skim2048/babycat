@@ -2,17 +2,16 @@
 
 ## 1.1 목표 (Purpose)
 
-- 1인 개발 프로젝트를 빠르게 진행하기 위한 내용만 기술한다.
-- 추후 이와 유사한 규모의 프로젝트를 진행할 때 참고 자료로 활용한다.
+- 소규모 개발 프로젝트를 빠르게 진행하기 위한 내용만 기술한다.
 
 ## 1.2 범위 (Product Scope)
 
 - 프로젝트명은 `Babycat`이다.
-- `Babycat`은 비디오에서 특정 장면이나 상황을 자동으로 감지해내는 백엔드 소프트웨어이다.
-- `Babycat`은 사용자가 입력한 키워드를 바탕으로 이벤트를 감지해내는 기능을 제공한다.
-- `Babycat`은 이벤트가 감지된 시점을 비디오 클립으로 자동 저장하는 기능을 제공한다.
-- `Babycat`은 장기적인 비디오 변화 추이에 대한 요약 및 분석 기능은 제공하지 않는다.
-- `Babycat`은 민감한 데이터의 외부 유출을 막기 위해 로컬 엣지 디바이스에서 구동된다.
+- `Babycat`은 사용자가 입력한 키워드를 바탕으로, 비디오에서 이벤트(특정 장면이나 상황)를 자동으로 감지해내는 백엔드이다.
+- `Babycat`은 이벤트가 감지된 구간을 비디오 클립으로 자동 저장하는 기능을 제공한다.
+- `Babycat`은 다양한 분야의 수요와 고성능 요구조건을 충족하기 위해 NVIDIA Jetson Platform을 기반으로 구동된다.
+- `Babycat`은 비디오의 장기적인 변화 추이에 대한 요약 및 분석 기능은 제공하지 않는다.
+- `Babycat`은 오디오에서 이벤트를 감지하는 기능은 제공하지 않는다.
 
 ## 1.3 문서 규칙 (Document Conventions)
 
@@ -59,7 +58,7 @@
 |L4T(Linux for Tegra)|NVIDIA가 Jetson Platform용으로 개발한 Ubuntu 기반 운영체제|
 |Jetson Module|Tegra SoC, RAM, Storage를 소형 보드에 집적한 SoM(System-on-Module) 제품|
 |Jetson Board|NVIDIA Jetson Module과 캐리어 보드로 구성된 하드웨어 유닛|
-|Jetson Platform|NVIDIA Jetson 제품군 전체를 아우르는 에코 시스템|
+|Jetson Platform|NVIDIA Jetson 제품군 전체를 아우르는 에코시스템|
 |CUDA|GPU 가속 연산에 사용하는, NVIDIA의 병렬 컴퓨팅 플랫폼 및 프로그래밍 API|
 |TensorRT|NVIDIA의 딥러닝 추론 최적화 엔진|
 |Jetson JetPack|NVIDIA Jetson Platform용 소프트웨어 개발 키트|

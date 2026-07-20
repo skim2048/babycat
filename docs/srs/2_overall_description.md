@@ -2,14 +2,16 @@
 
 ## 2.1 제품 조망 (Product Perspective)
 
+NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자체를, 넓게는 하드웨어와 소프트웨어를 포함한 에코시스템 전체를 뜻한다. 아래 조망도는 `Babycat`과 NVIDIA Jetson Platform, 그리고 외부 시스템인 ***Client App***과 ***Video Source***의 관계를 나타낸다. NVIDIA Jetson Platform은 `Babycat`의 배경 인프라이므로, 이 조망도 이후의 다이어그램에서는 표기를 생략한다.
+
 <figure align="center">
   <img src="figs/2-1.drawio.svg" width="75%">
   <figcaption><em>그림 2-1. 제품 조망도</em></figcaption>
 </figure>
 
-- ***User*** : ***Client App***을 통해 `Babycat`을 조작하는 사람
+- ***User*** : ***Client App***을 통해 `Babycat`을 사용하는 사람
 - ***Client App*** : `Babycat` 사용자용 프론트엔드 앱
-- ***Video Source*** : `Babycat`에 라이브 비디오를 제공하는 외부 소스
+- ***Video Source*** : `Babycat`에 라이브 비디오를 제공하는 외부 소스 (예: IP 카메라)
 
 ## 2.2 전체 시스템 구성 (Overall System Configuration)
 
@@ -46,7 +48,7 @@
 4. ***Media***는 RTSP로 ***Video Source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
 5. ***Engine***은 재배포된 스트림을 입력으로 장면 분석 파이프라인을 기동하며, 파이프라인은 설정된 VLM과 ***Storage***에 저장된 프롬프트로 장면을 분석한다.
 
-### (4) 이벤트 감지와 기록 - 자율분석
+### (4) 이벤트 감지와 기록
 
 1. ***Engine***은 파이프라인이 실행되는 동안 비디오 스트림에서 주기적으로 프레임을 추출하여 VLM에 입력하고, 장면을 설명하는 텍스트를 생성한다.
 2. ***Engine***은 생성된 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
