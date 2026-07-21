@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from auth import (
     JWT_EXPIRY,
@@ -39,6 +39,8 @@ from auth import (
 from engine_proxy import (
     camera_apply_out,
     camera_profile_out,
+    iter_engine_stream,
+    open_engine_stream,
     proxy_engine,
     request_auth_header,
 )
@@ -196,6 +198,68 @@ def set_camera(request: Request, body: CameraProfileIn, _=Depends(require_auth))
     payload = body.model_dump()
     status, data = proxy_engine(ENGINE_INTERNAL_URL, "POST", "/camera", request_auth_header(request), payload)
     return camera_apply_out(status, data)
+
+
+# ── Analysis control ─────────────────────────────────────────────────────────
+# @claude The Engine is not published to the host: every route below is the only
+# @claude way a client reaches it. Media is the sole permitted bypass (SRS FR-023).
+
+
+def _proxy_engine_json(request: Request, path: str, body: dict | None = None):
+    """Forward a control request to the Engine and return its response as-is. @claude"""
+    status, data = proxy_engine(
+        ENGINE_INTERNAL_URL, "POST", path, request_auth_header(request), body
+    )
+    if status >= 500:
+        raise HTTPException(status_code=502, detail="upstream error")
+    return JSONResponse(status_code=status, content=data)
+
+
+@app.post("/prompt")
+async def set_prompt(request: Request, _=Depends(require_auth)):
+    """Set the inference prompt and the trigger keywords."""
+    return _proxy_engine_json(request, "/prompt", await request.json())
+
+
+@app.post("/ptz")
+async def control_ptz(request: Request, _=Depends(require_auth)):
+    """Move, stop, or recall the home position of the video source."""
+    return _proxy_engine_json(request, "/ptz", await request.json())
+
+
+@app.post("/vlm/switch")
+async def switch_vlm(request: Request, _=Depends(require_auth)):
+    """Request a VLM model switch; the Engine performs it between inferences."""
+    return _proxy_engine_json(request, "/vlm/switch", await request.json())
+
+
+@app.get("/state")
+def state_stream(request: Request, _=Depends(require_auth)):
+    """
+    Relay the Engine's live state channel (inference results, hardware status).
+
+    Named /state rather than /events because /events already carries the stored
+    event history; the two would otherwise collide on one path.
+
+    @claude
+    """
+    upstream = open_engine_stream(ENGINE_INTERNAL_URL, "/events", request_auth_header(request))
+    return StreamingResponse(
+        iter_engine_stream(upstream),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/stream")
+def frame_stream(request: Request, _=Depends(require_auth)):
+    """Relay the Engine's MJPEG stream of the frames fed to the VLM."""
+    upstream = open_engine_stream(ENGINE_INTERNAL_URL, "/stream", request_auth_header(request))
+    return StreamingResponse(
+        iter_engine_stream(upstream),
+        media_type=upstream.headers.get("Content-Type", "multipart/x-mixed-replace"),
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # ── Clips ────────────────────────────────────────────────────────────────────

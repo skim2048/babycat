@@ -11,9 +11,9 @@ services:
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      - "8554:8554"      # RTSP
-      - "8888:8888"      # HLS
-      - "8889:8889"      # WebRTC HTTP
+      - "8554:8554"  # RTSP
+      - "8888:8888"  # HLS
+      - "8889:8889"  # WebRTC HTTP
       - "8890:8890/udp"  # WebRTC ICE
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
@@ -25,8 +25,8 @@ services:
     image: babycat-engine
     restart: unless-stopped
     runtime: nvidia
-    ports:
-      - "8080:8080"   # App HTTP API
+    # 포트를 호스트에 공개하지 않습니다. Engine에는 Gateway만 접근하며,
+    # 클라이언트는 Gateway를 거칩니다(단일 진입점).
     environment:
       - TZ=Asia/Seoul
       - TRIGGER_ROLLOVER_ENABLED=1

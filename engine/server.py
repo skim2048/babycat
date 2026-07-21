@@ -1,5 +1,9 @@
 """
-Babycat — app HTTP server.
+Babycat — Engine HTTP server.
+
+Internal only: the container publishes no port, so the Gateway is the sole
+caller. No CORS handling and no ?token= fallback — those exist for browsers,
+and browsers reach the Engine through the Gateway.
 
 Endpoints:
   GET  /            Health check
@@ -20,7 +24,6 @@ import json
 import logging
 import os
 import queue
-import re
 import threading
 import time
 import urllib.parse
@@ -45,29 +48,6 @@ def set_restart_pipeline_callback(callback: Callable[[str], bool]) -> None:
 
 MAX_BODY = 65536  # @claude 64KB cap on request bodies.
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
-CORS_ALLOWED_METHODS = "GET, POST, OPTIONS, DELETE"
-CORS_ALLOWED_HEADERS = "Authorization, Content-Type, Range"
-CORS_EXPOSED_HEADERS = "Content-Length, Content-Range, Accept-Ranges"
-CORS_MAX_AGE = "600"
-CORS_ORIGIN_RE = re.compile(
-    r"^(https?://(localhost|127\.0\.0\.1|"
-    r"10(\.\d{1,3}){3}|"
-    r"172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|"
-    r"192\.168(\.\d{1,3}){2})"
-    r"(:\d+)?|capacitor://localhost)$"
-)
-
-
-def _extra_cors_origins() -> set[str]:
-    return {origin.strip() for origin in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",") if origin.strip()}
-
-
-def allowed_cors_origin(origin: str | None) -> str:
-    if not origin:
-        return ""
-    if origin in _extra_cors_origins() or CORS_ORIGIN_RE.match(origin):
-        return origin
-    return ""
 
 
 def snapshot_sse_message() -> bytes:
@@ -84,32 +64,10 @@ class AppHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def _send_cors_headers(self) -> None:
-        origin = allowed_cors_origin(self.headers.get("Origin"))
-        if not origin:
-            return
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Allow-Methods", CORS_ALLOWED_METHODS)
-        self.send_header("Access-Control-Allow-Headers", CORS_ALLOWED_HEADERS)
-        self.send_header("Access-Control-Expose-Headers", CORS_EXPOSED_HEADERS)
-        self.send_header("Access-Control-Max-Age", CORS_MAX_AGE)
-
-    def end_headers(self):
-        self._send_cors_headers()
-        super().end_headers()
-
     def _check_auth(self) -> bool:
-        """Validate a token from the Authorization header or the ?token= query param; 401 on failure. @claude"""
-        # @claude 1) Authorization: Bearer <token>
+        """Validate the Authorization header; 401 on failure. @claude"""
         auth = self.headers.get("Authorization", "")
         if auth.startswith("Bearer ") and verify_jwt(auth[7:], JWT_SECRET):
-            return True
-        # @claude 2) ?token=<token> for clients that can't set headers (EventSource, etc.).
-        parsed = urllib.parse.urlparse(self.path)
-        qs = urllib.parse.parse_qs(parsed.query)
-        token_list = qs.get("token", [])
-        if token_list and verify_jwt(token_list[0], JWT_SECRET):
             return True
         self.send_response(401)
         self.send_header("Content-Type", "application/json")
@@ -166,11 +124,6 @@ class AppHandler(BaseHTTPRequestHandler):
             self._handle_clip_delete()
         else:
             self.send_error(404)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
 
     # ── Utilities ────────────────────────────────────────────────────────────
 
