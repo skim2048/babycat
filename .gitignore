@@ -45,7 +45,12 @@ config/cam_profile.json
 *.sw?
 
 # Etc.
-textbook/
 .env
 .codex
 .claude
+tmp/
+textbook/
+
+# temporary
+web/
+memo.txt
