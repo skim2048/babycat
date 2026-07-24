@@ -2,16 +2,16 @@
 
 ## 2.1 제품 조망 (Product Perspective)
 
-NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자체를, 넓게는 하드웨어와 소프트웨어를 포함한 에코시스템 전체를 뜻한다. 아래 조망도는 `Babycat`과 NVIDIA Jetson Platform, 그리고 외부 시스템인 ***Client App***과 ***Video Source***의 관계를 나타낸다. NVIDIA Jetson Platform은 `Babycat`의 배경 인프라이므로, 이 조망도 이후의 다이어그램에서는 표기를 생략한다.
+NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자체를, 넓게는 하드웨어와 소프트웨어를 포함한 에코시스템 전체를 뜻한다. 아래 조망도는 `Babycat`과 NVIDIA Jetson Platform, 그리고 외부 시스템인 ***Client app***과 ***Video source***의 관계를 나타낸다. NVIDIA Jetson Platform은 `Babycat`의 배경 인프라이므로, 이 조망도 이후의 다이어그램에서는 표기를 생략한다.
 
 <figure align="center">
   <img src="figs/2-1.drawio.svg" width="100%">
   <figcaption><em>그림 2-1. 제품 조망도</em></figcaption>
 </figure>
 
-- ***User*** : ***Client App***을 통해 `Babycat`을 사용하는 사람
-- ***Client App*** : `Babycat` 사용자용 프론트엔드 앱
-- ***Video Source*** : `Babycat`에 라이브 비디오를 제공하는 외부 소스 (예: IP 카메라)
+- ***User*** : ***Client app***을 통해 `Babycat`을 사용하는 사람
+- ***Client app*** : `Babycat` 사용자용 프론트엔드 앱
+- ***Video source*** : `Babycat`에 라이브 비디오를 제공하는 외부 소스 (예: IP 카메라)
 
 ## 2.2 전체 시스템 구성 (Overall System Configuration)
 
@@ -20,81 +20,85 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
   <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
 </figure>
 
-- ***Gateway*** : 단일 외부 진입점, 사용자 인증, 요청 처리, 프록시
-- ***Engine*** : VLM 추론, 이벤트 감지 및 기록, 프로필 관리, PTZ 제어 등
-- ***Media*** : 라이브 비디오 스트림의 처리 및 분배(MediaMTX 기반)
-- ***Storage*** : 설정 파일, 비디오 클립, 데이터베이스 저장 등
+- ***Request router*** : 단일 외부 진입점. 요청을 인증·라우팅하며 토큰을 검증한다.
+- ***Account manager*** : 계정을 인증·관리한다.
+- ***Source controller*** : 비디오 소스 프로필을 관리하고 PTZ를 제어한다.
+- ***Video streamer*** : ***Video source***의 스트림을 RTSP로 수신하여 내부에 재배포한다.
+- ***Video analyzer*** : VLM 추론으로 장면을 분석한다.
+- ***Event recorder*** : 이벤트를 기록하고 클립과 이력을 관리한다.
 
 ## 2.3 전체 동작 방식 (Overall Operation)
 
 ### (1) 자격증명 및 로그인 유지
 
-1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 자격증명과 로그인 유지 여부를 ***Auth***에게 중개한다.
-3. ***Auth***는 자격증명을 검증하여 ***Gateway***에게 응답한다.
-    - 3-1. 자격증명이 정당하면, 액세스 토큰을 발급하여 승인 응답과 함께 전달한다. 로그인 유지가 요청되었다면 리프레시 토큰을 함께 발급한다.
-    - 3-2. 자격증명이 정당하지 않으면, 거부 응답을 전달한다.
-4. ***Gateway***는 ***Auth***의 응답을 ***Client App***에게 중개한다.
-5. ***Client App***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보낸다. ***Gateway***의 ***Guard***는 토큰이 없거나 유효하지 않은 요청을 거부한다.
+1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 자격증명과 로그인 유지 여부를 ***Account manager***에게 중개한다.
+3. ***Account manager***는 자격증명을 검증하여 ***Request router***에게 응답한다.
+    - 정당하면, 액세스 토큰을 발급한다. 로그인 유지가 요청되었다면 리프레시 토큰도 함께 발급한다.
+    - 정당하지 않으면, 거부한다.
+4. ***Request router***는 ***Account manager***의 응답을 ***Client app***에게 중개한다.
+5. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보내며, ***Request router***가 토큰이 없거나 유효하지 않은 요청을 거부한다.
 
 ### (2) 비디오 소스 프로필 등록
 
-1. ***User***가 ***Video Source*** 프로필을 입력하여 등록을 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 전달받은 요청을 ***Camera***에게 중개한다.
-3. ***Camera***는 프로필을 저장한다.
+1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 전달받은 요청을 ***Source controller***에게 중개한다.
+3. ***Source controller***는 프로필을 저장한다.
 
-### (3) 분석 조건 설정
+### (3) 비디오 분석 조건 설정
 
-1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 전달받은 요청을 ***Engine***에게 중개한다.
-3. ***Engine***은 프롬프트와 이벤트 키워드를 저장한다. 설정이 저장되더라도 분석은 자동으로 시작되지 않는다.
+1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 전달받은 요청을 ***Video analyzer***에게 중개한다.
+3. ***Video analyzer***는 프롬프트와 이벤트 키워드를 저장한다. 설정이 저장되더라도 분석은 자동으로 시작되지 않는다.
 
-### (4) 분석 시작
+### (4) 비디오 분석 시작
 
-1. ***User***가 분석 시작을 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 전달받은 요청을 ***Engine***에게 전달한다.
-3. ***Engine***은 ***Storage***에서 ***Video Source*** 프로필을 조회하고, ***Media***에게 해당 스트림의 재배포를 요청한다.
-4. ***Media***는 RTSP로 ***Video Source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
-5. ***Engine***은 재배포된 스트림을 입력으로 장면 분석 파이프라인을 기동하며, 파이프라인은 설정된 VLM과 ***Storage***에 저장된 프롬프트로 장면을 분석한다.
+1. ***User***가 분석 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 이 요청을 ***Video analyzer***와 ***Source controller***에게 전달한다.
+3. ***Video analyzer***는 장면 분석 파이프라인을 초기화하고, 스트림이 재배포되기를 기다린다.
+4. ***Source controller***는 등록된 프로필에 따라 ***Video streamer***에게 해당 ***Video source*** 스트림의 재배포를 지시한다.
+5. ***Video streamer***는 RTSP로 ***Video source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
+6. 스트림 재배포가 시작되면, 대기 중이던 ***Video analyzer***는 장면 분석 파이프라인을 가동한다.
 
-### (5) 이벤트 감지와 기록
+### (5) 이벤트 감지와 기록 - 자동 실행
 
-1. ***Engine***은 파이프라인이 실행되는 동안 비디오 스트림에서 주기적으로 프레임을 추출하여 VLM에 입력하고, 장면을 설명하는 텍스트를 생성한다.
-2. ***Engine***은 생성된 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
-3. 만약 이벤트 키워드가 포함되어 있다면, ***Engine***은 해당 상황을 이벤트 발생으로 판단, 해당 구간의 비디오 클립과 메타데이터를 ***Storage***에 저장하고 발생 이력을 데이터베이스에 기록한다.
-4. 가용 저장 공간이 임계치 이하로 떨어지면, ***Engine***은 가장 오래된 클립과 이력부터 순차적으로 삭제하여 공간을 확보한다.
+1. ***Video analyzer***는 장면 분석 파이프라인을 통해 생성된 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
+2. 키워드가 포함되어 있으면, ***Video analyzer***는 해당 상황을 이벤트 발생으로 판단하여 ***Event recorder***에게 기록을 요청한다.
+3. ***Event recorder***는 해당 구간의 비디오 클립과 발생 이력을 저장한다.
+4. 가용 저장 공간이 임계치 이하로 떨어지면, ***Event recorder***는 가장 오래된 클립과 이력부터 순차적으로 삭제하여 공간을 확보한다.
 
 ### (6) 라이브 비디오 재생
 
-1. ***User***가 라이브 비디오 재생을 요청하면, ***Client App***은 ***Gateway***에게 스트림 접근 토큰을 요청한다.
-2. ***Gateway***는 스트림 접근 토큰을 발급하여 ***Client App***에게 전달한다.
-3. ***Client App***은 발급받은 토큰을 지니고 ***Media***에 직접 접속한다. 저지연을 위해 ***Gateway***를 경유하지 않는다.
-4. ***Media***는 토큰을 검증한 뒤 라이브 비디오를 HLS/WebRTC로 전달한다.
-5. ***Client App***은 전달받은 비디오를 ***User***에게 재생한다.
+1. ***User***가 라이브 비디오 재생을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+3. ***Video streamer***는 라이브 비디오를 HLS/WebRTC로 전달한다.
+    - HLS 비디오는 ***Request router***를 경유하여 ***Client app***에게 전달된다.
+    - WebRTC 비디오는 저지연을 위해 ***Request router***를 경유하지 않고 ***Client app***에게 직접 전달된다.
+4. ***Client app***은 전달받은 비디오를 ***User***에게 재생한다.
 
 ### (7) 비디오 소스 PTZ 제어
 
-1. ***User***가 팬·틸트·줌 제어를 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 전달받은 요청을 ***Engine***에게 전달한다.
-3. ***Engine***은 ONVIF를 이용하여 ***Video Source***를 직접 제어한다.
-4. ***Video Source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다.
+1. ***User***가 팬·틸트·줌 제어를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 전달받은 요청을 ***Source controller***에게 전달한다.
+3. ***Source controller***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
+4. ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다.
 
 ### (8) 저장된 클립과 이력 관리
 
-1. ***User***가 조건(키워드, 날짜)으로 조회를 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-2. ***Gateway***는 ***Storage***의 데이터베이스에서 조건에 일치하는 이력을 조회하여 ***Client App***에게 전달한다.
-3. ***User***가 특정 클립의 재생이나 삭제를 요청하면, ***Client App***은 이 요청을 ***Gateway***에게 전달한다.
-4. ***Gateway***는 ***Storage***의 클립 파일을 읽어 ***Client App***에게 전달하거나, 해당 클립을 삭제한다.
+1. ***User***가 조건(키워드·날짜)으로 조회를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+2. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다. ***Event recorder***는 조건에 일치하는 이력을 조회하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
+3. ***User***가 특정 클립의 재생이나 삭제를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+4. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다. ***Event recorder***는 해당 클립을 반환하거나 삭제하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
 
 ## 2.4 제공 기능 (Functions)
 
-- **사용자 계정 인증 및 관리** — ***Client App***이 `Babycat`에 접근하려면 인증을 거쳐야 한다. 인증된 ***User***는 재로그인 없이 상태를 유지하며 자신의 비밀번호를 변경할 수 있다. 다수 계정이 필요하지 않다고 판단하여 계정의 추가/삭제 기능은 두지 않으며, `admin` 계정 하나만을 대상으로 한다.
-- **비디오 소스 프로필 관리** — 프로필은 ***Video Source***에 접근하기 위한 정보의 집합으로, IP 주소, 포트, 스트림 경로, 자격증명 등으로 구성된다. ***User***는 프로필을 등록, 조회, 수정할 수 있다. ***Video Source***에는 RTSP 카메라, 비디오 파일, USB 카메라, 미디어 서버 등 여러 유형이 있으나, 가장 대중적인 RTSP 카메라만을 대상으로 한다.
-- **비디오 소스 PTZ 제어** — ***User***는 ***Video Source***의 팬·틸트·줌을 조작하고, 홈 위치를 저장하여 그리로 되돌릴 수 있다. ***Video Source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면 요청은 별도의 오류 없이 무시된다.
-- **라이브 스트리밍** — ***User***는 ***Video Source***의 라이브 비디오를 재생할 수 있다. 비디오는 HLS/WebRTC로 전달되며, 재생하려면 ***Gateway***가 발급한 인증 토큰이 있어야 한다.
+- **사용자 계정 인증 및 관리** — ***Client app***이 `Babycat`에 접근하려면 인증을 거쳐야 한다. 인증된 ***User***는 재로그인 없이 상태를 유지하며 자신의 비밀번호를 변경할 수 있다. 다수 계정이 필요하지 않다고 판단하여 계정의 추가/삭제 기능은 두지 않으며, `admin` 계정 하나만을 대상으로 한다.
+- **비디오 소스 프로필 관리** — 프로필은 ***Video source***에 접근하기 위한 정보의 집합으로, IP 주소, 포트, 스트림 경로, 자격증명 등으로 구성된다. ***User***는 프로필을 등록·조회·수정할 수 있다. ***Video source***에는 RTSP 카메라, 비디오 파일, USB 카메라, 미디어 서버 등 여러 유형이 있으나, 가장 대중적인 RTSP 카메라만을 대상으로 한다.
+- **비디오 소스 PTZ 제어** — ***User***는 ***Video source***의 팬·틸트·줌을 조작하고, 홈 위치를 저장하여 그리로 되돌릴 수 있다. ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면 요청은 별도의 오류 없이 무시된다.
+- **라이브 스트리밍** — ***User***는 ***Video source***의 라이브 비디오를 재생할 수 있다. 비디오는 HLS/WebRTC로 전달되며, 재생 요청 역시 인증을 거쳐야 한다.
 - **장면 분석 및 이벤트 기록** — `Babycat`의 핵심 기능군이다. 설정된 VLM과 ***User***가 입력한 프롬프트로 장면을 분석하고, ***User***가 설정한 키워드에 해당하는 상황을 이벤트로 감지하여 그 구간의 비디오 클립과 발생 이력을 자동으로 저장한다.
-- **이벤트 발생 이력 관리** — ***User***는 저장된 이벤트 발생 이력을 조건(키워드, 날짜)으로 조회하고 삭제할 수 있다.
-- **비디오 클립 관리** — ***User***는 저장된 비디오 클립을 조건(키워드, 날짜)으로 조회, 재생, 삭제할 수 있다.
+- **이벤트 발생 이력 관리** — ***User***는 저장된 이벤트 발생 이력을 조건(키워드·날짜)으로 조회하고 삭제할 수 있다.
+- **비디오 클립 관리** — ***User***는 저장된 비디오 클립을 조건(키워드·날짜)으로 조회·재생·삭제할 수 있다.
 - **시스템 실시간 모니터링** — ***User***는 VLM 분석 과정과 하드웨어 상태(온도, 메모리 등)를 실시간으로 확인할 수 있다.
 
 ## 2.5 사용자 계층과 특징 (User Classes and Characteristics)
@@ -105,7 +109,7 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
   - 쌓인 클립과 발생 이력을 훑어 VLM의 판정이 쓸 만한지 가늠한다.
 - 개발자
   - 자신의 감시 서비스 및 앱을 만들려는 사람이다.
-  - HTTP API와 라이브 스트림을 가져다 자신의 ***Client App***을 붙인다.
+  - HTTP API와 라이브 스트림을 가져다 자신의 ***Client app***을 붙인다.
   - Jetson Board와 Docker를 다룰 줄 안다.
 - 현장 관리자
   - 영상을 외부로 내보낼 수 없는 현장에서 카메라를 지켜봐야 하는 사람이다.
@@ -118,20 +122,20 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 - 개인영상정보 관련 법규가 구동을 제한하지 않는다고 가정한다.
 - LAN, VPN 등 신뢰할 수 있는 내부 네트워크 안에서만 구동된다고 가정한다.
 - NanoLLM 베이스 이미지를 지속적으로 보존하고 배포할 수 있다고 가정한다.
-- ***Video Source***는 H.264로 인코딩된 비디오 스트림을 RTSP로 제공할 수 있다고 가정한다.
+- ***Video source***는 H.264로 인코딩된 비디오 스트림을 RTSP로 제공할 수 있다고 가정한다.
 - 하드웨어 비디오 디코더/인코더를 갖추고 메모리가 16GB 이상인 Jetson Module을 사용한다고 가정한다.
 - JetPack 6.2.1, Docker 29.1.3, NVIDIA Container Toolkit 1.16.2와 호환되는 환경을 갖춰야 한다.
-- PTZ 제어 기능은 ***Video Source***가 ONVIF를 지원해야만 사용할 수 있다.
+- PTZ 제어 기능은 ***Video source***가 ONVIF를 지원해야만 사용할 수 있다.
 
 ## 2.7 단계별 요구사항 (Apportioning of Requirements)
 
-소규모 프로젝트 특성상, 날짜가 아닌 기능 단위로 단계를 나눈다. ***Gateway***를 단일 진입점으로 하여 제공 기능의 여덟 기능군을 모두 구현한다(v1.0). 단, ***Video Source***는 H.264 RTSP 카메라 한 대로 한정한다. 첫 버전 출시 후, 차기 버전에서 아래 기능을 구현한다.
+소규모 프로젝트 특성상, 날짜가 아닌 기능 단위로 단계를 나눈다. ***Request router***를 단일 진입점으로 하여 제공 기능의 여덟 기능군을 모두 구현한다(v1.0). 단, ***Video source***는 H.264 RTSP 카메라 한 대로 한정한다. 첫 버전 출시 후, 차기 버전에서 아래 기능을 구현한다.
 
 - 다중 카메라 지원 : 단일 카메라를 전제한 파이프라인 구조와 프로필 데이터 모델을 재설계해야 한다.
-- RTSP 외 ***Video Source*** 유형 지원 : 소스 유형과 프로필 데이터 모델을 소스별로 나누어야 한다.
+- RTSP 외 ***Video source*** 유형 지원 : 소스 유형과 프로필 데이터 모델을 소스별로 나누어야 한다.
 - H.264 외 코덱 지원 : GStreamer 파이프라인에서 코덱 처리를 추상화해야 한다.
 - 다수 계정 지원 : 단일 `admin` 계정을 전제한 인증 구조에 계정 관리와 권한 구분을 더해야 한다.
-- 이벤트 푸시 알림 : 외부 푸시 서비스(FCM 등) 연동으로 외부 시스템 구성이 바뀌고, ***Gateway***에 디바이스 토큰 관리가 추가된다.
+- 이벤트 푸시 알림 : 외부 푸시 서비스(FCM 등) 연동으로 외부 시스템 구성이 바뀌고, ***Request router***에 디바이스 토큰 관리가 추가된다.
 
 장기 비디오 트렌드 분석과 Jetson 외 환경은 `Babycat` 개발 범위를 벗어난다.
 
