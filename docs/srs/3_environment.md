@@ -47,14 +47,14 @@
 
 ## 3.4 개발 환경 (Development Environment)
 
-- ***Engine***은 하드웨어 가속기와 Jetson 플랫폼 라이브러리에 의존하므로 Jetson 실기에서만 개발할 수 있다.
-- ***Gateway***는 일반 PC에서 개발할 수 있다.
+- ***Video analyzer***는 하드웨어 가속기와 Jetson 플랫폼 라이브러리에 의존하므로 Jetson 실기에서만 개발할 수 있다.
+- ***Request router***는 일반 PC에서 개발할 수 있다.
 - 개발에는 Git과 Docker가 필요하다.
 
 ## 3.5 테스트 환경 (Test Environment)
 
 - 단위 테스트를 수행하며, GStreamer 및 하드웨어에 의존하는 테스트는 Jetson 실기에서만 가능하다.
-- 통합 테스트는 Jetson 실기에서 수행하며, ***Video Source***는 실제 카메라 또는 사전 녹화 비디오를 RTSP로 송출하는 대체 소스로 구성한다. 대체 소스는 동일한 입력을 반복 재현할 수 있어 프롬프트 및 이벤트 키워드 튜닝에 사용한다.
+- 통합 테스트는 Jetson 실기에서 수행하며, ***Video source***는 실제 카메라 또는 사전 녹화 비디오를 RTSP로 송출하는 대체 소스로 구성한다. 대체 소스는 동일한 입력을 반복 재현할 수 있어 프롬프트 및 이벤트 키워드 튜닝에 사용한다.
 - 권장사양 환경의 테스트 확보 여부는 작성을 보류한다.
 
 ## 3.6 형상 관리 (Configuration Management)
