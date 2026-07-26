@@ -101,56 +101,6 @@ def write_concat_manifest(segment_paths: list[Path], manifest_path: str | Path) 
     return manifest
 
 
-def segment_recorder_cmd(
-    source_url: str,
-    segment_dir: str | Path,
-    *,
-    segment_time_s: int,
-) -> list[str]:
-    pattern = str(Path(segment_dir) / f"%Y%m%d_%H%M%S{SEGMENT_SUFFIX}")
-    gop_seconds = max(1, int(segment_time_s))
-    gop_frames = max(1, 30 * gop_seconds)
-    return [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
-        "-y",
-        "-rtsp_transport",
-        "tcp",
-        "-fflags",
-        "+genpts",
-        "-i",
-        source_url,
-        "-an",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-tune",
-        "zerolatency",
-        "-pix_fmt",
-        "yuv420p",
-        "-g",
-        str(gop_frames),
-        "-keyint_min",
-        str(gop_frames),
-        "-sc_threshold",
-        "0",
-        "-force_key_frames",
-        f"expr:gte(t,n_forced*{gop_seconds})",
-        "-f",
-        "segment",
-        "-segment_time",
-        str(segment_time_s),
-        "-segment_format",
-        "mpegts",
-        "-strftime",
-        "1",
-        pattern,
-    ]
-
-
 def bool_env(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:

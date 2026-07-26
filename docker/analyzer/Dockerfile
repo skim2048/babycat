@@ -1,9 +1,9 @@
-# @claude Babycat — Engine container.
+# @claude Babycat — analyzer container.
 # @claude Base: NanoLLM (VILA VLM inference + PyTorch + CUDA).
 # @claude Added: gstreamer1.0-plugins-bad. NVIDIA plugins (nvv4l2decoder, nvvidconv, ...)
 # @claude are NOT installed here — they are bind-mounted from the host (see compose.yml).
 # @claude Target: Jetson Orin NX 16GB, JetPack 6.2 (L4T R36.5.x).
-# @claude Build:  docker build -f docker/engine/Dockerfile -t babycat-engine .
+# @claude Build:  docker build -f docker/analyzer/Dockerfile -t babycat-analyzer .
 # @claude Run:    see compose.yml
 
 FROM dustynv/nano_llm:r36.4.0
@@ -45,7 +45,7 @@ RUN set -eu; \
     rm -rf /opt/clip_trt/clip_trt/__pycache__
 
 WORKDIR /app
-COPY engine/ .
+COPY analyzer/ .
 
 # @claude Create the TensorRT engine cache dir at runtime. The base image symlinks
 # @claude /root/.cache/clip_trt -> /data/models/clip, and /data is a host bind-mount,

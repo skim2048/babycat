@@ -1,91 +1,21 @@
 """
-Shared application state.
+Analyzer-owned shared runtime state.
 
-Aggregates pipeline state (GStreamer callback / inference worker), VLM
-lifecycle, prompt / trigger keywords, and clip cache behind a single
-object that the HTTP server reads from.
+Holds only what the analyzer owns (SDD §6.4 (4)): inference results,
+pipeline state, VLM lifecycle, prompt and trigger keywords. Hardware,
+storage, and PTZ state live with their owning components and are merged
+by the router.
 
 @claude
 """
 
 import io
-import json
 import queue
 import threading
 import time
-from pathlib import Path
 from typing import Optional
 
 from PIL import Image
-
-from hardware import HardwareMonitor, disk_usage
-import ptz
-
-
-class ClipIndexCache:
-    """Small cache for clip metadata lookup under the active clip directory."""
-
-    def __init__(self):
-        self._dir: str = ""
-        self._entries: list[dict] = []
-        self._cached_at: float = 0.0
-
-    def set_dir(self, path: str) -> None:
-        self._dir = path
-        self.invalidate()
-
-    def get_dir(self) -> str:
-        return self._dir
-
-    def invalidate(self) -> None:
-        self._entries = []
-        self._cached_at = 0.0
-
-    def list(self) -> list[dict]:
-        """
-        Return every mp4 under the clip directory ({DATA_DIR}/{YYYY}/{MM}/),
-        with metadata, newest first, cached with a 5-second TTL.
-
-        @claude
-        """
-        now = time.time()
-        if self._entries and now - self._cached_at < 5.0:
-            return self._entries
-
-        if not self._dir:
-            return []
-        base = Path(self._dir)
-        if not base.exists():
-            return []
-
-        result = []
-        for f in base.rglob("*.mp4"):
-            st = f.stat()
-            if st.st_size < 10240:
-                continue
-            meta_path = f.with_suffix(".json")
-            if not meta_path.exists():
-                continue
-            entry = {
-                "name": f.name,
-                "size": st.st_size,
-                "mtime": int(st.st_mtime),
-                "_mtime": st.st_mtime,
-            }
-            try:
-                with open(meta_path, encoding="utf-8") as mf:
-                    meta = json.load(mf)
-            except Exception:
-                continue
-            entry["timestamp"] = meta.get("timestamp", int(st.st_mtime))
-            entry["keywords"] = meta.get("keywords", [])
-            entry["vlm_text"] = meta.get("vlm_text", "")
-            result.append(entry)
-
-        result.sort(key=lambda x: x["_mtime"], reverse=True)
-        self._entries = [{k: v for k, v in r.items() if k != "_mtime"} for r in result]
-        self._cached_at = now
-        return self._entries
 
 
 class AppState:
@@ -94,7 +24,6 @@ class AppState:
     def __init__(self):
         self._lock = threading.Lock()
         self._sse_lock = threading.Lock()
-        self._hw   = HardwareMonitor()
         self._start_time = time.time()
 
         self.frame:       Optional[Image.Image] = None
@@ -107,19 +36,12 @@ class AppState:
         self._ring      = None
         self._ring_size: int  = 0
         self._config:   dict  = {}
-        self._clips = ClipIndexCache()
 
         self._sse_queues: list[queue.Queue] = []
         self.inference_prompt: str = ""
         self.trigger_keywords: list[str] = []
         self.event_triggered: bool = False
-        self.clip_storage_state: str = "ok"
-        self.clip_storage_reason: str = ""
-        self.clip_storage_free_mb: int | None = None
-        self.segment_recorder_state: str = "disabled"
-        self.segment_recorder_error: str = ""
-        self.segment_recorder_segment_count: int = 0
-        self.segment_recorder_last_segment_age_s: float | None = None
+        self.analysis_active: bool = False
         self.pipeline_state: str = "idle"
         self.pipeline_state_detail: str = "waiting_for_vlm"
         self.pipeline_started_at: float = 0.0
@@ -127,15 +49,12 @@ class AppState:
         self.pipeline_restart_count: int = 0
 
         # @claude VLM load lifecycle — initializing | downloading | compiling | loading | ready | switching | error.
-        # @claude `initializing`: right after boot, before entering the precompile stage.
-        # @claude `loading`: loading a locally-ready model into memory (download/compile are separate stages).
         self.vlm_state: str = "initializing"
         self.vlm_error: str = ""
         self.vlm_models: list[str] = []
         self.vlm_current_model: str = ""
 
     def set_vlm_state(self, state: str, error: str = ""):
-        """Transition VLM state and push SSE immediately. @claude"""
         with self._lock:
             self.vlm_state = state
             self.vlm_error = error
@@ -166,19 +85,6 @@ class AppState:
         self._ring_size = ring_size
         self._config    = config
 
-    def set_clip_dir(self, path: str):
-        """Set the clip directory for the currently active camera; refreshed on camera switch. @claude"""
-        self._clips.set_dir(path)
-
-    def get_clip_dir(self) -> str:
-        return self._clips.get_dir()
-
-    def invalidate_clip_cache(self):
-        self._clips.invalidate()
-
-    def list_clips(self) -> list[dict]:
-        return self._clips.list()
-
     def set_prompt(self, prompt: str):
         with self._lock:
             self.inference_prompt = prompt
@@ -195,29 +101,14 @@ class AppState:
         with self._lock:
             return list(self.trigger_keywords)
 
-    def set_clip_storage_status(self, state: str, reason: str = "", free_mb: int | None = None):
+    def set_analysis_active(self, active: bool):
         with self._lock:
-            self.clip_storage_state = state
-            self.clip_storage_reason = reason
-            self.clip_storage_free_mb = free_mb
+            self.analysis_active = active
         self._sse_push()
 
-    def set_segment_recorder_status(
-        self,
-        state: str,
-        *,
-        error: str = "",
-        segment_count: int | None = None,
-        last_segment_age_s: float | None = None,
-    ):
+    def is_analysis_active(self) -> bool:
         with self._lock:
-            self.segment_recorder_state = state
-            self.segment_recorder_error = error
-            if segment_count is not None:
-                self.segment_recorder_segment_count = segment_count
-            if last_segment_age_s is not None or last_segment_age_s is None:
-                self.segment_recorder_last_segment_age_s = last_segment_age_s
-        self._sse_push()
+            return self.analysis_active
 
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         transitioned = False
@@ -261,20 +152,14 @@ class AppState:
             "infer_ms":    round(self.infer_ms, 1),
         }
 
-    def _owned_runtime_snapshot_locked(self) -> dict:
+    def _runtime_snapshot_locked(self) -> dict:
         return {
             "ring_len":      len(self._ring) if self._ring is not None else 0,
             "ring_size":     self._ring_size,
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
             "event_triggered": self.event_triggered,
-            "clip_storage_state": self.clip_storage_state,
-            "clip_storage_reason": self.clip_storage_reason,
-            "clip_storage_free_mb": self.clip_storage_free_mb,
-            "segment_recorder_state": self.segment_recorder_state,
-            "segment_recorder_error": self.segment_recorder_error,
-            "segment_recorder_segment_count": self.segment_recorder_segment_count,
-            "segment_recorder_last_segment_age_s": self.segment_recorder_last_segment_age_s,
+            "analysis_active": self.analysis_active,
             "vlm_state": self.vlm_state,
             "vlm_error": self.vlm_error,
             "vlm_models": list(self.vlm_models),
@@ -300,13 +185,6 @@ class AppState:
             "pipeline_active_for_s": active_for,
             "pipeline_last_frame_age_s": last_frame_age,
             "pipeline_restart_count": self.pipeline_restart_count,
-        }
-
-    def _owned_snapshot_locked(self) -> dict:
-        return {
-            **self._inference_snapshot_locked(),
-            **self._stream_snapshot_locked(),
-            **self._owned_runtime_snapshot_locked(),
         }
 
     def mark_pipeline_starting(self, reason: str, restart: bool = False, started_at: float | None = None):
@@ -355,33 +233,15 @@ class AppState:
         m, s = divmod(rem, 60)
         return f"{h}h {m:02d}m {s:02d}s"
 
-    def _external_ptz_snapshot(self) -> dict:
-        ptz_cur = ptz.get_current()
-        ptz_save = ptz.get_saved()
-        return {
-            "ptz_pan": ptz_cur["pan"],
-            "ptz_tilt": ptz_cur["tilt"],
-            "ptz_saved_pan": ptz_save["pan"],
-            "ptz_saved_tilt": ptz_save["tilt"],
-        }
-
-    def _external_snapshot(self) -> dict:
-        return {
-            **self._hw.snapshot(),
-            **disk_usage(self.get_clip_dir()),
-            **self._external_ptz_snapshot(),
-            "uptime": self._uptime_text(),
-            "clip_count": len(self.list_clips()),
-        }
-
     def snapshot(self) -> dict:
+        # @claude No "uptime" here: the recorder's /status carries it (always-on
+        # @claude component), and the router merge must not see two of them.
         with self._lock:
-            owned = self._owned_snapshot_locked()
-
-        return {
-            **owned,
-            **self._external_snapshot(),
-        }
+            return {
+                **self._inference_snapshot_locked(),
+                **self._stream_snapshot_locked(),
+                **self._runtime_snapshot_locked(),
+            }
 
     def sse_subscribe(self) -> queue.Queue:
         q: queue.Queue = queue.Queue(maxsize=1)

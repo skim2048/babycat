@@ -1,8 +1,12 @@
 name: babycat
 
+# @claude Six services, one per SRS component (SDD §2.4 (1)).
+# @claude Externally published ports: router 8000/tcp, streamer 8890/udp only
+# @claude (single-entry decision, SDD §2.4 (2); SRS §4.5).
+
 services:
 
-  media:
+  streamer:
     image: bluenviron/mediamtx:latest
     restart: unless-stopped
     environment:
@@ -11,82 +15,139 @@ services:
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      - "8554:8554"  # RTSP
-      - "8888:8888"  # HLS
-      - "8889:8889"  # WebRTC HTTP
-      - "8890:8890/udp"  # WebRTC ICE
+      - "8890:8890/udp"  # WebRTC Media/ICE — 유일한 직접 경로(IF-003)
     volumes:
       - ./config/mediamtx.yml:/mediamtx.yml:ro
 
-  engine:
+  manager:
     build:
       context: .
-      dockerfile: docker/engine/Dockerfile
-    image: babycat-engine
+      dockerfile: docker/manager/Dockerfile
+    image: babycat-manager
     restart: unless-stopped
-    runtime: nvidia
-    # 포트를 호스트에 공개하지 않습니다. Engine에는 Gateway만 접근하며,
-    # 클라이언트는 Gateway를 거칩니다(단일 진입점).
     environment:
       - TZ=Asia/Seoul
-      - TRIGGER_ROLLOVER_ENABLED=1
-      - TRIGGER_SEGMENT_DIR=/run/babycat-segments/live
+      - DB_PATH=/data/db/manager.db
+      - JWT_SECRET=${JWT_SECRET:?required}
+      - JWT_EXPIRY=${JWT_EXPIRY:-600}
+      - REFRESH_EXPIRY=${REFRESH_EXPIRY:-2592000}
+      - DEFAULT_USER=${DEFAULT_USER:?required}
+      - DEFAULT_PASS=${DEFAULT_PASS:?required}
+    volumes:
+      - ./data/db/manager:/data/db
+
+  controller:
+    build:
+      context: .
+      dockerfile: docker/controller/Dockerfile
+    image: babycat-controller
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Seoul
+      - MEDIAMTX_API=http://streamer:9997
+    volumes:
+      - ./config:/config
+    depends_on:
+      - streamer
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: docker/analyzer/Dockerfile
+    image: babycat-analyzer
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      - TZ=Asia/Seoul
+      - MEDIAMTX_URL=rtsp://streamer:8554/live
+      - RECORDER_URL=http://recorder:8400
+      - STATE_PATH=/data/state/analyzer.json
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
-      - JWT_SECRET=${JWT_SECRET:?required}
       - VLM_MODELS=${VLM_MODELS:?required}
       - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
-      # FCM 알림 설정입니다. 값이 없으면 알림을 보내지 않고 로그만 남깁니다.
-      # FCM 활성화 절차:
-      #   1. Firebase 콘솔에서 서비스 계정 JSON 키를 발급하고 config/fcm_credentials.json에 저장합니다.
-      #   2. 아래 두 줄의 주석을 해제하고 FCM_TOKEN을 설정합니다.
-      #   3. volumes 항목에서 fcm_credentials 마운트의 주석도 해제합니다.
-      #- FCM_CREDENTIALS=/run/fcm/credentials.json
-      #- FCM_TOKEN=<device_fcm_registration_token>
     group_add:
       - video
     devices:
       - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin NX).
-      - /dev/v4l2-nvenc  # 하드웨어 비디오 인코더입니다(Orin NX).
       - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2decoder에 필요합니다.
       - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
       - /dev/nvhost-gpu       # GPU 채널 장치입니다.
     volumes:
       - ./data/models:/data/models # NanoLLM 모델 캐시입니다(MLC 컴파일 결과). 이식성을 위해 프로젝트 트리 안에 유지해야 합니다.
-      #- ./config/fcm_credentials.json:/run/fcm/credentials.json:ro # FCM을 활성화할 때 주석을 해제합니다.
-      - ./engine:/app
-      - ./config:/config
-      - ./data:/data
+      - ./data/state/analyzer:/data/state
+      - ./analyzer:/app
       # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다. 이미지 빌드 시점에는 설치할 수 없습니다.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
       - /tmp/nvscsock:/tmp/nvscsock # NvSciIPC 데몬 소켓입니다. NvMMLite 하드웨어 경로에 필요하며, 없으면 cuvidv4l2로 폴백한 뒤 CUDA_GPU_ID EINVAL 오류로 실패합니다.
-    tmpfs:
-      - /run/babycat-segments:size=64m,mode=1777
     ipc: host      # NvSciIPC가 호스트 IPC 네임스페이스의 POSIX shm/mqueue를 사용합니다.
     depends_on:
-      - media
+      - streamer
+      - recorder
 
-  gateway:
+  recorder:
     build:
       context: .
-      dockerfile: docker/gateway/Dockerfile
-    image: babycat-gateway
+      dockerfile: docker/recorder/Dockerfile
+    image: babycat-recorder
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    runtime: nvidia
     environment:
       - TZ=Asia/Seoul
-      - CAM_DIR=/data
-      - DB_PATH=/data/db/babycat.db
-      - JWT_SECRET=${JWT_SECRET:?required}
-      - JWT_EXPIRY=${JWT_EXPIRY:?required}
-      - REFRESH_EXPIRY=${REFRESH_EXPIRY:?required}
-      - DEFAULT_USER=${DEFAULT_USER:?required}
-      - DEFAULT_PASS=${DEFAULT_PASS:?required}
+      - MEDIAMTX_URL=rtsp://streamer:8554/live
+      - DB_PATH=/data/db/recorder.db
+      - CLIP_DIR=/data/clips
+      - STATE_PATH=/data/state/recorder.json
+      - TRIGGER_SEGMENT_DIR=/run/babycat-segments/live
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+    group_add:
+      - video
+    devices:
+      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin NX).
+      - /dev/v4l2-nvenc  # 하드웨어 비디오 인코더입니다(세그먼트 재인코딩, SDD §2.4 (3)).
+      - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2 코덱 경로에 필요합니다.
+      - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
+      - /dev/nvhost-gpu       # GPU 채널 장치입니다.
     volumes:
-      - ./data:/data
+      - ./data/clips:/data/clips
+      - ./data/db/recorder:/data/db
+      - ./data/state/recorder:/data/state
+      - ./recorder:/app
+      # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다.
+      - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
+      - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
+      - /tmp/nvscsock:/tmp/nvscsock
+    tmpfs:
+      - /run/babycat-segments:size=64m,mode=1777
+    ipc: host
     depends_on:
-      - engine
+      - streamer
+
+  router:
+    build:
+      context: .
+      dockerfile: docker/router/Dockerfile
+    image: babycat-router
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # 단일 외부 진입점(IF-001)
+    environment:
+      - TZ=Asia/Seoul
+      - JWT_SECRET=${JWT_SECRET:?required}
+      - MANAGER_URL=http://manager:8100
+      - CONTROLLER_URL=http://controller:8200
+      - ANALYZER_URL=http://analyzer:8300
+      - RECORDER_URL=http://recorder:8400
+      - STREAMER_HLS_URL=http://streamer:8888
+      - STREAMER_WEBRTC_URL=http://streamer:8889
+    depends_on:
+      - manager
+      - controller
+      - analyzer
+      - recorder

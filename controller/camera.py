@@ -1,9 +1,9 @@
 """
-Camera configuration module.
+Video source profile management and streamer source configuration.
 
-Babycat assumes a single camera. Clips are stored under per-year/month
-directories (DATA_DIR/{YYYY}/{MM}/) and accumulate in the same location
-regardless of camera-profile changes.
+Babycat assumes a single camera (v1.0). The profile file is owned by the
+controller alone (SDD §5.1); the streamer's RTSP source is configured at
+runtime through the MediaMTX control API.
 
 @claude
 """
@@ -22,16 +22,15 @@ import ptz
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
-MEDIAMTX_API = "http://media:9997"
+MEDIAMTX_API = os.getenv("MEDIAMTX_API", "http://streamer:9997")
 MEDIAMTX_PATH_NAME = "live"
-
-# @claude Clip storage base directory; actual files live under {DATA_DIR}/{YYYY}/{MM}/.
-DATA_DIR = os.getenv("DATA_DIR", "/data")
 
 camera_ready = threading.Event()
 
 DEFAULT_SOURCE_TYPE = "rtsp_camera"
 _REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
+
+
 def load() -> Optional[dict]:
     try:
         with open(CONFIG_PATH) as f:
@@ -89,7 +88,7 @@ def startup_apply() -> None:
 
     _configure_ptz(config)
 
-    # @claude MediaMTX may not be ready yet; retry with exponential backoff.
+    # @claude The streamer may not be ready yet; retry with exponential backoff (FR-015).
     camera_ready.clear()
     delay = 1.0
     for attempt in range(1, 11):
@@ -101,6 +100,45 @@ def startup_apply() -> None:
         delay = min(delay * 2, 30)
 
     log.error("MediaMTX source config failed — 10 retries exceeded")
+
+
+def activate_saved() -> dict:
+    """Apply the saved profile once (analysis-start path, SRS §2.3 (4)). @claude"""
+    saved = load()
+    if saved is None:
+        return {"ok": False, "error": "no saved profile"}
+    config, error = _normalize_profile(saved, saved)
+    if error:
+        return {"ok": False, "error": error}
+    if not _activate_runtime(config):
+        return {"ok": False, "error": "MediaMTX API connection failed"}
+    return {"ok": True}
+
+
+def source_watchdog(interval_s: float = 30.0) -> None:
+    """
+    Re-apply the saved profile when the streamer lost its runtime source
+    config — e.g. after a streamer restart (SDD §7.5). The MediaMTX config
+    lives in process memory, so a restart silently drops it.
+
+    @claude
+    """
+    while True:
+        time.sleep(interval_s)
+        saved = load()
+        if saved is None:
+            continue
+        config, error = _normalize_profile(saved, saved)
+        if error:
+            continue
+        expected = _build_rtsp_url(config)
+        current = _get_mediamtx_source()
+        if current is None:
+            continue  # @claude API unreachable — startup retry or the next tick handles it.
+        if current != expected:
+            log.warning("Streamer source config lost — re-applying saved profile")
+            if _activate_runtime(config, configure_ptz=False):
+                log.info("Streamer source re-applied")
 
 
 def _build_rtsp_url(config: dict) -> str:
@@ -235,6 +273,17 @@ def _source_runtime_activator(source_type: str):
     if source_type == DEFAULT_SOURCE_TYPE:
         return _activate_rtsp_camera_runtime
     return None
+
+
+def _get_mediamtx_source() -> str | None:
+    """Read the currently configured source for the live path; None when unreachable. @claude"""
+    url = f"{MEDIAMTX_API}/v3/config/paths/get/{MEDIAMTX_PATH_NAME}"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        return data.get("source") or ""
+    except Exception:
+        return None
 
 
 def _update_mediamtx(rtsp_url: str) -> bool:
