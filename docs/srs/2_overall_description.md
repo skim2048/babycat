@@ -25,7 +25,7 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 - ***Source controller*** : 비디오 소스 프로필을 관리하고 PTZ를 제어한다.
 - ***Video streamer*** : ***Video source***의 스트림을 RTSP로 수신하여 내부에 재배포한다.
 - ***Video analyzer*** : VLM 추론으로 장면을 분석한다.
-- ***Event recorder*** : 이벤트를 기록하고 클립과 이력을 관리한다.
+- ***Event recorder*** : 이벤트를 기록하고 클립과 이력을 관리하며, 하드웨어 상태를 측정한다.
 
 ## 2.3 전체 동작 방식 (Overall Operation)
 
@@ -54,11 +54,12 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 ### (4) 비디오 분석 시작
 
 1. ***User***가 분석 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-2. ***Request router***는 이 요청을 ***Video analyzer***와 ***Source controller***에게 전달한다.
+2. ***Request router***는 이 요청을 ***Video analyzer***·***Source controller***·***Event recorder***에게 전달한다.
 3. ***Video analyzer***는 장면 분석 파이프라인을 초기화하고, 스트림이 재배포되기를 기다린다.
-4. ***Source controller***는 등록된 프로필에 따라 ***Video streamer***에게 해당 ***Video source*** 스트림의 재배포를 지시한다.
-5. ***Video streamer***는 RTSP로 ***Video source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
-6. 스트림 재배포가 시작되면, 대기 중이던 ***Video analyzer***는 장면 분석 파이프라인을 가동한다.
+4. ***Event recorder***는 이벤트 직전 구간을 클립에 담기 위한 비디오 보관을 준비하고, 스트림이 재배포되기를 기다린다.
+5. ***Source controller***는 등록된 프로필에 따라 ***Video streamer***에게 해당 ***Video source*** 스트림의 재배포를 지시한다.
+6. ***Video streamer***는 RTSP로 ***Video source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
+7. 스트림 재배포가 시작되면, 대기 중이던 ***Video analyzer***는 장면 분석 파이프라인을 가동하고, ***Event recorder***는 최근 구간의 비디오 보관을 시작한다.
 
 ### (5) 이벤트 감지와 기록 - 자동 실행
 

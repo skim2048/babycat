@@ -22,23 +22,24 @@
 |`/api/logout`|POST|리프레시 토큰 폐기.|불필요|
 |`/api/change-password`|POST|비밀번호 변경.|필요|
 |`/health`|GET|서버 상태 확인.|불필요|
-|`/camera`|GET|카메라 프로필 조회(비밀번호 마스킹).|필요|
-|`/camera`|POST|카메라 프로필 적용.|필요|
+|`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|
+|`/camera`|POST|비디오 소스 프로필 적용.|필요|
 |`/clips`|GET|클립 목록 조회(키워드, 날짜 필터, 페이지네이션).|필요|
 |`/clips/{name}`|GET|클립 재생(HTTP Range 지원).|필요|
 |`/clips`|DELETE|선택 클립 삭제.|필요|
 |`/clips/all`|DELETE|전체 클립 삭제.|필요|
 |`/events`|GET|이벤트 이력 조회(페이지네이션).|필요|
+|`/events/{id}`|DELETE|이벤트 이력 개별 삭제.|필요|
 |`/events`|DELETE|이벤트 이력 전체 삭제.|필요|
-
-다음 엔드포인트는 재설계에서 ***Request router***로 통합해야 하는 대상이며, 경로와 명세는 작성을 보류한다.
-
-|기능|현재 위치|비고|
-|---|---|---|
-|PTZ 제어|***Source controller*** 직접 노출|단일 진입점 원칙에 따라 ***Request router*** 경유로 변경.|
-|VLM 프롬프트, 이벤트 키워드 설정|***Video analyzer*** 직접 노출|장면 분석 설정에 해당하는 경로.|
-|스트림 접속 정보 발급(URL + JWT)|신규|라이브 스트리밍 접근 토큰 발급 경로.|
-|시스템 상태 실시간 수신(SSE)|***Video analyzer*** 직접 노출|추론 결과 및 하드웨어 상태.|
+|`/ptz`|POST|비디오 소스 PTZ 제어(이동/정지/홈 저장/홈 복귀).|필요|
+|`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정.|필요|
+|`/analysis/start`|POST|장면 분석 시작/재시작.|필요|
+|`/vlm/switch`|POST|VLM 모델 전환(`P3`).|필요|
+|`/state`|GET|시스템 상태 실시간 수신(SSE).|필요|
+|`/stream`|GET|VLM 입력 프레임 수신(MJPEG, `P3`).|필요|
+|`/live/hls/{path}`|GET|HLS 재생 중계.|필요|
+|`/live/whep`|POST|WebRTC 시그널링(WHEP) 세션 수립 중계.|필요|
+|`/live/whep/{session}`|PATCH/DELETE|WebRTC 시그널링 세션 갱신/종료 중계.|필요|
 
 이벤트 푸시 알림용 디바이스 관리 API는 차기 버전으로 미룬다.
 
@@ -47,20 +48,20 @@
 ### IF-002: 비디오 스트림 수신 (***Video source*** → ***Video streamer***)
 
 - ***Video source***는 H.264로 인코딩된 비디오 스트림을 제공해야 한다.
-- ***Video streamer***는 저장된 카메라 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
-- 발생 빈도: 카메라 프로필이 활성화된 동안 상시 연결.
+- ***Video streamer***는 저장된 비디오 소스 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
+- 발생 빈도: 비디오 소스 프로필이 활성화된 동안 상시 연결.
 - 에러 처리: 연결 실패 시 재시도한다. 재시도 정책은 작성을 보류한다.
 
 ### IF-003: 라이브 스트리밍 (***Video streamer*** → ***Client app***)
 
-- ***Client app***은 ***Request router***에서 발급받은 JWT를 사용하여 ***Video streamer***에 직접 연결한다.
-- 프로토콜: HLS/WebRTC. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
-- ***Video streamer***는 JWT 검증에 성공한 경우에만 스트림을 송신한다. JWT 전달 방식(Authorization 헤더 또는 쿼리 파라미터)은 작성을 보류한다.
+- 프로토콜: HLS/WebRTC.
+- HLS 비디오와 WebRTC 시그널링은 ***Request router***를 경유하여 전달되며, ***Request router***가 `IF-001`과 동일한 방식으로 인증한다. 별도의 스트림 접근 토큰은 두지 않으며, ***Video streamer***는 자체 접근 통제를 수행하지 않는다.
+- WebRTC 미디어는 저지연을 위해 ***Request router***를 경유하지 않고 ***Client app***에게 직접 전달된다. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
 
 ### IF-004: PTZ 제어 (***Source controller*** → ***Video source***)
 
 - 조건부 인터페이스이다. ***Video source***가 ONVIF PTZ를 지원하는 경우에 한한다.
-- ***Source controller***는 카메라 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)/정지 명령을 전달한다.
+- ***Source controller***는 비디오 소스 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)/정지 명령을 전달한다.
 - 발생 빈도: 사용자 입력 시에만 발생.
 
 ## 4.2 사용자 인터페이스 (User Interface)
@@ -83,15 +84,12 @@
 
 ## 4.5 통신 인터페이스 (Communication Interface)
 
-외부에 노출되는 포트는 다음과 같다.
+외부에 노출되는 포트는 다음과 같다. ***Video streamer***의 HLS·WebRTC 시그널링·RTSP 포트는 ***Request router***를 경유하므로 외부에 노출하지 않는다.
 
 |포트|프로토콜|컴포넌트|용도|
 |---|---|---|---|
-|8000/tcp|HTTP|***Request router***|단일 제어 진입점(`IF-001`).|
-|8888/tcp|HTTP|***Video streamer***|HLS 스트리밍(`IF-003`).|
-|8889/tcp|HTTP|***Video streamer***|WebRTC 시그널링(`IF-003`).|
-|8890/udp|UDP|***Video streamer***|WebRTC ICE.|
-|8554/tcp|RTSP|***Video streamer***|RTSP 수신/재배포.|
+|8000/tcp|HTTP|***Request router***|단일 외부 진입점. 제어(`IF-001`) 및 HLS·WebRTC 시그널링 중계(`IF-003`).|
+|8890/udp|UDP|***Video streamer***|WebRTC 미디어/ICE(`IF-003`).|
 
 - 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다.
 - 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성을 보류한다.
