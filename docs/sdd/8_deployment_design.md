@@ -2,16 +2,41 @@
 
 ## 8.1 컨테이너 구성 (Container Composition)
 
-<!-- 컴포넌트를 어떤 컨테이너로 나누며, 각 컨테이너의 베이스 이미지, 네트워크, 볼륨, 재시작 정책을 적는다. -->
+여섯 서비스 모두 재시작 정책은 `unless-stopped`다(`NFR-018`).
+
+|서비스|베이스|하드웨어 접근|볼륨|포트 공개|
+|---|---|---|---|---|
+|`router`|python slim + FastAPI|없음|없음|8000/tcp|
+|`manager`|python slim + FastAPI|없음|`data/db`|없음|
+|`controller`|python slim + FastAPI|없음|`config`|없음|
+|`streamer`|MediaMTX 공식 이미지|없음|`config/mediamtx.yml`(ro)|8890/udp|
+|`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state`|없음|
+|`recorder`|L4T 계열 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db`·`data/state`, tmpfs(`/run/babycat-segments`)|없음|
+
+`analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다.
 
 ## 8.2 이미지 빌드 (Image Build)
 
-<!-- 현장 빌드를 전제로(SRS §3.3) 빌드 단계와 캐시 전략을 적는다. VLM 모델의 사전 컴파일 결과를 어떻게 보존할지도 함께 정한다. -->
+- 현장 빌드를 전제한다(SRS §3.3). `router`·`manager`·`controller`는 같은 python slim 베이스를 공유하여 레이어 중복을 줄인다.
+- `analyzer`의 베이스(NanoLLM)는 크기가 지배적이므로, 소스 변경이 베이스 레이어를 무효화하지 않도록 의존 설치와 소스 복사를 레이어로 분리한다. 개발 중에는 소스를 볼륨으로 마운트하여 재빌드 없이 반영한다.
+- VLM 모델의 사전 컴파일(SRS §3.2)은 이미지 빌드가 아니라 최초 기동의 런타임에 일어나며, 결과는 `data/models`에 캐시되어 재기동·재빌드와 무관하게 재사용된다. 이 분리 덕에 이미지 재빌드가 수십 분의 재컴파일을 유발하지 않는다.
 
 ## 8.3 설정 주입 (Configuration Injection)
 
-<!-- 외부에서 주입받아야 하는 값과 그 주입 경로를 적는다. JWT 서명 비밀키처럼 형상 관리에서 제외되는 값의 취급 방식이 핵심이다. -->
+주입 값은 `.env` 파일과 Compose의 환경 변수로 전달한다. 비밀키와 자격증명은 형상 관리에서 제외하며(SRS §3.6), 저장소에는 `.env.example` 템플릿만 둔다.
+
+|변수|대상|필수|설명|
+|---|---|---|---|
+|`HOST_IP`|`streamer`|필수|WebRTC ICE 후보로 광고할 외부 도달 가능 IP|
+|`JWT_SECRET`|`router`·`manager`|필수|토큰 서명 비밀키(`NFR-013`). 기본값 사용 금지|
+|`JWT_EXPIRY`·`REFRESH_EXPIRY`|`manager`|선택|토큰 수명. 기본값은 SRS `FR-001`·`FR-002`의 600초·30일|
+|`DEFAULT_USER`·`DEFAULT_PASS`|`manager`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
+|`VLM_MODELS`|`analyzer`|필수|후보 VLM 모델 목록(SRS §3.2)|
+|`MAX_NEW_TOKENS`|`analyzer`|선택|생성 토큰 상한(§7.2)|
 
 ## 8.4 로그와 진단 (Logging and Diagnostics)
 
-<!-- 로그의 수집 경로, 수준 구분, 보존 방식을 적는다. SRS NFR-020이 보류로 남긴 항목이므로, 여기서 정한 내용이 SRS 수정으로 이어질지 판단한다. -->
+- 모든 서비스는 로그를 표준 출력으로 내보내고, 수집·보존은 컨테이너 런타임의 로그 드라이버(로테이션 설정 포함)에 맡긴다. 별도의 로그 수집 컴포넌트를 두지 않는다 — 단일 호스트·소수 운영자 전제에서 `docker compose logs`로 충분하다.
+- 수준은 INFO(상태 전이·기동·재시도), WARNING(수복된 실패), ERROR(수복 실패)로 구분한다. 자동 삭제(`FR-033`)는 삭제 파일 수·확보 용량을 INFO로 기록하여 추적 의무(`NFR-010`)를 이행한다.
+- 실시간 진단은 로그가 아니라 모니터링 스트림(§6.4 (4))의 몫이다. 로그는 사후 추적용이다.
+- SRS `NFR-020`이 보류한 로그 수집·진단 명세는 이 절의 내용으로 충족되며, 별도의 요구사항 승격이 필요한 내용이 없으므로 SRS 환류는 하지 않는다.
