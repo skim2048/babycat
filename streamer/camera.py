@@ -1,9 +1,12 @@
 """
-Video source profile management and streamer source configuration.
+Video source profile management and MediaMTX source configuration.
 
 Babycat assumes a single camera (v1.0). The profile file is owned by the
-controller alone (SDD §5.1); the streamer's RTSP source is configured at
-runtime through the MediaMTX control API.
+streamer alone (SDD §5.1); the RTSP source is configured at runtime
+through the MediaMTX control API on localhost — owner and consumer of
+the profile live in the same container (SDD §4.2), so a restart recovers
+the source config through the normal startup path with no external
+watchdog.
 
 @claude
 """
@@ -22,7 +25,7 @@ import ptz
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
-MEDIAMTX_API = os.getenv("MEDIAMTX_API", "http://streamer:9997")
+MEDIAMTX_API = os.getenv("MEDIAMTX_API", "http://127.0.0.1:9997")
 MEDIAMTX_PATH_NAME = "live"
 
 camera_ready = threading.Event()
@@ -113,32 +116,6 @@ def activate_saved() -> dict:
     if not _activate_runtime(config):
         return {"ok": False, "error": "MediaMTX API connection failed"}
     return {"ok": True}
-
-
-def source_watchdog(interval_s: float = 30.0) -> None:
-    """
-    Re-apply the saved profile when the streamer lost its runtime source
-    config — e.g. after a streamer restart (SDD §7.5). The MediaMTX config
-    lives in process memory, so a restart silently drops it.
-
-    @claude
-    """
-    while True:
-        time.sleep(interval_s)
-        saved = load()
-        if saved is None:
-            continue
-        config, error = _normalize_profile(saved, saved)
-        if error:
-            continue
-        expected = _build_rtsp_url(config)
-        current = _get_mediamtx_source()
-        if current is None:
-            continue  # @claude API unreachable — startup retry or the next tick handles it.
-        if current != expected:
-            log.warning("Streamer source config lost — re-applying saved profile")
-            if _activate_runtime(config, configure_ptz=False):
-                log.info("Streamer source re-applied")
 
 
 def _build_rtsp_url(config: dict) -> str:
@@ -273,17 +250,6 @@ def _source_runtime_activator(source_type: str):
     if source_type == DEFAULT_SOURCE_TYPE:
         return _activate_rtsp_camera_runtime
     return None
-
-
-def _get_mediamtx_source() -> str | None:
-    """Read the currently configured source for the live path; None when unreachable. @claude"""
-    url = f"{MEDIAMTX_API}/v3/config/paths/get/{MEDIAMTX_PATH_NAME}"
-    try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-        return data.get("source") or ""
-    except Exception:
-        return None
 
 
 def _update_mediamtx(rtsp_url: str) -> bool:

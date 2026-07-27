@@ -1,5 +1,5 @@
 """
-NVENC segment recorder (SDD §2.4 (3), §4.6).
+NVENC segment recorder (SDD §2.4 (3), §4.4).
 
 Re-encodes the redistributed stream with the hardware encoder, forcing a
 keyframe every segment so clips can be cut on 1-second boundaries without

@@ -1,32 +1,65 @@
 """
 Babycat router — single external entry point (SDD §4.1).
 
-Authenticates every request in one place, relays control to the owning
-component, relays HLS and WebRTC signaling to the streamer (single-entry
-decision, SDD §2.4 (2)), and synthesizes the monitoring stream. Holds no
-state of its own.
+Owns the accounts: credentials, tokens, and per-request authentication
+all live in this process, so the revocation (epoch) check is a local
+database read. Everything else is relayed to the owning component —
+profile/PTZ to the streamer's companion process, analysis to the
+analyzer, clips/history to the recorder — plus the HLS/WHEP relays
+(single-entry decision, SDD §2.4 (2)) and the monitoring synthesis.
 
 @claude
 """
 
 import os
+import sqlite3
+from contextlib import asynccontextmanager
+from typing import Optional
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 import monitor
-from auth import require_auth
+from auth import (
+    JWT_EXPIRY,
+    REFRESH_EXPIRY,
+    authenticate,
+    bump_epoch,
+    change_password,
+    create_token,
+    get_epoch,
+    require_auth,
+    revoke_refresh_token,
+    rotate_refresh_token,
+    seed_default_user,
+    verify_token,
+)
+from database import DB_PATH, get_db, init_db
 from proxy import forward_json, relay_raw, relay_stream
 
-MANAGER_URL = os.environ.get("MANAGER_URL", "http://manager:8100")
-CONTROLLER_URL = os.environ.get("CONTROLLER_URL", "http://controller:8200")
+STREAMER_URL = os.environ.get("STREAMER_URL", "http://streamer:8200")
 ANALYZER_URL = os.environ.get("ANALYZER_URL", "http://analyzer:8300")
 RECORDER_URL = os.environ.get("RECORDER_URL", "http://recorder:8400")
 STREAMER_HLS_URL = os.environ.get("STREAMER_HLS_URL", "http://streamer:8888")
 STREAMER_WEBRTC_URL = os.environ.get("STREAMER_WEBRTC_URL", "http://streamer:8889")
 
-app = FastAPI(title="Babycat router", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        seed_default_user(conn)
+    finally:
+        conn.close()
+    monitor.start_collectors()
+    yield
+
+
+app = FastAPI(title="Babycat router", version="1.0.0", lifespan=lifespan)
 
 # @claude CORS — allow local development and private-network origins.
 # @claude For production / external domains, add CORS_EXTRA_ORIGINS=https://a.com,https://b.com.
@@ -49,65 +82,123 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def _start_monitor():
-    monitor.start_collectors()
-
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
-# ── Auth (relayed to the manager) ────────────────────────────────────────────
+# ── Accounts and tokens (owned, SDD §6.2) ────────────────────────────────────
 
 
-@app.post("/api/login")
-def login(payload: dict):
-    return forward_json(MANAGER_URL, "POST", "/internal/login", payload)
+class LoginIn(BaseModel):
+    username: str
+    password: str
+    remember_me: bool = False
 
 
-@app.post("/api/refresh")
-def refresh(payload: dict):
-    return forward_json(MANAGER_URL, "POST", "/internal/refresh", payload)
+class TokenOut(BaseModel):
+    token: str
+    expires_in: int
+    must_change_password: bool = False
+    refresh_token: Optional[str] = None
+    refresh_expires_in: Optional[int] = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str
+
+
+class RefreshOut(BaseModel):
+    token: str
+    expires_in: int
+    refresh_token: str
+    refresh_expires_in: int
+
+
+class LogoutIn(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/login", response_model=TokenOut)
+def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
+    result = authenticate(body.username, body.password, db, remember_me=body.remember_me)
+    if not result:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+    return TokenOut(
+        token=result["token"],
+        expires_in=JWT_EXPIRY,
+        must_change_password=result["must_change_password"],
+        refresh_token=result["refresh_token"],
+        refresh_expires_in=REFRESH_EXPIRY if result["refresh_token"] else None,
+    )
+
+
+@app.post("/api/refresh", response_model=RefreshOut)
+def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
+    rotated = rotate_refresh_token(body.refresh_token, db)
+    if not rotated:
+        raise HTTPException(status_code=401, detail="invalid or expired refresh token")
+    username, new_refresh_token = rotated
+    return RefreshOut(
+        token=create_token(username, get_epoch(username, db) or 0),
+        expires_in=JWT_EXPIRY,
+        refresh_token=new_refresh_token,
+        refresh_expires_in=REFRESH_EXPIRY,
+    )
 
 
 @app.post("/api/logout")
-def logout(payload: dict, request: Request):
-    """No auth requirement (the access token may already be lost), but when a
-    valid one is present its username rides along so the manager can bump the
-    epoch even without a refresh token (FR-003)."""
-    from auth import verify_token
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        claims = verify_token(auth_header[7:])
-        if claims:
-            payload.setdefault("username", claims.get("sub"))
-    return forward_json(MANAGER_URL, "POST", "/internal/logout", payload)
+def logout(body: LogoutIn, request: Request, db: sqlite3.Connection = Depends(get_db)):
+    """No auth requirement (the access token may already be lost). The epoch
+    bump revokes outstanding access tokens (FR-003); the username comes from
+    the refresh token when present, else from a still-valid access token."""
+    username = None
+    if body.refresh_token:
+        username = revoke_refresh_token(body.refresh_token, db)
+    if not username:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            claims = verify_token(auth_header[7:])
+            if claims:
+                username = claims.get("sub")
+    if username:
+        bump_epoch(username, db)
+    return {"ok": True}
 
 
 @app.post("/api/change-password")
-def change_password(payload: dict, user: dict = Depends(require_auth)):
-    payload["username"] = user["sub"]
-    return forward_json(MANAGER_URL, "POST", "/internal/change-password", payload)
+def api_change_password(
+    body: ChangePasswordIn,
+    user: dict = Depends(require_auth),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    ok = change_password(user["sub"], body.current_password, body.new_password, db)
+    if not ok:
+        raise HTTPException(status_code=400, detail="current password is incorrect")
+    return {"ok": True}
 
 
-# ── Video source profile / PTZ (controller) ──────────────────────────────────
+# ── Video source profile / PTZ (streamer companion) ──────────────────────────
 
 
 @app.get("/camera")
 def get_camera(_=Depends(require_auth)):
-    return forward_json(CONTROLLER_URL, "GET", "/profile")
+    return forward_json(STREAMER_URL, "GET", "/profile")
 
 
 @app.post("/camera")
 def set_camera(payload: dict, _=Depends(require_auth)):
-    return forward_json(CONTROLLER_URL, "POST", "/profile", payload)
+    return forward_json(STREAMER_URL, "POST", "/profile", payload)
 
 
 @app.post("/ptz")
 def control_ptz(payload: dict, _=Depends(require_auth)):
-    return forward_json(CONTROLLER_URL, "POST", "/ptz", payload)
+    return forward_json(STREAMER_URL, "POST", "/ptz", payload)
 
 
 # ── Scene analysis (analyzer + fan-out) ──────────────────────────────────────
@@ -126,15 +217,15 @@ def switch_vlm(payload: dict, _=Depends(require_auth)):
 @app.post("/analysis/start")
 def analysis_start(_=Depends(require_auth)):
     """
-    SRS §2.3 (4): deliver the start request to the analyzer, the source
-    controller, and the recorder. Idempotent; a partial failure is
-    reported and repaired by re-requesting (SDD §6.1).
+    SRS §2.3 (4): deliver the start request to the analyzer, the streamer,
+    and the recorder. Idempotent; a partial failure is reported and
+    repaired by re-requesting (SDD §6.1).
     """
     results = {}
     failures = []
     for name, base, path in (
         ("analyzer", ANALYZER_URL, "/start"),
-        ("controller", CONTROLLER_URL, "/activate"),
+        ("streamer", STREAMER_URL, "/activate"),
         ("recorder", RECORDER_URL, "/buffer/start"),
     ):
         try:
@@ -144,7 +235,6 @@ def analysis_start(_=Depends(require_auth)):
             results[name] = 502
             failures.append(name)
     if failures:
-        from fastapi import HTTPException
         raise HTTPException(status_code=502, detail=f"start not accepted by: {', '.join(failures)}")
     return {"ok": True, "accepted": results}
 

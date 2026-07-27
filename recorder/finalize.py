@@ -4,7 +4,7 @@ Event clip finalization (FR-030) and history recording (FR-031).
 On an event notification, waits out the post-event window, concatenates
 the matching tmpfs segments without re-encoding, writes the mp4 + sidecar
 pair, and records the history row — all in one procedure so the pair and
-the history cannot drift apart (SDD §4.6). Falls back to direct RTSP
+the history cannot drift apart (SDD §4.4). Falls back to direct RTSP
 recording when no segments cover the window.
 
 @claude
@@ -150,8 +150,15 @@ def _finalize_rollover_clip(
     inference_started_at: float | None = None,
     inference_elapsed_ms: int | None = None,
 ) -> str | None:
-    window_start = event_time - TRIGGER_PRE_EVENT_SEC
-    window_end = event_time + TRIGGER_POST_EVENT_SEC
+    # @claude The clip window is anchored on the capture time of the last
+    # @claude frame the VLM saw, not on the judgment time: judgment lags the
+    # @claude scene by the inference latency (seconds on slow boards), and a
+    # @claude judgment-anchored window can miss a transient event entirely
+    # @claude (SDD §7.2 (5)). Falls back to the judgment time when the
+    # @claude notification carries no frame time.
+    anchor = float(last_frame_time) if last_frame_time else event_time
+    window_start = anchor - TRIGGER_PRE_EVENT_SEC
+    window_end = anchor + TRIGGER_POST_EVENT_SEC
     wait_seconds = max(0.0, window_end - time.time())
     if wait_seconds > 0:
         time.sleep(wait_seconds)
@@ -169,9 +176,7 @@ def _finalize_rollover_clip(
         status.set_clip_storage("skipped", capacity.reason, free_mb)
         return None
 
-    selected_segments = select_segments_for_window(
-        SEGMENT_DIR, window_start, window_end, segment_span_s=SEGMENT_TIME,
-    )
+    selected_segments = select_segments_for_window(SEGMENT_DIR, window_start, window_end)
     if not selected_segments:
         log.error("trigger-clip finalize failed: no rollover segments for %s", base)
         status.set_clip_storage("error", "segment_window_empty",

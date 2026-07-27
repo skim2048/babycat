@@ -1,10 +1,10 @@
-"""Babycat manager — account database (users, refresh tokens). @claude"""
+"""Babycat router — account database (users, refresh tokens). @claude"""
 
 import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = os.environ.get("DB_PATH", "/data/db/manager.db")
+DB_PATH = os.environ.get("DB_PATH", "/data/db/router.db")
 
 # @claude token_epoch backs immediate revocation (SDD §6.2): logout/password
 # @claude change bumps it, invalidating every access token minted before.

@@ -7,7 +7,7 @@ Pipeline:
   -> RingBuffer -> VLM inference -> keyword match -> event notify (recorder)
 
 Clip recording, event history, and hardware monitoring live in the
-recorder (SDD §4.6); this process only judges events and notifies.
+recorder (SDD §4.4); this process only judges events and notifies.
 
 @claude
 """

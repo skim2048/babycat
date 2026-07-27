@@ -2,7 +2,7 @@
 Babycat recorder — event clips, history, hardware status.
 
 Internal only: the router relays external clip/history requests here, and
-the analyzer posts event notifications (SDD §4.6, §6.3). Owns the event
+the analyzer posts event notifications (SDD §4.4, §6.3). Owns the event
 database and the clip files exclusively.
 
 @claude

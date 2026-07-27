@@ -58,15 +58,26 @@ def select_segments_for_window(
     base_dir: str | Path,
     window_start: float,
     window_end: float,
-    *,
-    segment_span_s: float,
 ) -> list[Path]:
-    selected: list[Path] = []
+    """Select segments overlapping [window_start, window_end].
+
+    Segment spans are measured, not assumed: each segment ends where the
+    next one starts (the last one ends now). The encoder's keyframe
+    interval is frame-count based, so real spans stretch with slower
+    cameras (SDD §4.4) — a fixed nominal span would misjudge boundaries.
+    """
+    entries: list[tuple[Path, float]] = []
     for path in list_segments(base_dir):
         started_at = parse_segment_start(path)
-        if started_at is None:
-            continue
-        ended_at = started_at + max(0.001, segment_span_s)
+        if started_at is not None:
+            entries.append((path, started_at))
+
+    selected: list[Path] = []
+    for index, (path, started_at) in enumerate(entries):
+        if index + 1 < len(entries):
+            ended_at = entries[index + 1][1]
+        else:
+            ended_at = time.time()
         if ended_at <= window_start:
             continue
         if started_at >= window_end:
