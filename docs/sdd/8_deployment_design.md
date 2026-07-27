@@ -2,22 +2,20 @@
 
 ## 8.1 컨테이너 구성 (Container Composition)
 
-여섯 서비스 모두 재시작 정책은 `unless-stopped`다(`NFR-018`).
+네 서비스 모두 재시작 정책은 `unless-stopped`다(`NFR-018`).
 
 |서비스|베이스|하드웨어 접근|볼륨|포트 공개|
 |---|---|---|---|---|
-|`router`|python slim + FastAPI|없음|없음|8000/tcp|
-|`manager`|python slim + FastAPI|없음|`data/db`|없음|
-|`controller`|python slim + FastAPI|없음|`config`|없음|
-|`streamer`|MediaMTX 공식 이미지|없음|`config/mediamtx.yml`(ro)|8890/udp|
-|`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state`|없음|
-|`recorder`|L4T 계열 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db`·`data/state`, tmpfs(`/run/babycat-segments`)|없음|
+|`router`|python slim + FastAPI|없음|`data/db/router`|8000/tcp|
+|`streamer`|python slim + MediaMTX 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8890/udp|
+|`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state/analyzer`|없음|
+|`recorder`|ubuntu 계열 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db/recorder`·`data/state/recorder`, tmpfs(`/run/babycat-segments`)|없음|
 
 `analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다.
 
 ## 8.2 이미지 빌드 (Image Build)
 
-- 현장 빌드를 전제한다(SRS §3.3). `router`·`manager`·`controller`는 같은 python slim 베이스를 공유하여 레이어 중복을 줄인다.
+- 현장 빌드를 전제한다(SRS §3.3). `router`와 `streamer`는 같은 python slim 베이스를 공유하여 레이어 중복을 줄인다. `streamer` 이미지는 공식 MediaMTX 이미지에서 정적 바이너리를 다단계 복사(`COPY --from`)로 가져와 담으며, 버전 인상은 참조 태그의 변경이다.
 - `analyzer`의 베이스(NanoLLM)는 크기가 지배적이므로, 소스 변경이 베이스 레이어를 무효화하지 않도록 의존 설치와 소스 복사를 레이어로 분리한다. 개발 중에는 소스를 볼륨으로 마운트하여 재빌드 없이 반영한다.
 - VLM 모델의 사전 컴파일(SRS §3.2)은 이미지 빌드가 아니라 최초 기동의 런타임에 일어나며, 결과는 `data/models`에 캐시되어 재기동·재빌드와 무관하게 재사용된다. 이 분리 덕에 이미지 재빌드가 수십 분의 재컴파일을 유발하지 않는다.
 
@@ -28,9 +26,9 @@
 |변수|대상|필수|설명|
 |---|---|---|---|
 |`HOST_IP`|`streamer`|필수|WebRTC ICE 후보로 광고할 외부 도달 가능 IP|
-|`JWT_SECRET`|`router`·`manager`|필수|토큰 서명 비밀키(`NFR-013`). 기본값 사용 금지|
-|`JWT_EXPIRY`·`REFRESH_EXPIRY`|`manager`|선택|토큰 수명. 기본값은 SRS `FR-001`·`FR-002`의 600초·30일|
-|`DEFAULT_USER`·`DEFAULT_PASS`|`manager`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
+|`JWT_SECRET`|`router`|필수|토큰 서명 비밀키(`NFR-013`). 기본값 사용 금지|
+|`JWT_EXPIRY`·`REFRESH_EXPIRY`|`router`|선택|토큰 수명. 기본값은 SRS `FR-001`·`FR-002`의 600초·30일|
+|`DEFAULT_USER`·`DEFAULT_PASS`|`router`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
 |`VLM_MODELS`|`analyzer`|필수|후보 VLM 모델 목록(SRS §3.2)|
 |`MAX_NEW_TOKENS`|`analyzer`|선택|생성 토큰 상한(§7.2)|
 

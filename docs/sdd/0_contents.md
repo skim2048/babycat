@@ -22,11 +22,9 @@
 
 #### 4. 컴포넌트 설계 (Component Design)
 - 4.1 Request router (`router`)
-- 4.2 Account manager (`manager`)
-- 4.3 Source controller (`controller`)
-- 4.4 Video streamer (`streamer`)
-- 4.5 Video analyzer (`analyzer`)
-- 4.6 Event recorder (`recorder`)
+- 4.2 Video streamer (`streamer`)
+- 4.3 Video analyzer (`analyzer`)
+- 4.4 Event recorder (`recorder`)
 
 #### 5. 데이터 설계 (Data Design)
 - 5.1 데이터 모델 (Data Model)

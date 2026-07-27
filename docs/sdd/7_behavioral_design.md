@@ -11,17 +11,16 @@ sequenceDiagram
     participant C as Client app
     participant R as router
     participant A as analyzer
-    participant SC as controller
-    participant REC as recorder
     participant S as streamer
+    participant REC as recorder
 
     C->>R: POST /analysis/start
     R->>A: POST /start
-    R->>SC: POST /activate
+    R->>S: POST /activate
     R->>REC: POST /buffer/start
     R-->>C: 응답(셋의 결과 종합)
     A->>A: 파이프라인 초기화, 활성 플래그 영속
-    SC->>S: 소스 설정(제어 API, 재시도 FR-015)
+    S->>S: 저장된 프로필로 소스 설정(재시도 FR-015)
     REC->>REC: 버퍼 활성 플래그 영속
     S->>S: Video source 접속·재배포 시작
     A->>S: RTSP 접속(재시도 FR-046)
@@ -89,10 +88,10 @@ HLS는 `Client app → router → streamer`의 중계 연쇄이고, WebRTC는 �
 |실패|감지|대응|
 |---|---|---|
 |재배포 스트림 단절|`analyzer` 파이프라인 워치독 / `recorder` 세그먼트 생성 중단|파이프라인·기록기를 내부 재시작하고 접속을 재시도(`FR-046`)|
-|***Video streamer*** 재시작으로 소스 설정 소실|`controller`의 주기 점검(소스 설정 존재 확인)|저장된 프로필을 재적용(`FR-015`의 재시도 준용)|
+|`streamer` 컨테이너 재시작으로 소스 설정 소실|동반 프로세스의 기동 절차|저장된 프로필을 스스로 재적용(`FR-015`)|
 |VLM 추론 정지·실패|추론 워치독|자식 프로세스 재기동, 지속 실패 시 컨테이너 종료|
 |이벤트 통지 실패|`analyzer`의 호출 오류|기록 포기(재전송 없음, §6.3). 지속 상황은 다음 추론이 재판정|
-|세그먼트 결합 실패|결합 절차의 오류|직접 녹화 폴백(§4.6), 그마저 실패하면 상태 표시 후 포기|
+|세그먼트 결합 실패|결합 절차의 오류|직접 녹화 폴백(§4.4), 그마저 실패하면 상태 표시 후 포기|
 |저장 공간 부족|기록 전 용량 점검|오래된 클립·이력 자동 삭제(`FR-033`)와 로그 기록(`NFR-010`), 확보 실패 시 기록 건너뜀과 상태 표시|
 |내부 컴포넌트 무응답|`router`의 호출 실패|502 정규화(§6.5). 회복은 해당 컨테이너의 재시작 정책에 맡김|
 |PTZ 불가(미지원·거부)|ONVIF 호출 실패|오류 없이 무시(`FR-020`)|

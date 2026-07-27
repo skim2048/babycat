@@ -6,7 +6,7 @@
 
 ## 1.2 범위 (Scope)
 
-설계 대상은 SRS §2.2의 여섯 구성요소(***Request router***·***Account manager***·***Source controller***·***Video streamer***·***Video analyzer***·***Event recorder***)와 그 배포 구성이다. 다음은 설계에서 제외한다.
+설계 대상은 SRS §2.2의 네 구성요소(***Request router***·***Video streamer***·***Video analyzer***·***Event recorder***)와 그 배포 구성이다. 다음은 설계에서 제외한다.
 
 - ***Client app***의 내부 — `Babycat`은 백엔드이며, 별도로 관리하는 참조 구현 대시보드는 검증 수단일 뿐 설계 대상이 아니다.
 - ***Video source*** 장비 자체와 그 설정.
@@ -31,14 +31,15 @@ SRS §1.4에 이미 있는 용어는 반복하지 않는다. 설계 단계에서
 |MJPEG(Motion JPEG)|JPEG 프레임을 연속 전송하는 단순 비디오 스트림|
 |NVDEC/NVENC|Jetson SoC의 하드웨어 비디오 디코더/인코더|
 |세대(epoch)|토큰 즉시 폐기를 위한 계정 단위 정수. 증가하면 이전 토큰이 모두 무효가 된다(§6.2)|
-|세그먼트|사전 구간 확보를 위해 1초 단위로 쪼개 tmpfs에 두는 짧은 비디오 파일(§4.6)|
+|세그먼트|사전 구간 확보를 위해 1초 단위로 쪼개 tmpfs에 두는 짧은 비디오 파일(§4.4)|
+|동반 프로세스(companion process)|기성품 프로세스와 같은 컨테이너에서 함께 동작하며 그 제어·부가 기능을 맡는 프로세스. `streamer` 컨테이너의 프로필·PTZ 담당 프로세스가 이에 해당한다(§4.2)|
 |tmpfs|디스크가 아닌 메모리에 존재하는 휘발성 파일시스템|
 |WAL(Write-Ahead Logging)|SQLite의 저널 모드. 쓰기 중에도 읽기를 막지 않는다|
 
 ## 1.5 관련 문서 (Related Documents)
 
 - SRS — `docs/srs/` (이 문서의 상위 권위)
-- 작업 기록 — `docs/workflow/` (설계 결정의 경위)
+- 작업 기록 — `workflow/` (설계 결정의 경위, 형상 관리 제외)
 - MediaMTX 공식 문서 — ***Video streamer*** 설정·제어 API·WHEP의 준거
 - ONVIF Profile S 사양 — PTZ 제어(`IF-004`)의 준거
 - jetson-containers / NanoLLM — `analyzer` 베이스 이미지의 준거
