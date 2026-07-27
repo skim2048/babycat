@@ -8,7 +8,7 @@
 
 설계 대상은 SRS §2.2의 여섯 구성요소(***Request router***·***Account manager***·***Source controller***·***Video streamer***·***Video analyzer***·***Event recorder***)와 그 배포 구성이다. 다음은 설계에서 제외한다.
 
-- ***Client app***의 내부 — `Babycat`은 백엔드이며, 저장소의 `web/`은 검증용 참조 구현일 뿐 설계 대상이 아니다.
+- ***Client app***의 내부 — `Babycat`은 백엔드이며, 별도로 관리하는 참조 구현 대시보드는 검증 수단일 뿐 설계 대상이 아니다.
 - ***Video source*** 장비 자체와 그 설정.
 - VLM 모델의 내부 구조와 품질 — 모델은 교체 가능한 외부 산출물로 취급한다.
 

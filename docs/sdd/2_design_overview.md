@@ -90,4 +90,4 @@ SRS가 이미 지정한 항목(NanoLLM·SQLite·MediaMTX·Docker Compose)은 §2
 |`recorder`|Python 3 + FastAPI/uvicorn + GStreamer(PyGObject) + ffmpeg|세그먼트 기록은 GStreamer(NVENC), 무재인코딩 결합과 직접 녹화 폴백은 ffmpeg(`-c copy`)가 맡는다. 클립·이력 API는 제어 계열과 같은 FastAPI로 통일한다.|
 |`streamer`|MediaMTX|기성품을 설정만으로 사용한다(`CON` 외 선택 없음).|
 
-***Client app***(참조 구현 `web/`, Vue 3)은 `Babycat`의 범위 밖이므로 선정 대상이 아니다.
+***Client app***은 `Babycat`의 범위 밖이므로 선정 대상이 아니다. 검증에 사용하는 참조 구현 대시보드(Vue 3)는 이 저장소가 아닌 곳에서 관리한다.
