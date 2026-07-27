@@ -77,8 +77,8 @@ config/
 사용자가 설정하는 값의 저장 형식과 기본값은 다음과 같다. 외부에서 주입받는 값은 §8.3에서 다룬다.
 
 - **비디오 소스 프로필** (`config/cam_profile.json`) — `source_type`(v1.0은 `rtsp_camera` 고정), `ip`, `username`, `password`, `rtsp_port`(기본 554), `stream_path`(기본 `stream1`), `onvif_port`(선택), `ptz_home`(선택). 조회 응답에서는 `password`를 설정 여부로만 반환한다(`FR-013`).
-- **analyzer 상태 파일** (`data/state/analyzer.json`) — `prompt`(기본 `Describe the scene.`, `FR-026`), `keywords`(기본 빈 목록 — 이때 키워드 매칭을 수행하지 않는다, `FR-027`), `analysis_active`(기본 false — 저장만으로 분석이 시작되지 않는다, `FR-025`).
-- **recorder 상태 파일** (`data/state/recorder.json`) — `buffer_active`(기본 false). 분석 시작과 함께 참이 된다(§2.4 (4)).
+- **analyzer 상태 파일** (컨테이너 안 `/data/state/analyzer.json`, 호스트는 §5.3의 구획 `data/state/analyzer/`) — `prompt`(기본 `Describe the scene.`, `FR-026`), `keywords`(기본 빈 목록 — 이때 키워드 매칭을 수행하지 않는다, `FR-027`), `analysis_active`(기본 false — 저장만으로 분석이 시작되지 않는다, `FR-025`).
+- **recorder 상태 파일** (컨테이너 안 `/data/state/recorder.json`, 호스트는 §5.3의 구획 `data/state/recorder/`) — `buffer_active`(기본 false). 분석 시작과 함께 참이 된다(§2.4 (4)).
 
 상태 파일은 재기동 복원(`FR-014`)의 근거다. 각 소유자가 자기 파일만 읽고 쓰므로 복원에 컴포넌트 간 조율이 없다(§3.5).
 

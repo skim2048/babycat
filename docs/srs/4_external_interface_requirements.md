@@ -19,7 +19,7 @@
 |---|---|---|---|
 |`/api/login`|POST|로그인. JWT 및 리프레시 토큰 발급.|불필요|
 |`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(토큰 회전).|불필요|
-|`/api/logout`|POST|리프레시 토큰 폐기.|불필요|
+|`/api/logout`|POST|로그아웃. 발급된 토큰 폐기.|불필요|
 |`/api/change-password`|POST|비밀번호 변경.|필요|
 |`/health`|GET|서버 상태 확인.|불필요|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|
@@ -28,7 +28,7 @@
 |`/clips/{name}`|GET|클립 재생(HTTP Range 지원).|필요|
 |`/clips`|DELETE|선택 클립 삭제.|필요|
 |`/clips/all`|DELETE|전체 클립 삭제.|필요|
-|`/events`|GET|이벤트 이력 조회(페이지네이션).|필요|
+|`/events`|GET|이벤트 이력 조회(키워드, 날짜 필터, 페이지네이션).|필요|
 |`/events/{id}`|DELETE|이벤트 이력 개별 삭제.|필요|
 |`/events`|DELETE|이벤트 이력 전체 삭제.|필요|
 |`/ptz`|POST|비디오 소스 PTZ 제어(이동/정지/홈 저장/홈 복귀).|필요|
