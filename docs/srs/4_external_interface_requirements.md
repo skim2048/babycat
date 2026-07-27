@@ -7,7 +7,7 @@
 |`IF-001`|HTTP API|***Client app*** ↔ ***Request router***|HTTP/JSON|
 |`IF-002`|비디오 스트림 수신|***Video source*** → ***Video streamer***|RTSP (H.264)|
 |`IF-003`|라이브 스트리밍|***Video streamer*** → ***Client app***|HLS/WebRTC|
-|`IF-004`|PTZ 제어|***Source controller*** → ***Video source***|ONVIF|
+|`IF-004`|PTZ 제어|***Video streamer*** → ***Video source***|ONVIF|
 
 ## 4.1 시스템 인터페이스 (System Interface)
 
@@ -58,10 +58,10 @@
 - HLS 비디오와 WebRTC 시그널링은 ***Request router***를 경유하여 전달되며, ***Request router***가 `IF-001`과 동일한 방식으로 인증한다. 별도의 스트림 접근 토큰은 두지 않으며, ***Video streamer***는 자체 접근 통제를 수행하지 않는다.
 - WebRTC 미디어는 저지연을 위해 ***Request router***를 경유하지 않고 ***Client app***에게 직접 전달된다. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
 
-### IF-004: PTZ 제어 (***Source controller*** → ***Video source***)
+### IF-004: PTZ 제어 (***Video streamer*** → ***Video source***)
 
 - 조건부 인터페이스이다. ***Video source***가 ONVIF PTZ를 지원하는 경우에 한한다.
-- ***Source controller***는 비디오 소스 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)/정지 명령을 전달한다.
+- ***Video streamer***는 비디오 소스 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)/정지 명령을 전달한다.
 - 발생 빈도: 사용자 입력 시에만 발생.
 
 ## 4.2 사용자 인터페이스 (User Interface)

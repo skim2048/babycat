@@ -20,10 +20,8 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
   <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
 </figure>
 
-- ***Request router*** : 단일 외부 진입점. 요청을 인증·라우팅하며 토큰을 검증한다.
-- ***Account manager*** : 계정을 인증·관리한다.
-- ***Source controller*** : 비디오 소스 프로필을 관리하고 PTZ를 제어한다.
-- ***Video streamer*** : ***Video source***의 스트림을 RTSP로 수신하여 내부에 재배포한다.
+- ***Request router*** : 단일 외부 진입점. 계정을 인증·관리하며, 요청의 토큰을 검증하여 라우팅한다.
+- ***Video streamer*** : 비디오 소스 프로필을 관리하고 PTZ를 제어하며, ***Video source***의 스트림을 RTSP로 수신하여 내부에 재배포한다.
 - ***Video analyzer*** : VLM 추론으로 장면을 분석한다.
 - ***Event recorder*** : 이벤트를 기록하고 클립과 이력을 관리하며, 하드웨어 상태를 측정한다.
 
@@ -32,18 +30,16 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 ### (1) 자격증명 및 로그인 유지
 
 1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-2. ***Request router***는 자격증명과 로그인 유지 여부를 ***Account manager***에게 중개한다.
-3. ***Account manager***는 자격증명을 검증하여 ***Request router***에게 응답한다.
+2. ***Request router***는 자격증명을 검증한다.
     - 정당하면, 액세스 토큰을 발급한다. 로그인 유지가 요청되었다면 리프레시 토큰도 함께 발급한다.
     - 정당하지 않으면, 거부한다.
-4. ***Request router***는 ***Account manager***의 응답을 ***Client app***에게 중개한다.
-5. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보내며, ***Request router***가 토큰이 없거나 유효하지 않은 요청을 거부한다.
+3. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보내며, ***Request router***가 토큰이 없거나 유효하지 않은 요청을 거부한다.
 
 ### (2) 비디오 소스 프로필 등록
 
 1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-2. ***Request router***는 전달받은 요청을 ***Source controller***에게 중개한다.
-3. ***Source controller***는 프로필을 저장한다.
+2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+3. ***Video streamer***는 프로필을 저장한다.
 
 ### (3) 비디오 분석 조건 설정
 
@@ -54,12 +50,11 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 ### (4) 비디오 분석 시작
 
 1. ***User***가 분석 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-2. ***Request router***는 이 요청을 ***Video analyzer***·***Source controller***·***Event recorder***에게 전달한다.
+2. ***Request router***는 이 요청을 ***Video analyzer***·***Video streamer***·***Event recorder***에게 전달한다.
 3. ***Video analyzer***는 장면 분석 파이프라인을 초기화하고, 스트림이 재배포되기를 기다린다.
 4. ***Event recorder***는 이벤트 직전 구간을 클립에 담기 위한 비디오 보관을 준비하고, 스트림이 재배포되기를 기다린다.
-5. ***Source controller***는 등록된 프로필에 따라 ***Video streamer***에게 해당 ***Video source*** 스트림의 재배포를 지시한다.
-6. ***Video streamer***는 RTSP로 ***Video source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
-7. 스트림 재배포가 시작되면, 대기 중이던 ***Video analyzer***는 장면 분석 파이프라인을 가동하고, ***Event recorder***는 최근 구간의 비디오 보관을 시작한다.
+5. ***Video streamer***는 등록된 프로필에 따라 RTSP로 ***Video source***에 접속하여 스트림을 수신하고, 이를 내부에 재배포한다.
+6. 스트림 재배포가 시작되면, 대기 중이던 ***Video analyzer***는 장면 분석 파이프라인을 가동하고, ***Event recorder***는 최근 구간의 비디오 보관을 시작한다.
 
 ### (5) 이벤트 감지와 기록 - 자동 실행
 
@@ -80,8 +75,8 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 ### (7) 비디오 소스 PTZ 제어
 
 1. ***User***가 팬·틸트·줌 제어를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-2. ***Request router***는 전달받은 요청을 ***Source controller***에게 전달한다.
-3. ***Source controller***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
+2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
+3. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
 4. ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다.
 
 ### (8) 저장된 클립과 이력 관리
