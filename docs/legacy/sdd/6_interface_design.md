@@ -105,7 +105,7 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 
 ### (3) WebRTC 미디어 직접 경로
 
-시그널링에서 교환된 ICE 자격으로 ***Client app***과 ***Video streamer*** 사이에 UDP(8890) 미디어 연결이 직접 수립된다. ***Video streamer***는 외부 도달 가능한 호스트 IP를 ICE 후보로 광고한다(SRS §3.2).
+시그널링에서 교환된 ICE 자격으로 ***Client app***과 ***Video streamer*** 사이에 UDP(8189) 미디어 연결이 직접 수립된다. ***Video streamer***는 외부 도달 가능한 호스트 IP를 ICE 후보로 광고한다(SRS §3.2).
 
 ### (4) 모니터링 스트림 합성
 

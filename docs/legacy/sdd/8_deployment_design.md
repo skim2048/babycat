@@ -7,7 +7,7 @@
 |서비스|베이스|하드웨어 접근|볼륨|포트 공개|
 |---|---|---|---|---|
 |`router`|python slim + FastAPI|없음|`data/db/router`|8000/tcp|
-|`streamer`|python slim + MediaMTX 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8890/udp|
+|`streamer`|python slim + MediaMTX 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8189/udp|
 |`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state/analyzer`|없음|
 |`recorder`|ubuntu 계열 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db/recorder`·`data/state/recorder`, tmpfs(`/run/babycat-segments`)|없음|
 
