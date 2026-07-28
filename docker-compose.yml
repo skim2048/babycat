@@ -1,7 +1,7 @@
 name: babycat
 
 # @claude Four services, one per SRS component (SDD §2.4 (1)).
-# @claude Externally published ports: router 8000/tcp, streamer 8890/udp only
+# @claude Externally published ports: router 8000/tcp, streamer 8189/udp only
 # @claude (single-entry decision, SDD §2.4 (2); SRS §4.5).
 
 services:
@@ -18,7 +18,7 @@ services:
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      - "8890:8890/udp"  # WebRTC Media/ICE — 유일한 직접 경로(IF-003)
+      - "8189:8189/udp"  # WebRTC Media/ICE — 유일한 직접 경로(IF-003)
     volumes:
       - ./config:/config  # mediamtx.yml(설정)과 cam_profile.json(동반 프로세스 소유)
 

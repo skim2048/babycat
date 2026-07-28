@@ -11,7 +11,7 @@ apiAddress: :9997
 
 # @claude No authentication here by design (SDD §2.4 (2)): playback requests are
 # @claude authenticated at the router; only the compose-internal network and the
-# @claude WebRTC media port (8890/udp) can reach this container.
+# @claude WebRTC media port (8189/udp) can reach this container.
 authInternalUsers:
   - user: any
     pass: ""
@@ -25,16 +25,13 @@ authInternalUsers:
 # @claude RTSP server (internal: analyzer / recorder consume, source is pulled).
 rtspAddress: :8554
 
-# @claude SRT not used — avoids a port 8890 conflict.
-srt: no
-
 # @claude WebRTC server. Signaling (8889) is relayed by the router; only the
-# @claude media/ICE port (8890/udp) is published to the host.
+# @claude media/ICE port (8189/udp) is published to the host.
 webrtcAddress: :8889
 # @claude webrtcAdditionalHosts: extra host IPs/names to advertise as ICE candidates.
 # @claude Containers cannot see the host NIC, so docker-compose injects
 # @claude MTX_WEBRTCADDITIONALHOSTS=${HOST_IP} (from .env).
-webrtcLocalUDPAddress: :8890
+webrtcLocalUDPAddress: :8189
 
 paths:
   live:
