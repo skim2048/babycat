@@ -39,6 +39,7 @@
 - 6.3 컴포넌트 간 인터페이스 (Inter-component Interface)
 - 6.4 스트리밍 인터페이스 (Streaming Interface)
 - 6.5 오류 응답 규약 (Error Response Convention)
+- 6.6 동작별 메시지 흐름 (Message Flows by Operation)
 
 #### 7. 동작 설계 (Behavioral Design)
 - 7.1 주요 시나리오 흐름 (Primary Scenario Flows)

@@ -2,53 +2,17 @@
 
 ## 7.1 주요 시나리오 흐름 (Primary Scenario Flows)
 
-SRS §2.3의 시나리오 가운데 컴포넌트 협조가 단순 중개(§6.1의 표로 자명)인 것 — 로그인(1), 프로필 등록(2), 분석 조건 설정(3), PTZ(7), 클립·이력 관리(8) — 은 별도 상세화가 필요 없다. 여러 컴포넌트가 얽히는 세 흐름만 호출 수준으로 상세화한다.
+각 시나리오의 메시지 흐름 — 단계, 간선, 전송 형태 — 은 §6.6이 그림과 함께 정의한다. 이 절은 형태만으로 드러나지 않는 동작적 성질을 보탠다.
 
-### (1) 분석 시작 (SRS §2.3 (4))
+### (1) 분석 시작 (§6.6 (4))
 
-```mermaid
-sequenceDiagram
-    participant C as Client app
-    participant R as router
-    participant A as analyzer
-    participant S as streamer
-    participant REC as recorder
+세 컴포넌트는 서로의 완료를 기다리지 않는다. `analyzer`와 `recorder`의 RTSP 접속은 재배포가 시작될 때까지 재시도로 대기하며(§2.4 (5)), ***Request router***의 응답은 각 컴포넌트가 시작 요청을 접수했는지만 뜻한다. `analyzer`와 `recorder`는 수락 시 각자의 활성 플래그를 영속하고(`FR-014`), `streamer`의 소스 설정은 재시도를 동반한다(`FR-015`). 실제 가동 여부는 모니터링 스트림으로 확인한다(§3.3).
 
-    C->>R: POST /analysis/start
-    R->>A: POST /start
-    R->>S: POST /activate
-    R->>REC: POST /buffer/start
-    R-->>C: 응답(셋의 결과 종합)
-    A->>A: 파이프라인 초기화, 활성 플래그 영속
-    S->>S: 저장된 프로필로 소스 설정(재시도 FR-015)
-    REC->>REC: 버퍼 활성 플래그 영속
-    S->>S: Video source 접속·재배포 시작
-    A->>S: RTSP 접속(재시도 FR-046)
-    REC->>S: RTSP 접속(재시도 FR-046)
-```
+### (2) 이벤트 감지와 기록 (§6.6 (5))
 
-세 컴포넌트는 서로의 완료를 기다리지 않는다. `analyzer`와 `recorder`의 RTSP 접속은 재배포가 시작될 때까지 재시도로 대기하며(§2.4 (5)), ***Request router***의 응답은 각 컴포넌트가 시작 요청을 접수했는지만 뜻한다. 실제 가동 여부는 모니터링 스트림으로 확인한다(§3.3).
+재배포 스트림은 상시 흐르고, `recorder`는 이를 1초 세그먼트로 축적한다. 통지 이후의 클립 결합·이력 기록·용량 점검은 ***Event recorder*** 안에서 처리되며, 실패하더라도 ***Video analyzer***는 관여하지 않는다(§6.3).
 
-### (2) 이벤트 감지와 기록 (SRS §2.3 (5))
-
-```mermaid
-sequenceDiagram
-    participant S as streamer
-    participant A as analyzer
-    participant REC as recorder
-
-    S--)A: 재배포 스트림(RTSP, 상시)
-    S--)REC: 재배포 스트림(RTSP, 상시) → 1초 세그먼트 축적
-    A->>A: 프레임 추출 → VLM 추론 → 키워드 매칭
-    A->>REC: POST /notify(키워드·텍스트·시각)
-    REC-->>A: 202 즉시 응답
-    REC->>REC: 이벤트 전후 세그먼트 결합 → mp4·사이드카 저장
-    REC->>REC: 발생 이력 DB 기록, 용량 점검(FR-033)
-```
-
-통지 이후의 실패는 ***Event recorder*** 안에서 처리되며 ***Video analyzer***는 관여하지 않는다(§6.3).
-
-### (3) 라이브 재생 (SRS §2.3 (6))
+### (3) 라이브 재생 (§6.6 (6))
 
 HLS는 `Client app → router → streamer`의 중계 연쇄이고, WebRTC는 시그널링(WHEP)만 같은 연쇄를 거친 뒤 미디어가 `streamer → Client app`으로 직접 흐른다(§6.4). 두 경로 모두 인증은 ***Request router***에서 끝난다.
 
