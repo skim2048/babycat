@@ -33,7 +33,7 @@ import settings
 from notify import notify_event
 from vlm_worker import VlmProcess
 from state import state as app_state
-from server import set_start_analysis_callback, start_server
+from server import set_start_analysis_callback, set_stop_analysis_callback, start_server
 from pipeline_lifecycle import PipelineLifecycle
 
 log = logging.getLogger(__name__)
@@ -410,6 +410,20 @@ def start_analysis() -> bool:
     return _pipeline_lifecycle.request_restart(start_pipeline, "analysis_start")
 
 
+def stop_analysis() -> None:
+    """Stop analysis on the router's request (FR-049, FR-051): tear down the
+    pipeline and go idle. The VLM child stays loaded (NFR-023); the watchdog
+    idles while no pipeline exists. The caller has already dropped the
+    analysis-active flag. @claude"""
+    global _pipeline
+    with _pipeline_lock:
+        if _pipeline is not None:
+            _pipeline.set_state(Gst.State.NULL)
+            _pipeline = None
+            log.info("Pipeline stopped (analysis_stop)")
+    _pipeline_lifecycle.mark_waiting_for_start()
+
+
 WATCHDOG_TIMEOUT_MAX = 60.0  # @claude Ceiling for the escalating retry interval (FR-046).
 
 
@@ -475,6 +489,7 @@ def main() -> None:
     app_state.set_analysis_active(persisted["analysis_active"])
     _pipeline_lifecycle.mark_waiting_for_vlm()
     set_start_analysis_callback(start_analysis)
+    set_stop_analysis_callback(stop_analysis)
 
     # @claude Start the HTTP server immediately so settings can be saved while
     # @claude the VLM is still loading (precompile can take tens of minutes).

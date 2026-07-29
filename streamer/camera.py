@@ -1,12 +1,20 @@
 """
 Video source profile management and MediaMTX source configuration.
 
-Babycat assumes a single camera (v1.0). The profile file is owned by the
-streamer alone (SDD §5.1); the RTSP source is configured at runtime
-through the MediaMTX control API on localhost — owner and consumer of
-the profile live in the same container (SDD §4.2), so a restart recovers
-the source config through the normal startup path with no external
-watchdog.
+Babycat assumes a single camera (v1.0). Two profile slots, both owned by
+the streamer alone (SDD §5.1):
+
+  - registered profile (CONFIG_PATH) — the only thing POST /profile
+    touches. Registration never configures MediaMTX or PTZ (FR-048).
+  - applied profile (APPLIED_PATH) — a copy of the registered profile
+    promoted at streaming start, persisted with the streaming_active
+    flag and the PTZ home. Connection, failure recovery, and restart
+    restore always use this slot (FR-014).
+
+The RTSP source is configured at runtime through the MediaMTX control
+API on localhost — owner and consumer of the profile live in the same
+container (SDD §4.2), so a restart recovers the source config through
+the normal startup path with no external watchdog.
 
 @claude
 """
@@ -25,10 +33,27 @@ import ptz
 log = logging.getLogger(__name__)
 
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
+APPLIED_PATH = os.getenv("APPLIED_PATH", "/config/cam_applied.json")
 MEDIAMTX_API = os.getenv("MEDIAMTX_API", "http://127.0.0.1:9997")
 MEDIAMTX_PATH_NAME = "live"
+# @claude MediaMTX's passive default: the path waits for a publisher instead of
+# @claude pulling from the camera. Patching the source back to this value is how
+# @claude streaming stop detaches the camera (FR-049).
+MEDIAMTX_SOURCE_DETACHED = "publisher"
 
 camera_ready = threading.Event()
+
+# @claude Serializes every read-merge-write cycle on the two profile files;
+# @claude writes go through a temp file + os.replace so a crash mid-write
+# @claude cannot leave a torn file behind.
+_config_lock = threading.Lock()
+
+
+def _write_json(path: str, data: dict) -> None:
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
 
 DEFAULT_SOURCE_TYPE = "rtsp_camera"
 _REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
@@ -43,13 +68,36 @@ def load() -> Optional[dict]:
 
 
 def save(config: dict) -> None:
-    """Merge into the existing file (preserving fields like ptz_home) before overwriting. @claude"""
-    existing = load() or {}
-    existing.update(config)
-    existing.pop("name", None)  # @claude Drop a legacy field.
-    existing.pop("stream_protocol", None)  # Drop legacy runtime transport preference.
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(existing, f, indent=2, ensure_ascii=False)
+    """Merge into the registered-profile file before overwriting. @claude"""
+    with _config_lock:
+        existing = load() or {}
+        existing.update(config)
+        existing.pop("name", None)  # @claude Drop a legacy field.
+        existing.pop("stream_protocol", None)  # Drop legacy runtime transport preference.
+        existing.pop("ptz_home", None)  # @claude The home moved to the applied slot.
+        _write_json(CONFIG_PATH, existing)
+
+
+def load_applied() -> dict:
+    try:
+        with open(APPLIED_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_applied(data: dict) -> None:
+    with _config_lock:
+        _write_json(APPLIED_PATH, data)
+
+
+def save_home(home: dict | None) -> None:
+    """Persist the PTZ home into the applied slot — the home belongs to the
+    camera the system is (or was last) connected to, not to registration. @claude"""
+    with _config_lock:
+        applied = load_applied()
+        applied["ptz_home"] = home
+        _write_json(APPLIED_PATH, applied)
 
 
 def profile_view() -> dict:
@@ -59,34 +107,68 @@ def profile_view() -> dict:
     return _profile_view(config)
 
 
-def apply(config: dict) -> dict:
-    """Apply a camera configuration. Returns {"ok": True} on success. @claude"""
+def register(config: dict) -> dict:
+    """Persist a profile into the registered slot (FR-009, FR-010). Never
+    touches MediaMTX or PTZ — connection happens at streaming start (FR-048).
+    Returns {"ok": True} on success. @claude"""
     existing = load() or {}
     normalized, error = _normalize_profile(config, existing)
     if error:
         return {"ok": False, "error": error}
-
-    # Runtime readiness must track the currently active camera source, not the
-    # last persisted profile. Clear first so failed applies do not leave a stale
-    # "camera ready" state behind.
-    camera_ready.clear()
-
-    if not _activate_runtime(normalized):
-        return {"ok": False, "error": "MediaMTX API connection failed"}
-
     save(normalized)
     return {"ok": True}
 
 
-def startup_apply() -> None:
-    saved = load()
-    if saved is None:
-        log.info("No saved config — set via frontend")
-        return
-
-    config, error = _normalize_profile(saved, saved)
+def streaming_start() -> dict:
+    """Promote the registered profile to the applied slot and connect the
+    source (FR-048). Idempotent; doubles as a restart. @claude"""
+    registered = load()
+    if registered is None:
+        return {"ok": False, "error": "no registered profile"}
+    config, error = _normalize_profile(registered, registered)
     if error:
-        log.error("Saved camera config is invalid: %s", error)
+        return {"ok": False, "error": error}
+
+    applied = load_applied()
+    previous = applied.get("profile") or {}
+    ptz_home = applied.get("ptz_home")
+    if previous.get("ip") != config["ip"]:
+        # @claude The home belongs to the camera: a different connection
+        # @claude target invalidates the stored coordinates.
+        ptz_home = None
+
+    camera_ready.clear()
+    if not _activate_runtime(config):
+        return {"ok": False, "error": "MediaMTX API connection failed"}
+
+    _save_applied({"streaming_active": True, "profile": config, "ptz_home": ptz_home})
+    ptz.load_home(ptz_home)
+    return {"ok": True}
+
+
+def streaming_stop() -> dict:
+    """Detach the source (FR-049). The applied slot keeps the last-connected
+    profile and home; only the active flag drops. @claude"""
+    with _config_lock:
+        applied = load_applied()
+        applied["streaming_active"] = False
+        _write_json(APPLIED_PATH, applied)
+    camera_ready.clear()
+    if not _patch_source(MEDIAMTX_SOURCE_DETACHED):
+        return {"ok": False, "error": "MediaMTX API connection failed"}
+    return {"ok": True}
+
+
+def startup_apply() -> None:
+    """Restore the pre-restart streaming state (FR-014): reconnect with the
+    applied profile only when streaming was active. @claude"""
+    applied = load_applied()
+    if not applied.get("streaming_active"):
+        log.info("Streaming was not active — nothing to restore")
+        return
+    config = applied.get("profile")
+    if not config:
+        log.error("Applied slot has no profile — cannot restore streaming")
         return
 
     _configure_ptz(config)
@@ -105,17 +187,21 @@ def startup_apply() -> None:
     log.error("MediaMTX source config failed — 10 retries exceeded")
 
 
-def activate_saved() -> dict:
-    """Apply the saved profile once (analysis-start path, SRS §2.3 (4)). @claude"""
-    saved = load()
-    if saved is None:
-        return {"ok": False, "error": "no saved profile"}
-    config, error = _normalize_profile(saved, saved)
-    if error:
-        return {"ok": False, "error": error}
-    if not _activate_runtime(config):
-        return {"ok": False, "error": "MediaMTX API connection failed"}
-    return {"ok": True}
+def status_view() -> dict:
+    """Streaming/profile state for the monitoring merge (SDD §6.4 (4)). @claude"""
+    registered = load()
+    applied = load_applied()
+    pending = False
+    if registered is not None:
+        normalized, error = _normalize_profile(registered, registered)
+        # @claude An invalid registered profile counts as pending: it differs
+        # @claude from what the connection uses.
+        pending = True if error else normalized != (applied.get("profile") or {})
+    return {
+        "profile_configured": registered is not None,
+        "streaming_active": bool(applied.get("streaming_active")),
+        "profile_pending": pending,
+    }
 
 
 def _build_rtsp_url(config: dict) -> str:
@@ -215,7 +301,7 @@ def _configure_ptz(config: dict) -> None:
 
 
 def _apply_mediamtx_source(config: dict) -> bool:
-    return _update_mediamtx(_build_rtsp_url(config))
+    return _patch_source(_build_rtsp_url(config))
 
 
 def _activate_runtime(config: dict, configure_ptz: bool = True) -> bool:
@@ -252,15 +338,14 @@ def _source_runtime_activator(source_type: str):
     return None
 
 
-def _update_mediamtx(rtsp_url: str) -> bool:
+def _patch_source(source: str) -> bool:
+    body: dict = {"source": source}
+    if source != MEDIAMTX_SOURCE_DETACHED:
+        body["sourceProtocol"] = "tcp"
     url = f"{MEDIAMTX_API}/v3/config/paths/patch/{MEDIAMTX_PATH_NAME}"
-    payload = json.dumps({
-        "source": rtsp_url,
-        "sourceProtocol": "tcp",
-    }).encode()
     req = urllib.request.Request(
         url,
-        data=payload,
+        data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
         method="PATCH",
     )

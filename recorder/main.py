@@ -119,10 +119,19 @@ def health():
 
 @app.post("/buffer/start")
 def buffer_start():
-    """Start the pre-event segment buffer (SRS §2.3 (4), SDD §2.4 (4)). Idempotent."""
+    """Start the pre-event segment buffer (SRS §2.3 (5), SDD §2.4 (4)). Idempotent."""
     status.set_buffer_active(True)
     _save_state({"buffer_active": True})
     segments.recorder.start()
+    return {"ok": True}
+
+
+@app.post("/buffer/stop")
+def buffer_stop():
+    """Stop the pre-event segment buffer (FR-049, FR-051). Idempotent."""
+    status.set_buffer_active(False)
+    _save_state({"buffer_active": False})
+    segments.recorder.stop()
     return {"ok": True}
 
 
@@ -156,6 +165,21 @@ def _normalize_date_query(name: str, value: str | None) -> str | None:
         return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError as exc:
         raise HTTPException(400, f"invalid {name}") from exc
+
+
+def _local_date_bound_utc(value: str, end: bool) -> str:
+    """Convert a local-calendar date to the matching UTC timestamp string.
+
+    Date filters mean the system-local (TZ) calendar day — the same rule the
+    clip listing applies — while created_at stays stored in UTC, so the
+    boundary must be converted rather than string-compared.
+
+    @claude
+    """
+    local = datetime.strptime(value, "%Y-%m-%d")
+    if end:
+        local = local.replace(hour=23, minute=59, second=59)
+    return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _list_clips(q: str | None, date_from: str | None, date_to: str | None) -> list[ClipOut]:
@@ -280,16 +304,20 @@ def get_clip(name: str, request: Request):
 
 @app.delete("/clips", response_model=DeletedOut)
 def delete_clips(body: ClipDeleteIn):
-    """User deletion removes the clip+sidecar pair; history stays (SDD §5.5)."""
+    """User deletion removes the clip+sidecar pair; history stays (SDD §5.5).
+    Capacity pruning (FR-033) runs concurrently and may win the race for any
+    file — a clip that vanished underneath us is simply not ours to count."""
     deleted = 0
     for name in body.names:
         fpath = _resolve_clip(name)
-        if fpath is not None:
+        if fpath is None:
+            continue
+        try:
             fpath.unlink()
-            meta_path = fpath.with_suffix(".json")
-            if meta_path.exists():
-                meta_path.unlink()
-            deleted += 1
+        except FileNotFoundError:
+            continue
+        fpath.with_suffix(".json").unlink(missing_ok=True)
+        deleted += 1
     return DeletedOut(deleted=deleted)
 
 
@@ -302,10 +330,11 @@ def delete_all_clips():
     for f in base.rglob("*.mp4"):
         if not f.is_file():
             continue
-        f.unlink()
-        meta_path = f.with_suffix(".json")
-        if meta_path.exists():
-            meta_path.unlink()
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            continue
+        f.with_suffix(".json").unlink(missing_ok=True)
         deleted += 1
     return DeletedOut(deleted=deleted)
 
@@ -322,16 +351,18 @@ def list_events(
     offset: int = Query(0, ge=0),
     db: sqlite3.Connection = Depends(get_db),
 ):
+    date_from = _normalize_date_query("date_from", date_from)
+    date_to = _normalize_date_query("date_to", date_to)
     where, params = [], []
     if q:
         where.append("trigger LIKE ?")
         params.append(f"%{q}%")
-    if _normalize_date_query("date_from", date_from):
+    if date_from:
         where.append("created_at >= ?")
-        params.append(f"{date_from}T00:00:00Z")
-    if _normalize_date_query("date_to", date_to):
+        params.append(_local_date_bound_utc(date_from, end=False))
+    if date_to:
         where.append("created_at <= ?")
-        params.append(f"{date_to}T23:59:59Z")
+        params.append(_local_date_bound_utc(date_to, end=True))
     clause = f"WHERE {' AND '.join(where)}" if where else ""
 
     total = db.execute(f"SELECT COUNT(*) FROM events {clause}", params).fetchone()[0]

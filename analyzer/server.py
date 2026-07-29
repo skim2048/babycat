@@ -11,6 +11,7 @@ Endpoints:
   GET  /stream      MJPEG stream (VLM input frames)
   POST /prompt      Change VLM prompt / trigger keywords
   POST /start       Start or restart analysis (FR-024)
+  POST /stop        Stop analysis (FR-049, FR-051)
   POST /vlm/switch  Request VLM model switch
 
 @claude
@@ -31,6 +32,7 @@ from state import state as app_state
 log = logging.getLogger(__name__)
 
 _start_analysis_callback: Callable[[], bool] | None = None
+_stop_analysis_callback: Callable[[], None] | None = None
 
 MAX_BODY = 65536  # @claude 64KB cap on request bodies.
 
@@ -39,6 +41,12 @@ def set_start_analysis_callback(callback: Callable[[], bool]) -> None:
     """Register the analysis-start callback from the live main module."""
     global _start_analysis_callback
     _start_analysis_callback = callback
+
+
+def set_stop_analysis_callback(callback: Callable[[], None]) -> None:
+    """Register the analysis-stop callback from the live main module."""
+    global _stop_analysis_callback
+    _stop_analysis_callback = callback
 
 
 def snapshot_sse_message() -> bytes:
@@ -82,6 +90,8 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
             self._handle_prompt()
         elif path == "/start":
             self._handle_start()
+        elif path == "/stop":
+            self._handle_stop()
         elif path == "/vlm/switch":
             self._handle_vlm_switch()
         else:
@@ -153,19 +163,23 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
             app_state.sse_unsubscribe(q)
 
     def _handle_prompt(self):
-        """Store the prompt and keywords. Never starts analysis (FR-025)."""
+        """Store the prompt and keywords. Never starts analysis (FR-025).
+        Validation precedes any state change, so a rejected request leaves
+        both values untouched — no partial apply."""
         body = self._read_json_body()
         prompt = body.get("prompt", "").strip()
         triggers_raw = body.get("triggers", "").strip()
-        if prompt:
-            app_state.set_prompt(prompt)
-            log.info("Prompt changed: %s", prompt[:80])
+        if not prompt:
+            self._send_json({"ok": False, "error": "prompt required"}, status=400)
+            return
         keywords = [k.strip().lower() for k in triggers_raw.split(",") if k.strip()]
+        app_state.set_prompt(prompt)
+        log.info("Prompt changed: %s", prompt[:80])
         app_state.set_triggers(keywords)
         if keywords:
             log.info("Trigger keywords: %s", keywords)
         persist_settings()
-        self._send_json({"ok": bool(prompt)})
+        self._send_json({"ok": True})
 
     def _handle_start(self):
         """Start or restart the analysis pipeline (FR-024). Idempotent."""
@@ -177,6 +191,15 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         # @claude started=False while the VLM is still loading is fine: main
         # @claude starts the pipeline once loading completes (analysis_active).
         self._send_json({"ok": True, "started": started})
+
+    def _handle_stop(self):
+        """Stop the analysis pipeline (FR-049, FR-051). Idempotent. The active
+        flag is dropped first so nothing restarts the pipeline afterwards."""
+        app_state.set_analysis_active(False)
+        persist_settings()
+        if _stop_analysis_callback is not None:
+            _stop_analysis_callback()
+        self._send_json({"ok": True})
 
     def _handle_vlm_switch(self):
         """

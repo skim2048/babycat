@@ -11,6 +11,7 @@ analyzer, clips/history to the recorder — plus the HLS/WHEP relays
 @claude
 """
 
+import json
 import os
 import sqlite3
 import threading
@@ -285,28 +286,81 @@ def switch_vlm(payload: dict, _=Depends(require_auth)):
     return forward_json(ANALYZER_URL, "POST", "/vlm/switch", payload)
 
 
-@app.post("/analysis/start")
-def analysis_start(_=Depends(require_auth)):
-    """
-    SRS §2.3 (4): deliver the start request to the analyzer, the streamer,
-    and the recorder. Idempotent; a partial failure is reported and
-    repaired by re-requesting (SDD §6.1).
-    """
+def _fan_out(targets: tuple) -> tuple[dict, list]:
+    """POST to each internal target; collect status codes and failures."""
     results = {}
     failures = []
-    for name, base, path in (
-        ("analyzer", ANALYZER_URL, "/start"),
-        ("streamer", STREAMER_URL, "/activate"),
-        ("recorder", RECORDER_URL, "/buffer/start"),
-    ):
+    for name, base, path in targets:
         try:
             response = forward_json(base, "POST", path, {})
             results[name] = response.status_code
         except Exception:
             results[name] = 502
             failures.append(name)
+    return results, failures
+
+
+def _streaming_active() -> bool:
+    """Ask the streamer whether live streaming is active (FR-050 precheck)."""
+    try:
+        with urllib.request.urlopen(f"{STREAMER_URL}/status", timeout=5) as resp:
+            return bool(json.loads(resp.read().decode()).get("streaming_active"))
+    except Exception:
+        return False
+
+
+# ── Live streaming lifecycle ─────────────────────────────────────────────────
+
+
+@app.post("/streaming/start")
+def streaming_start(_=Depends(require_auth)):
+    """SRS §2.3 (3): promote the registered profile and connect the source
+    (FR-048). Idempotent; doubles as a restart."""
+    return forward_json(STREAMER_URL, "POST", "/streaming/start", {})
+
+
+@app.post("/streaming/stop")
+def streaming_stop(_=Depends(require_auth)):
+    """SRS §2.3 (3): detach the source and cascade-stop analysis and
+    buffering (FR-049)."""
+    results, failures = _fan_out((
+        ("streamer", STREAMER_URL, "/streaming/stop"),
+        ("analyzer", ANALYZER_URL, "/stop"),
+        ("recorder", RECORDER_URL, "/buffer/stop"),
+    ))
+    if failures:
+        raise HTTPException(status_code=502, detail=f"stop not accepted by: {', '.join(failures)}")
+    return {"ok": True, "accepted": results}
+
+
+@app.post("/analysis/start")
+def analysis_start(_=Depends(require_auth)):
+    """
+    SRS §2.3 (5): deliver the start request to the analyzer and the
+    recorder. Requires live streaming to be active (FR-050). Idempotent;
+    a partial failure is reported and repaired by re-requesting (SDD §6.1).
+    """
+    if not _streaming_active():
+        raise HTTPException(status_code=409, detail="live streaming is not active")
+    results, failures = _fan_out((
+        ("analyzer", ANALYZER_URL, "/start"),
+        ("recorder", RECORDER_URL, "/buffer/start"),
+    ))
     if failures:
         raise HTTPException(status_code=502, detail=f"start not accepted by: {', '.join(failures)}")
+    return {"ok": True, "accepted": results}
+
+
+@app.post("/analysis/stop")
+def analysis_stop(_=Depends(require_auth)):
+    """SRS §2.3 (5): stop analysis and buffering while streaming stays up
+    (FR-051). Idempotent."""
+    results, failures = _fan_out((
+        ("analyzer", ANALYZER_URL, "/stop"),
+        ("recorder", RECORDER_URL, "/buffer/stop"),
+    ))
+    if failures:
+        raise HTTPException(status_code=502, detail=f"stop not accepted by: {', '.join(failures)}")
     return {"ok": True, "accepted": results}
 
 

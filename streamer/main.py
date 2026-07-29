@@ -77,8 +77,7 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
         stream=sys.stdout,
     )
-    config = camera.load()
-    ptz.load_home(config.get("ptz_home") if config else None)
+    ptz.load_home(camera.load_applied().get("ptz_home"))
 
     threading.Thread(target=_mediamtx_supervisor, daemon=True).start()
     # @claude Apply the saved profile with retries until MediaMTX is up (FR-015);
@@ -106,16 +105,25 @@ def get_profile():
 
 
 @app.post("/profile")
-async def apply_profile(request: Request):
-    """Persist and activate a profile. Does not start analysis (FR-025)."""
+async def register_profile(request: Request):
+    """Persist a profile into the registered slot (FR-009, FR-010). Does not
+    connect the source (FR-048) and does not start analysis (FR-025)."""
     body = await request.json()
-    return camera.apply(body)
+    return camera.register(body)
 
 
-@app.post("/activate")
-def activate():
-    """Redistribute the saved source on the analysis-start fan-out (SRS §2.3 (4))."""
-    return camera.activate_saved()
+@app.post("/streaming/start")
+def streaming_start():
+    """Promote the registered profile and connect the source (SRS §2.3 (3),
+    FR-048). Idempotent; doubles as a restart."""
+    return camera.streaming_start()
+
+
+@app.post("/streaming/stop")
+def streaming_stop():
+    """Detach the source (SRS §2.3 (3), FR-049). The router cascades the
+    analysis and buffer stops separately."""
+    return camera.streaming_stop()
 
 
 @app.post("/ptz")
@@ -138,7 +146,7 @@ async def control_ptz(request: Request):
     elif action == "save":
         home = ptz.save_home()
         if home:
-            camera.save({"ptz_home": home})
+            camera.save_home(home)
         ok = home is not None
     elif action == "goto":
         saved = ptz.get_saved()
@@ -166,6 +174,6 @@ def status():
         "ptz_tilt": current["tilt"],
         "ptz_saved_pan": saved["pan"],
         "ptz_saved_tilt": saved["tilt"],
-        "profile_configured": camera.load() is not None,
+        **camera.status_view(),
         "mediamtx_alive": alive,
     }
