@@ -254,17 +254,22 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         frames = [frame for _, frame in samples]
         last_frame_time = samples[-1][0]
 
+        # @claude Prompt and keywords are both read at inference start, so a
+        # @claude settings change mid-inference cannot pair an old prompt's
+        # @claude text with new keywords — one consistent snapshot per cycle.
+        prompt = app_state.get_prompt()
+        triggers = app_state.get_triggers()
+
         inference_started_at = time.time()
         try:
             # @claude vlm_proc.infer() respawns a crashed child on its own; a
             # @claude failure here (incl. switch+rollback both failed) just skips.
-            raw = vlm_proc.infer(frames, app_state.get_prompt())
+            raw = vlm_proc.infer(frames, prompt)
         except Exception as e:
             log.error("VLM inference error: %s", e)
             continue
         inference_elapsed_ms = int(round((time.time() - inference_started_at) * 1000))
 
-        triggers = app_state.get_triggers()
         raw_lower = raw.lower()
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
         event_triggered = len(matched) > 0
