@@ -5,7 +5,7 @@
 # @claude Log level.
 logLevel: info
 
-# @claude API server (the controller container configures the RTSP source at runtime).
+# @claude API server (the streamer's companion process configures the RTSP source at runtime).
 api: yes
 apiAddress: :9997
 
@@ -35,7 +35,7 @@ webrtcLocalUDPAddress: :8189
 
 paths:
   live:
-    # @claude Source is configured at runtime via API from the controller container.
-    # @claude (Camera credentials are entered in the frontend; the controller sets them via the API.)
+    # @claude Source is configured at runtime via API from the companion process in this container.
+    # @claude (Camera credentials are entered in the frontend; the companion process sets them via the API.)
     # @claude Event clips are assembled by the recorder container from its own RTSP
     # @claude consumption — mediamtx segments are not used.
