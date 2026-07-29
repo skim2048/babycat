@@ -32,7 +32,7 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다. 로그인 유지를 원하는지도 함께 전달한다.
 2. ***Request router***는 전달받은 자격증명을 검증한다.
 3. ***Request router***는 검증 결과를 ***Client app***에게 응답한다.
-    - 자격증명이 정당하면, 액세스 토큰을 발급하여 응답에 담는다.
+    - 자격증명이 정당하면, 해당 계정의 기존 로그인 세션을 무효화한 뒤(1계정 1로그인) 액세스 토큰을 발급하여 응답에 담는다.
     - 자격증명이 정당하고 로그인 유지가 요청되었다면, 리프레시 토큰도 함께 발급한다.
     - 자격증명이 정당하지 않으면 거부한다.
 4. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보내며, ***Request router***는 토큰이 없거나 유효하지 않은 요청을 거부한다.
@@ -85,7 +85,7 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 4. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다.
 
-### (8) 저장된 클립과 이력 관리
+### (8) 이벤트 클립과 이력 관리
 
 1. ***User***가 조건(키워드·날짜)으로 조회를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
 2. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다. ***Event recorder***는 조건에 일치하는 이력을 조회하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
