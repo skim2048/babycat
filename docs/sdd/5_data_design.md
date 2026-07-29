@@ -37,6 +37,7 @@
 |---|---|---|
 |`users`|`id` INTEGER PK, `username` TEXT UNIQUE, `password_hash` TEXT, `salt` TEXT, `password_changed` INTEGER, `token_epoch` INTEGER, `failed_count` INTEGER, `locked_until` REAL, `created_at` TEXT|해시는 솔트와 결합한 PBKDF2 산출물(`NFR-012`). `token_epoch`는 즉시 폐기용 세대(§4.1). 실패 계수·차단 만료는 재시작 회피를 막기 위해 DB에 둔다(`FR-007`)|
 |`refresh_tokens`|`id` INTEGER PK, `token_hash` TEXT UNIQUE, `username` TEXT, `expires_at` INTEGER, `revoked` INTEGER, `created_at` INTEGER|원문은 저장하지 않는다(`FR-002`). 회전·폐기는 `revoked` 표시로 무효화한다(`FR-045`)|
+|`whep_sessions`|`session_path` TEXT PK, `username` TEXT, `created_at` INTEGER|세션 대체(`FR-047`)가 끊어야 할 WebRTC 세션의 등록부. WebRTC 미디어는 수립 후 재인증이 없으므로, ***Request router***의 재시작이 종료 능력을 잃게 하지 않도록 DB에 둔다(§6.2)|
 
 ### `recorder.db` (***Event recorder***)
 
@@ -69,7 +70,7 @@ config/
 
 데이터베이스와 상태 파일이 서비스별 하위 디렉터리에 놓이는 것은 마운트 구획 때문이다. 컨테이너에는 자기 하위 디렉터리만 마운트되므로, 소유하지 않은 데이터는 파일시스템 수준에서 보이지 않는다(§8.1).
 
-클립과 사이드카는 같은 기본 이름의 쌍이며, 발생 이력의 `clip` 컬럼이 이 기본 이름을 가리킨다. 연/월 디렉터리는 파일 수 폭증을 막기 위한 분할이고, 기본 이름의 시각이 곧 발생 시각이므로 별도 매핑 없이 경로를 유도할 수 있다.
+클립과 사이드카는 같은 기본 이름의 쌍이며, 발생 이력의 `clip` 컬럼이 이 기본 이름을 가리킨다. 연/월 디렉터리는 파일 수 폭증을 막기 위한 분할이고, 기본 이름의 시각이 곧 발생 시각이므로 별도 매핑 없이 경로를 유도할 수 있다. 영상이 본체이고 사이드카는 부속이다 — 사이드카가 없는 클립도 목록과 계수에 포함되며, 메타데이터 저장 실패가 영상을 숨기거나 폐기하는 근거가 되지 않는다.
 
 세그먼트 버퍼는 영속 볼륨이 아니라 `recorder` 컨테이너의 tmpfs(`/run/babycat-segments`)에 둔다. 초당 파일 생성·삭제가 반복되는 데이터를 플래시 스토리지에 쓰지 않기 위함이다.
 
@@ -80,9 +81,9 @@ config/
 - **등록 프로필** (`config/cam_profile.json`) — `source_type`(v1.0은 `rtsp_camera` 고정), `ip`, `username`, `password`, `rtsp_port`(기본 554), `stream_path`(기본 `stream1`), `onvif_port`(선택). 프로필 등록이 저장하는 유일한 대상이다(`FR-048`). 조회 응답에서는 `password`를 설정 여부로만 반환한다(`FR-013`).
 - **적용 프로필** (`config/cam_applied.json`) — `streaming_active`(기본 false), `profile`(스트리밍 시작 시점의 등록 프로필 사본), `ptz_home`(선택 — 홈은 접속 대상 카메라에 속하므로 이 슬롯에 둔다). 소스 연결과 재기동 복원(`FR-014`)은 항상 이 슬롯을 쓴다.
 - **analyzer 상태 파일** (컨테이너 안 `/data/state/analyzer.json`, 호스트는 §5.3의 구획 `data/state/analyzer/`) — `prompt`(기본 `Describe the scene.`, `FR-026`), `keywords`(기본 빈 목록 — 이때 키워드 매칭을 수행하지 않는다, `FR-027`), `analysis_active`(기본 false — 저장만으로 분석이 시작되지 않는다, `FR-025`).
-- **recorder 상태 파일** (컨테이너 안 `/data/state/recorder.json`, 호스트는 §5.3의 구획 `data/state/recorder/`) — `buffer_active`(기본 false). 분석 시작과 함께 참이 되고, 분석 종료·스트리밍 종료와 함께 거짓이 된다(§2.4 (4)).
+- **recorder 상태 파일** (컨테이너 안 `/data/state/recorder.json`, 호스트는 §5.3의 구획 `data/state/recorder/`) — `buffer_active`(기본 false). 분석 시작과 함께 참이 되고, 분석 종료·스트리밍 종료와 함께 거짓이 된다(§2.4 (4)). `last_event_accepted_at`(마지막 이벤트 수락 시각) — 쿨다운(`FR-030`)의 기준 시각으로, 재시작이 쿨다운 창을 되돌리지 않게 한다.
 
-상태 파일은 재기동 복원(`FR-014`)의 근거다. 각 소유자가 자기 파일만 읽고 쓰므로 복원에 컴포넌트 간 조율이 없다(§3.5).
+상태 파일은 재기동 복원(`FR-014`)의 근거다. 각 소유자가 자기 파일만 읽고 쓰므로 복원에 컴포넌트 간 조율이 없다(§3.5). 프로필·상태 파일과 클립 본체·사이드카의 쓰기는 임시 파일 작성 후 원자적 교체로 수행한다 — 쓰기 중단이 부분 기록 파일을 남겨 복원과 조회를 오염시켜서는 안 되고, 작성 중인 클립이 목록·계수·재생·삭제의 대상이 되어서도 안 된다. 완성되지 못한 임시 파일은 소유자의 기동 절차가 정리한다.
 
 ## 5.5 데이터 수명 주기 (Data Lifecycle)
 

@@ -94,6 +94,7 @@ NVIDIA Jetson Platform은 좁게는 `Babycat`이 구동되는 하드웨어 자�
 3. ***Video streamer***는 요청을 수신했음을 ***Request router***를 거쳐 ***Client app***에게 응답한다. 이 응답이 PTZ 제어의 완료를 뜻하지는 않는다.
 4. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다.
+    - PTZ 제어는 라이브 스트리밍이 진행 중일 때 가능하다. 스트리밍 종료는 ***Video source***와의 PTZ 연결도 함께 끝낸다.
 
 ### (9) 이벤트 클립과 이력 관리
 
