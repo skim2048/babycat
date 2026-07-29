@@ -159,32 +159,47 @@ def streaming_stop() -> dict:
     return {"ok": True}
 
 
+# @claude Single-flight guard: the supervisor spawns a new startup_apply after
+# @claude every MediaMTX restart, and the retry below is unbounded — without
+# @claude this, a flapping child would accumulate retry threads.
+_startup_apply_running = threading.Lock()
+
+
 def startup_apply() -> None:
     """Restore the pre-restart streaming state (FR-014): reconnect with the
-    applied profile only when streaming was active. @claude"""
-    applied = load_applied()
-    if not applied.get("streaming_active"):
-        log.info("Streaming was not active — nothing to restore")
+    applied profile only when streaming was active. Retries without a cap,
+    mirroring the stream-connect retry (FR-046). Each attempt re-reads the
+    applied slot, so a streaming stop aborts the loop and a streaming start
+    issued meanwhile wins with its newer profile. @claude"""
+    if not _startup_apply_running.acquire(blocking=False):
         return
-    config = applied.get("profile")
-    if not config:
-        log.error("Applied slot has no profile — cannot restore streaming")
-        return
-
-    _configure_ptz(config)
-
-    # @claude The streamer may not be ready yet; retry with exponential backoff (FR-015).
-    camera_ready.clear()
-    delay = 1.0
-    for attempt in range(1, 11):
-        if _activate_runtime(config, configure_ptz=False):
-            log.info("MediaMTX source configured (attempt %d)", attempt)
+    try:
+        if not load_applied().get("streaming_active"):
+            log.info("Streaming was not active — nothing to restore")
             return
-        log.warning("MediaMTX connection failed (attempt %d/10, retry in %.0fs)", attempt, delay)
-        time.sleep(delay)
-        delay = min(delay * 2, 30)
 
-    log.error("MediaMTX source config failed — 10 retries exceeded")
+        # @claude The streamer may not be ready yet; retry with exponential backoff (FR-015).
+        camera_ready.clear()
+        delay = 1.0
+        attempt = 0
+        while True:
+            attempt += 1
+            applied = load_applied()
+            if not applied.get("streaming_active"):
+                log.info("Streaming stopped while retrying — restore aborted")
+                return
+            config = applied.get("profile")
+            if not config:
+                log.error("Applied slot has no profile — cannot restore streaming")
+                return
+            if _activate_runtime(config):
+                log.info("MediaMTX source configured (attempt %d)", attempt)
+                return
+            log.warning("MediaMTX connection failed (attempt %d, retry in %.0fs)", attempt, delay)
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+    finally:
+        _startup_apply_running.release()
 
 
 def status_view() -> dict:
