@@ -13,6 +13,9 @@ analyzer, clips/history to the recorder — plus the HLS/WHEP relays
 
 import os
 import sqlite3
+import threading
+import time
+import urllib.request
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -87,6 +90,70 @@ def health():
     return {"status": "ok"}
 
 
+# ── Session replacement (FR-047) ─────────────────────────────────────────────
+# @claude One login per account: a new login (or logout / password change)
+# @claude bumps the account epoch. The replaced session's live streams are
+# @claude closed too — relayed streams (SSE, MJPEG) stop via an epoch guard,
+# @claude WHEP sessions (media bypasses the router) via an explicit DELETE.
+
+
+def _current_epoch(username: str) -> int | None:
+    # @claude Fresh short-lived connection: the guard runs on relay threads,
+    # @claude outliving the request-scoped get_db connection.
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT token_epoch FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def _epoch_guarded(inner, username: str, epoch: int, interval: float = 2.0):
+    """Yield from inner until the account epoch moves past the session's."""
+    last_check = time.monotonic()
+    try:
+        for chunk in inner:
+            now = time.monotonic()
+            if now - last_check >= interval:
+                last_check = now
+                if _current_epoch(username) != epoch:
+                    break
+            yield chunk
+    finally:
+        close = getattr(inner, "close", None)
+        if close is not None:
+            close()
+
+
+_whep_sessions: dict[str, set[str]] = {}
+_whep_lock = threading.Lock()
+
+
+def _register_whep_session(username: str, session_path: str) -> None:
+    with _whep_lock:
+        _whep_sessions.setdefault(username, set()).add(session_path)
+
+
+def _unregister_whep_session(username: str, session_path: str) -> None:
+    with _whep_lock:
+        _whep_sessions.get(username, set()).discard(session_path)
+
+
+def _terminate_whep_sessions(username: str) -> None:
+    with _whep_lock:
+        sessions = _whep_sessions.pop(username, set())
+    for session_path in sessions:
+        try:
+            req = urllib.request.Request(
+                f"{STREAMER_WEBRTC_URL}{session_path}", method="DELETE"
+            )
+            urllib.request.urlopen(req, timeout=5).close()
+        except Exception:
+            pass  # @claude Already gone (client DELETE or ICE timeout).
+
+
 # ── Accounts and tokens (owned, SDD §6.2) ────────────────────────────────────
 
 
@@ -129,6 +196,8 @@ def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
     result = authenticate(body.username, body.password, db, remember_me=body.remember_me)
     if not result:
         raise HTTPException(status_code=401, detail="invalid credentials")
+    # @claude FR-047: the replaced session's streams die with its tokens.
+    _terminate_whep_sessions(body.username)
     return TokenOut(
         token=result["token"],
         expires_in=JWT_EXPIRY,
@@ -168,6 +237,7 @@ def logout(body: LogoutIn, request: Request, db: sqlite3.Connection = Depends(ge
                 username = claims.get("sub")
     if username:
         bump_epoch(username, db)
+        _terminate_whep_sessions(username)
     return {"ok": True}
 
 
@@ -180,6 +250,7 @@ def api_change_password(
     ok = change_password(user["sub"], body.current_password, body.new_password, db)
     if not ok:
         raise HTTPException(status_code=400, detail="current password is incorrect")
+    _terminate_whep_sessions(user["sub"])
     return {"ok": True}
 
 
@@ -243,19 +314,25 @@ def analysis_start(_=Depends(require_auth)):
 
 
 @app.get("/state")
-def state_stream(_=Depends(require_auth)):
-    """Merged monitoring SSE (FR-042, FR-043; SDD §6.4 (4))."""
+def state_stream(user: dict = Depends(require_auth)):
+    """Merged monitoring SSE (FR-042, FR-043; SDD §6.4 (4)). The relay ends
+    when the session is replaced (FR-047)."""
     return StreamingResponse(
-        monitor.sse_generator(),
+        _epoch_guarded(monitor.sse_generator(), user["sub"], user["epoch"]),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @app.get("/stream")
-def frame_stream(_=Depends(require_auth)):
-    """Relay the analyzer's MJPEG stream of the frames fed to the VLM (FR-044)."""
-    return relay_stream(ANALYZER_URL, "/stream")
+def frame_stream(user: dict = Depends(require_auth)):
+    """Relay the analyzer's MJPEG stream of the frames fed to the VLM (FR-044).
+    The relay ends when the session is replaced (FR-047)."""
+    username, epoch = user["sub"], user["epoch"]
+    return relay_stream(
+        ANALYZER_URL, "/stream",
+        stop_when=lambda: _current_epoch(username) != epoch,
+    )
 
 
 # ── Clips / event history (recorder) ─────────────────────────────────────────
@@ -307,10 +384,16 @@ async def hls_relay(path: str, request: Request, _=Depends(require_auth)):
 
 
 @app.post("/live/whep")
-async def whep_open(request: Request, _=Depends(require_auth)):
+async def whep_open(request: Request, user: dict = Depends(require_auth)):
     """WHEP session setup. The upstream Location header is path-form and the
-    router serves the same path shape, so it passes through unchanged."""
-    return await relay_raw(request, STREAMER_WEBRTC_URL, "/live/whep")
+    router serves the same path shape, so it passes through unchanged. The
+    session path is registered so replacement can close it (FR-047)."""
+    response = await relay_raw(request, STREAMER_WEBRTC_URL, "/live/whep")
+    if response.status_code == 201:
+        location = response.headers.get("location")
+        if location:
+            _register_whep_session(user["sub"], location)
+    return response
 
 
 @app.patch("/live/whep/{session:path}")
@@ -319,5 +402,6 @@ async def whep_patch(session: str, request: Request, _=Depends(require_auth)):
 
 
 @app.delete("/live/whep/{session:path}")
-async def whep_close(session: str, request: Request, _=Depends(require_auth)):
+async def whep_close(session: str, request: Request, user: dict = Depends(require_auth)):
+    _unregister_whep_session(user["sub"], f"/live/whep/{session}")
     return await relay_raw(request, STREAMER_WEBRTC_URL, f"/live/whep/{session}")

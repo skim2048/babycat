@@ -4,9 +4,9 @@ Babycat router — accounts, tokens, and request authentication.
 Issuing and verifying live in one process (SDD §4.1): access tokens are
 self-validating JWTs carrying a per-user epoch claim, and the revocation
 check is a read of the router's own account database — no internal HTTP.
-Bumping the epoch on logout/password change revokes every outstanding
-access token immediately (FR-003, FR-005) without giving up
-self-validation (FR-001).
+Bumping the epoch on login/logout/password change revokes every
+outstanding access token immediately (FR-003, FR-005, FR-047) without
+giving up self-validation (FR-001).
 
 @claude
 """
@@ -180,6 +180,8 @@ def authenticate(
       - On success, returns {"token", "must_change_password", "refresh_token"}.
         refresh_token is None unless the login asked to stay signed in —
         FR-002 issues one only for 로그인 유지 requests.
+        Success replaces the account's existing session (FR-047): all prior
+        tokens are dead by the time the new ones are issued.
       - On lockout, raises HTTPException(429).
       - On mismatch, returns None.
     """
@@ -202,8 +204,13 @@ def authenticate(
 
     db.execute("UPDATE users SET failed_count = 0, locked_until = 0 WHERE username = ?", (username,))
     db.commit()
+    # @claude FR-047: a new login replaces the account's existing session —
+    # @claude refresh tokens via revocation, access tokens via the epoch bump.
+    # @claude The new access token must carry the post-bump epoch.
+    revoke_all_refresh_tokens(username, db)
+    bump_epoch(username, db)
     return {
-        "token": create_token(username, row["token_epoch"]),
+        "token": create_token(username, get_epoch(username, db) or 0),
         "must_change_password": not row["password_changed"],
         "refresh_token": issue_refresh_token(username, db) if remember_me else None,
     }

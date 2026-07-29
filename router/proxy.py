@@ -8,6 +8,7 @@ request, and the compose network is inside the trust boundary (SDD §6.3).
 """
 
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -56,11 +57,21 @@ def forward_json(
     return JSONResponse(status_code=status, content=json.loads(text) if text else None)
 
 
-def relay_stream(base: str, path: str, query: str | None = None) -> StreamingResponse:
+def relay_stream(
+    base: str,
+    path: str,
+    query: str | None = None,
+    stop_when=None,
+    stop_check_interval: float = 2.0,
+) -> StreamingResponse:
     """
     Relay an unbounded upstream response (SSE, MJPEG) chunk by chunk. No
     read timeout: these responses stay open by design, and an idle SSE
     channel must not be mistaken for a stalled one.
+
+    stop_when: optional predicate evaluated at most once per
+    stop_check_interval seconds between chunks; a truthy result ends the
+    relay (FR-047 closes streams when the session is replaced).
     """
     req = urllib.request.Request(_target_url(base, path, query), method="GET")
     try:
@@ -74,11 +85,18 @@ def relay_stream(base: str, path: str, query: str | None = None) -> StreamingRes
     def iterate():
         # @claude read1() returns as soon as any bytes arrive, so an SSE event
         # @claude is forwarded when produced, not once a buffer fills.
+        last_check = time.monotonic()
         try:
             while True:
                 chunk = upstream.read1(8192)
                 if not chunk:
                     break
+                if stop_when is not None:
+                    now = time.monotonic()
+                    if now - last_check >= stop_check_interval:
+                        last_check = now
+                        if stop_when():
+                            break
                 yield chunk
         finally:
             upstream.close()
