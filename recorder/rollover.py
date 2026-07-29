@@ -9,6 +9,9 @@ from pathlib import Path
 
 SEGMENT_SUFFIX = ".ts"
 SEGMENT_TIME_FORMAT = "%Y%m%d_%H%M%S"
+# @claude Retention horizon, shared with segments.py: also the upper bound on
+# @claude how far an open-ended last segment may be assumed to extend.
+SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
 
 
 def ensure_segment_dir(path: str | Path) -> Path:
@@ -62,9 +65,11 @@ def select_segments_for_window(
     """Select segments overlapping [window_start, window_end].
 
     Segment spans are measured, not assumed: each segment ends where the
-    next one starts (the last one ends now). The encoder's keyframe
-    interval is frame-count based, so real spans stretch with slower
-    cameras (SDD §4.4) — a fixed nominal span would misjudge boundaries.
+    next one starts. The encoder's keyframe interval is frame-count based,
+    so real spans stretch with slower cameras (SDD §4.4) — a fixed nominal
+    span would misjudge boundaries. The open-ended last segment is bounded
+    by the retention horizon: with the recorder stopped, a leftover
+    segment must not be judged to overlap a much later event window.
     """
     entries: list[tuple[Path, float]] = []
     for path in list_segments(base_dir):
@@ -77,7 +82,7 @@ def select_segments_for_window(
         if index + 1 < len(entries):
             ended_at = entries[index + 1][1]
         else:
-            ended_at = time.time()
+            ended_at = min(time.time(), started_at + SEGMENT_RETENTION)
         if ended_at <= window_start:
             continue
         if started_at >= window_end:

@@ -66,24 +66,36 @@ class SegmentRecorder:
 
     def start(self) -> None:
         with self._lock:
-            if self._thread is not None and self._thread.is_alive():
+            if self._thread is not None and self._thread.is_alive() and not self._stop.is_set():
                 return
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._worker, daemon=True)
+            # @claude New generation: a start landing while the previous worker
+            # @claude is still winding down must not be swallowed. The old
+            # @claude worker keeps its own stop event; the new one joins it
+            # @claude before touching the pipeline, so two encoders never run
+            # @claude at once.
+            previous = self._thread
+            stop = threading.Event()
+            self._stop = stop
+            self._thread = threading.Thread(
+                target=self._worker, args=(stop, previous), daemon=True
+            )
             self._thread.start()
 
     def stop(self) -> None:
-        self._stop.set()
+        with self._lock:
+            self._stop.set()
 
     # ── worker ───────────────────────────────────────────────────────────────
 
-    def _worker(self) -> None:
+    def _worker(self, stop: threading.Event, previous: threading.Thread | None) -> None:
+        if previous is not None:
+            previous.join()
         Gst.init(None)
         segment_dir = ensure_segment_dir(SEGMENT_DIR)
         backoff = 1.0
         log.info("segment recorder started (dir=%s, segment=%ds)", segment_dir, SEGMENT_TIME)
 
-        while not self._stop.is_set():
+        while not stop.is_set():
             purge_old_segments(segment_dir, retain_since=time.time() - SEGMENT_RETENTION)
             pipeline = None
             try:
@@ -92,26 +104,28 @@ class SegmentRecorder:
                 smux.connect("format-location", self._on_format_location)
                 pipeline.set_state(Gst.State.PLAYING)
                 status.set_segment_recorder("running", segment_count=len(list_segments(segment_dir)))
-                backoff = self._watch(pipeline, segment_dir, backoff)
+                backoff = self._watch(pipeline, segment_dir, backoff, stop)
             except Exception as e:
                 log.error("segment recorder pipeline error: %s", e)
                 status.set_segment_recorder("error", error=str(e)[:240])
             finally:
                 if pipeline is not None:
                     pipeline.set_state(Gst.State.NULL)
-            if self._stop.is_set():
+            if stop.is_set():
                 break
-            time.sleep(backoff)
+            # @claude Interruptible: a stop during backoff must end this
+            # @claude generation promptly so a following start is not delayed.
+            stop.wait(backoff)
             backoff = min(backoff * 2, _BACKOFF_MAX)
 
         status.set_segment_recorder("disabled", last_segment_age_s=None)
         log.info("segment recorder stopped")
 
-    def _watch(self, pipeline, segment_dir, backoff: float) -> float:
+    def _watch(self, pipeline, segment_dir, backoff: float, stop: threading.Event) -> float:
         """Poll the bus until stop/error. Returns the next backoff to use."""
         bus = pipeline.get_bus()
         healthy_since: float | None = None
-        while not self._stop.is_set():
+        while not stop.is_set():
             msg = bus.timed_pop_filtered(
                 1_000_000_000, Gst.MessageType.ERROR | Gst.MessageType.EOS
             )

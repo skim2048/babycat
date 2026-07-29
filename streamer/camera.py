@@ -41,12 +41,18 @@ MEDIAMTX_PATH_NAME = "live"
 # @claude streaming stop detaches the camera (FR-049).
 MEDIAMTX_SOURCE_DETACHED = "publisher"
 
-camera_ready = threading.Event()
-
 # @claude Serializes every read-merge-write cycle on the two profile files;
 # @claude writes go through a temp file + os.replace so a crash mid-write
 # @claude cannot leave a torn file behind.
 _config_lock = threading.Lock()
+
+# @claude Serializes the runtime transitions — streaming start, streaming stop,
+# @claude and each restore attempt (SDD §4.2). The file lock above protects
+# @claude individual writes; this one protects whole read-decide-apply-save
+# @claude sequences, so a stop cannot slip between a restore attempt's slot
+# @claude read and its source patch, and start/stop cannot interleave into a
+# @claude flag/source mismatch. Acquisition order is always runtime → config.
+_runtime_lock = threading.Lock()
 
 
 def _write_json(path: str, data: dict) -> None:
@@ -121,42 +127,49 @@ def register(config: dict) -> dict:
 
 def streaming_start() -> dict:
     """Promote the registered profile to the applied slot and connect the
-    source (FR-048). Idempotent; doubles as a restart. @claude"""
-    registered = load()
-    if registered is None:
-        return {"ok": False, "error": "no registered profile"}
-    config, error = _normalize_profile(registered, registered)
-    if error:
-        return {"ok": False, "error": error}
+    source (FR-048). Idempotent; doubles as a restart. The whole
+    promote-activate-persist sequence runs under the runtime lock. @claude"""
+    with _runtime_lock:
+        registered = load()
+        if registered is None:
+            return {"ok": False, "error": "no registered profile"}
+        config, error = _normalize_profile(registered, registered)
+        if error:
+            return {"ok": False, "error": error}
 
-    applied = load_applied()
-    previous = applied.get("profile") or {}
-    ptz_home = applied.get("ptz_home")
-    if previous.get("ip") != config["ip"]:
-        # @claude The home belongs to the camera: a different connection
-        # @claude target invalidates the stored coordinates.
-        ptz_home = None
+        applied = load_applied()
+        previous = applied.get("profile") or {}
+        ptz_home = applied.get("ptz_home")
+        if previous.get("ip") != config["ip"]:
+            # @claude The home belongs to the camera: a different connection
+            # @claude target invalidates the stored coordinates.
+            ptz_home = None
 
-    camera_ready.clear()
-    if not _activate_runtime(config):
-        return {"ok": False, "error": "MediaMTX API connection failed"}
+        if not _activate_runtime(config):
+            return {"ok": False, "error": "MediaMTX API connection failed"}
 
-    _save_applied({"streaming_active": True, "profile": config, "ptz_home": ptz_home})
-    ptz.load_home(ptz_home)
-    return {"ok": True}
+        _save_applied({"streaming_active": True, "profile": config, "ptz_home": ptz_home})
+        ptz.load_home(ptz_home)
+        return {"ok": True}
 
 
 def streaming_stop() -> dict:
     """Detach the source (FR-049). The applied slot keeps the last-connected
-    profile and home; only the active flag drops. @claude"""
-    with _config_lock:
-        applied = load_applied()
-        applied["streaming_active"] = False
-        _write_json(APPLIED_PATH, applied)
-    camera_ready.clear()
-    if not _patch_source(MEDIAMTX_SOURCE_DETACHED):
-        return {"ok": False, "error": "MediaMTX API connection failed"}
-    return {"ok": True}
+    profile and home; only the active flag drops. Runs under the runtime lock
+    so it cannot interleave with a start or a restore attempt. @claude"""
+    with _runtime_lock:
+        with _config_lock:
+            applied = load_applied()
+            applied["streaming_active"] = False
+            _write_json(APPLIED_PATH, applied)
+        # @claude Stop severs the camera relationship entirely (SDD §4.2):
+        # @claude PTZ commands and polling end with the stream — symmetric
+        # @claude with a restart in the stopped state. The home stays in the
+        # @claude applied slot for the next start.
+        ptz.clear_config()
+        if not _patch_source(MEDIAMTX_SOURCE_DETACHED):
+            return {"ok": False, "error": "MediaMTX API connection failed"}
+        return {"ok": True}
 
 
 # @claude Single-flight guard: the supervisor spawns a new startup_apply after
@@ -168,9 +181,10 @@ _startup_apply_running = threading.Lock()
 def startup_apply() -> None:
     """Restore the pre-restart streaming state (FR-014): reconnect with the
     applied profile only when streaming was active. Retries without a cap,
-    mirroring the stream-connect retry (FR-046). Each attempt re-reads the
-    applied slot, so a streaming stop aborts the loop and a streaming start
-    issued meanwhile wins with its newer profile. @claude"""
+    mirroring the stream-connect retry (FR-046). Each attempt runs under the
+    runtime lock and re-reads the applied slot there, so a streaming stop
+    aborts the loop, a streaming start issued meanwhile wins with its newer
+    profile, and neither can slip between the read and the patch. @claude"""
     if not _startup_apply_running.acquire(blocking=False):
         return
     try:
@@ -179,22 +193,22 @@ def startup_apply() -> None:
             return
 
         # @claude The streamer may not be ready yet; retry with exponential backoff (FR-015).
-        camera_ready.clear()
         delay = 1.0
         attempt = 0
         while True:
             attempt += 1
-            applied = load_applied()
-            if not applied.get("streaming_active"):
-                log.info("Streaming stopped while retrying — restore aborted")
-                return
-            config = applied.get("profile")
-            if not config:
-                log.error("Applied slot has no profile — cannot restore streaming")
-                return
-            if _activate_runtime(config):
-                log.info("MediaMTX source configured (attempt %d)", attempt)
-                return
+            with _runtime_lock:
+                applied = load_applied()
+                if not applied.get("streaming_active"):
+                    log.info("Streaming stopped while retrying — restore aborted")
+                    return
+                config = applied.get("profile")
+                if not config:
+                    log.error("Applied slot has no profile — cannot restore streaming")
+                    return
+                if _activate_runtime(config):
+                    log.info("MediaMTX source configured (attempt %d)", attempt)
+                    return
             log.warning("MediaMTX connection failed (attempt %d, retry in %.0fs)", attempt, delay)
             time.sleep(delay)
             delay = min(delay * 2, 30)
@@ -327,11 +341,14 @@ def _activate_runtime(config: dict, configure_ptz: bool = True) -> bool:
 
 
 def _activate_rtsp_camera_runtime(config: dict, configure_ptz: bool = True) -> bool:
-    if configure_ptz:
-        _configure_ptz(config)
+    # @claude Source first, PTZ second (SDD §4.2): PTZ configuration is an
+    # @claude in-memory assignment that cannot fail, so this order leaves no
+    # @claude partial state when the MediaMTX patch fails — the stream and the
+    # @claude PTZ target never point at different cameras.
     if not _apply_mediamtx_source(config):
         return False
-    camera_ready.set()
+    if configure_ptz:
+        _configure_ptz(config)
     return True
 
 

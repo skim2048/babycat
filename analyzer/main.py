@@ -83,6 +83,10 @@ class RingBuffer:
             samples = list(self._buf)
         return samples[-n:] if len(samples) >= n else samples
 
+    def clear(self) -> None:
+        with self._lock:
+            self._buf.clear()
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._buf)
@@ -248,6 +252,10 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         except queue.Empty:
             continue
 
+        # @claude A signal that survived a stop must not start an inference.
+        if not app_state.is_analysis_active():
+            continue
+
         samples = ring.latest_samples(N_FRAMES)
         if not samples:
             continue
@@ -269,6 +277,13 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
             log.error("VLM inference error: %s", e)
             continue
         inference_elapsed_ms = int(round((time.time() - inference_started_at) * 1000))
+
+        # @claude Stop discards in-flight work (SDD §7.3): a judgment that
+        # @claude finishes after /stop surfaces nowhere — no state update, no
+        # @claude event, no clip minutes after the user stopped analysis.
+        if not app_state.is_analysis_active():
+            log.info("Inference result discarded (analysis stopped)")
+            continue
 
         raw_lower = raw.lower()
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
@@ -390,10 +405,28 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startu
     """(Re)start the GStreamer pipeline. Stops and replaces any existing one. @claude"""
     global _pipeline, _pipeline_started_at, _last_frame_time
     with _pipeline_lock:
+        # @claude Stop wins: /stop drops the active flag before tearing down,
+        # @claude so a watchdog restart or a stale start callback that lost the
+        # @claude race must not revive the pipeline (FR-049, FR-051). Only a
+        # @claude new start request — which sets the flag first — passes here.
+        if not app_state.is_analysis_active():
+            log.info("Pipeline start skipped (%s): analysis is not active", reason)
+            return
         if _pipeline is not None:
             _pipeline.set_state(Gst.State.NULL)
             log.info("Pipeline stopped (restart)")
             _pipeline = None
+
+        # @claude Inference sees only frames this pipeline extracted (SDD §7.2):
+        # @claude frames left from a previous pipeline — an older moment, or an
+        # @claude older camera after a profile switch — must never feed a
+        # @claude judgment. Clearing at start covers stop/start, watchdog
+        # @claude restarts, and profile-switch restarts with one rule.
+        ring.clear()
+        try:
+            infer_q.get_nowait()
+        except queue.Empty:
+            pass
 
         pipeline_str = build_pipeline_str(MEDIAMTX_URL, TARGET_FPS)
         log.info("Pipeline: %s", pipeline_str)
@@ -422,6 +455,12 @@ def stop_analysis() -> None:
     analysis-active flag. @claude"""
     global _pipeline
     with _pipeline_lock:
+        # @claude Latest flag wins, in both directions (SDD §7.3): if the flag
+        # @claude is active again, a newer start owns the pipeline and this
+        # @claude stale stop must not tear it down — the mirror of the guard
+        # @claude in start_pipeline.
+        if app_state.is_analysis_active():
+            return
         if _pipeline is not None:
             _pipeline.set_state(Gst.State.NULL)
             _pipeline = None

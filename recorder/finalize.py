@@ -39,6 +39,7 @@ from rollover import (
     write_concat_manifest,
 )
 from status import status
+import state_store
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +63,9 @@ CLIP_STORAGE_POLICY = ClipStoragePolicy(
     prune_max_files=max(0, CLIP_PRUNE_MAX_FILES),
 )
 
-_trigger_last_save: float = 0.0
+# @claude The cooldown anchor survives a restart (FR-030, SDD §5.4): a restart
+# @claude in the middle of a persisting situation must not reopen the window.
+_trigger_last_save: float = float(state_store.load().get("last_event_accepted_at") or 0.0)
 _trigger_lock = threading.Lock()
 
 
@@ -78,6 +81,7 @@ def accept_event(payload: dict) -> bool:
         if event_time - _trigger_last_save < TRIGGER_COOLDOWN:
             return False
         _trigger_last_save = event_time
+        state_store.update(last_event_accepted_at=event_time)
     threading.Thread(target=_process_event, args=(payload,), daemon=True).start()
     return True
 
@@ -185,6 +189,11 @@ def _finalize_rollover_clip(
         return None
 
     out_path = dest_dir / f"{base}.mp4"
+    # @claude Atomic publish (SDD §5.4): ffmpeg writes to a .part name — which
+    # @claude the .mp4-globbing listing, counter, and recount never match — and
+    # @claude the clip appears under its final name only once complete. -f mp4
+    # @claude is explicit because the .part extension no longer implies it.
+    part_path = dest_dir / f"{base}.mp4.part"
     meta_path = dest_dir / f"{base}.json"
     manifest_path = Path(SEGMENT_DIR) / f"{base}.segments.txt"
     write_concat_manifest(selected_segments, manifest_path)
@@ -192,7 +201,7 @@ def _finalize_rollover_clip(
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
         "-f", "concat", "-safe", "0", "-i", str(manifest_path),
-        "-c", "copy", str(out_path),
+        "-c", "copy", "-f", "mp4", str(part_path),
     ]
     ffmpeg_started_at = time.time()
     try:
@@ -205,7 +214,7 @@ def _finalize_rollover_clip(
         )
         ffmpeg_elapsed_ms = int(round((time.time() - ffmpeg_started_at) * 1000))
         if result.returncode != 0:
-            cleanup_partial_outputs(out_path, meta_path)
+            cleanup_partial_outputs(part_path, meta_path)
             log.error(
                 "trigger-clip finalize failed: %s (exit=%d, stderr=%r)",
                 out_path.name, result.returncode, summarize_ffmpeg_stderr(result.stderr),
@@ -214,13 +223,13 @@ def _finalize_rollover_clip(
                                     bytes_to_mb(shutil.disk_usage(dest_dir).free))
             return None
     except subprocess.TimeoutExpired:
-        cleanup_partial_outputs(out_path, meta_path)
+        cleanup_partial_outputs(part_path, meta_path)
         status.set_clip_storage("error", "ffmpeg_timeout",
                                 bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return None
     except Exception as e:
         log.error("trigger-clip finalize error: %s", e)
-        cleanup_partial_outputs(out_path, meta_path)
+        cleanup_partial_outputs(part_path, meta_path)
         status.set_clip_storage("error", "ffmpeg_error",
                                 bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return None
@@ -230,8 +239,12 @@ def _finalize_rollover_clip(
         except OSError:
             pass
 
-    clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
-    count_added_clip(clip_size_bytes)
+    if not part_path.exists():
+        status.set_clip_storage("error", "ffmpeg_failed",
+                                bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return None
+    os.replace(part_path, out_path)
+    clip_size_bytes = out_path.stat().st_size
     clip_duration_s = probe_clip_duration_seconds(out_path)
     log.info(
         "trigger-clip finalize done: %s (segments=%d, size=%d, duration=%s)",
@@ -262,6 +275,11 @@ def _finalize_rollover_clip(
             "video_codec_mode": "copy_concat",
         },
     )
+    # @claude Counted only after the sidecar exists: the count change is the
+    # @claude client's list-refresh signal, and the listing hides clips without
+    # @claude metadata — a count that moves first announces a clip the refresh
+    # @claude cannot see (SDD §6.4 (4)).
+    count_added_clip(clip_size_bytes)
     status.set_clip_storage(
         "ok",
         capacity.reason if capacity.reason != "ok" else "",
@@ -289,6 +307,8 @@ def _record_direct_clip(
         return None
 
     out_path = dest_dir / f"{base}.mp4"
+    # @claude Same atomic-publish pattern as the rollover path (SDD §5.4).
+    part_path = dest_dir / f"{base}.mp4.part"
     meta_path = dest_dir / f"{base}.json"
     cmd = [
         "ffmpeg", "-y",
@@ -296,7 +316,7 @@ def _record_direct_clip(
         "-i", MEDIAMTX_URL,
         "-t", str(TRIGGER_CLIP_DUR),
         "-c:v", "copy", "-an",
-        str(out_path),
+        "-f", "mp4", str(part_path),
     ]
     ffmpeg_started_at = time.time()
     try:
@@ -309,7 +329,7 @@ def _record_direct_clip(
         )
         ffmpeg_elapsed_ms = int(round((time.time() - ffmpeg_started_at) * 1000))
         if result.returncode != 0:
-            cleanup_partial_outputs(out_path, meta_path)
+            cleanup_partial_outputs(part_path, meta_path)
             log.error(
                 "direct trigger-clip failed: %s (exit=%d, stderr=%r)",
                 out_path.name, result.returncode, summarize_ffmpeg_stderr(result.stderr),
@@ -318,19 +338,23 @@ def _record_direct_clip(
                                     bytes_to_mb(shutil.disk_usage(dest_dir).free))
             return None
     except subprocess.TimeoutExpired:
-        cleanup_partial_outputs(out_path, meta_path)
+        cleanup_partial_outputs(part_path, meta_path)
         status.set_clip_storage("error", "ffmpeg_timeout",
                                 bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return None
     except Exception as e:
         log.error("direct trigger-clip error: %s", e)
-        cleanup_partial_outputs(out_path, meta_path)
+        cleanup_partial_outputs(part_path, meta_path)
         status.set_clip_storage("error", "ffmpeg_error",
                                 bytes_to_mb(shutil.disk_usage(dest_dir).free))
         return None
 
-    clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
-    count_added_clip(clip_size_bytes)
+    if not part_path.exists():
+        status.set_clip_storage("error", "ffmpeg_failed",
+                                bytes_to_mb(shutil.disk_usage(dest_dir).free))
+        return None
+    os.replace(part_path, out_path)
+    clip_size_bytes = out_path.stat().st_size
     _write_sidecar(
         meta_path,
         build_trigger_clip_meta(
@@ -347,13 +371,20 @@ def _record_direct_clip(
             inference_elapsed_ms=inference_elapsed_ms,
         ),
     )
+    # @claude Same ordering rule as the rollover path: sidecar first, count last.
+    count_added_clip(clip_size_bytes)
     status.set_clip_storage("ok", "", bytes_to_mb(shutil.disk_usage(dest_dir).free))
     return out_path.name
 
 
 def _write_sidecar(meta_path: Path, meta: dict) -> None:
+    # @claude Temp file + os.replace: the listing treats the sidecar as the
+    # @claude clip's validity marker, so a torn sidecar must never exist
+    # @claude (SDD §5.4).
     try:
-        with open(meta_path, "w", encoding="utf-8") as f:
+        tmp = Path(f"{meta_path}.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, meta_path)
     except Exception as e:
         log.error("metadata save error: %s", e)

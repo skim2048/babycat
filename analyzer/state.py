@@ -113,6 +113,10 @@ class AppState:
     def update_frame(self, frame: Image.Image, orig_w: int, orig_h: int):
         transitioned = False
         with self._lock:
+            # @claude A frame straggling in from a torn-down pipeline must not
+            # @claude flip the state back to streaming after a stop (SDD §7.3).
+            if not self.analysis_active:
+                return
             self.frame   = frame.copy()
             self.frame_w = orig_w
             self.frame_h = orig_h

@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 import finalize
 import segments
+import state_store
 from clip_storage import MIN_CLIP_SIZE, clip_count, count_removed_clip, recount_clips
 from events_db import get_db, init_db
 from hardware import HardwareMonitor, disk_usage
@@ -33,26 +34,8 @@ from status import status
 log = logging.getLogger(__name__)
 
 CLIP_DIR = os.getenv("CLIP_DIR", "/data/clips")
-STATE_PATH = os.getenv("STATE_PATH", "/data/state/recorder.json")
 
 _hw = HardwareMonitor()
-
-
-# ── Buffer-active persistence (FR-014) ───────────────────────────────────────
-
-
-def _load_state() -> dict:
-    try:
-        with open(STATE_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _save_state(state: dict) -> None:
-    Path(STATE_PATH).parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
 
 
 @asynccontextmanager
@@ -64,10 +47,14 @@ async def lifespan(app: FastAPI):
     )
     init_db()
     Path(CLIP_DIR).mkdir(parents=True, exist_ok=True)
+    # @claude Crash leftovers: a .part clip whose writer died mid-write is
+    # @claude unpublishable — sweep before seeding the counter (SDD §5.4).
+    for stale in Path(CLIP_DIR).rglob("*.part"):
+        stale.unlink(missing_ok=True)
     # @claude One full walk at startup seeds the in-memory clip counter; every
     # @claude later mutation adjusts it (no per-poll tree walk in /status).
     log.info("clip counter seeded: %d clips", recount_clips(CLIP_DIR))
-    if _load_state().get("buffer_active"):
+    if state_store.load().get("buffer_active"):
         # @claude Restore the pre-restart operating state (FR-014, SDD §3.5).
         status.set_buffer_active(True)
         segments.recorder.start()
@@ -124,7 +111,7 @@ def health():
 def buffer_start():
     """Start the pre-event segment buffer (SRS §2.3 (5), SDD §2.4 (4)). Idempotent."""
     status.set_buffer_active(True)
-    _save_state({"buffer_active": True})
+    state_store.update(buffer_active=True)
     segments.recorder.start()
     return {"ok": True}
 
@@ -133,7 +120,7 @@ def buffer_start():
 def buffer_stop():
     """Stop the pre-event segment buffer (FR-049, FR-051). Idempotent."""
     status.set_buffer_active(False)
-    _save_state({"buffer_active": False})
+    state_store.update(buffer_active=False)
     segments.recorder.stop()
     return {"ok": True}
 
@@ -199,9 +186,11 @@ def _list_clips(q: str | None, date_from: str | None, date_to: str | None) -> li
     entries.sort(key=lambda e: e[2], reverse=True)
     clips = []
     for fpath, size, mtime in entries:
+        # @claude The video is the substance, the sidecar an accessory
+        # @claude (SDD §5.3): a clip whose metadata write failed still lists,
+        # @claude with fields falling back to file facts. This also keeps the
+        # @claude listing rule identical to the clip counter's.
         meta = _read_clip_meta(fpath)
-        if not meta:
-            continue
         if q:
             vlm_text = meta.get("vlm_text")
             if not isinstance(vlm_text, str) or q.lower() not in vlm_text.lower():
@@ -226,6 +215,11 @@ def _list_clips(q: str | None, date_from: str | None, date_to: str | None) -> li
 
 
 def _resolve_clip(name: str) -> Path | None:
+    # @claude Published clips only (SDD §5.4): an in-progress .part — or any
+    # @claude non-mp4 file in the tree — is never a valid playback or
+    # @claude deletion target.
+    if not name.endswith(".mp4"):
+        return None
     if "/" in name or "\\" in name or ".." in name:
         return None
     base = Path(CLIP_DIR)

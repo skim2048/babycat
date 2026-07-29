@@ -12,7 +12,9 @@ analyzer, clips/history to the recorder — plus the HLS/WHEP relays
 """
 
 import json
+import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -21,6 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -29,6 +32,7 @@ import monitor
 from auth import (
     JWT_EXPIRY,
     REFRESH_EXPIRY,
+    SESSION_LOCK,
     authenticate,
     bump_epoch,
     change_password,
@@ -86,6 +90,27 @@ app.add_middleware(
 )
 
 
+# @claude Access-log token masking (SDD §8.4): the ?token= fallback (§6.2)
+# @claude puts valid access tokens in request lines, and streaming endpoints
+# @claude log them continuously — a copied or shared log must not carry live
+# @claude credentials. Masking every string arg keeps this robust against
+# @claude uvicorn changing its access-log arg layout.
+_TOKEN_QUERY_RE = re.compile(r"(token=)[^&\s\"]+")
+
+
+class _MaskTokenFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_QUERY_RE.sub(r"\1***", arg) if isinstance(arg, str) else arg
+                for arg in record.args
+            )
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_MaskTokenFilter())
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -128,23 +153,63 @@ def _epoch_guarded(inner, username: str, epoch: int, interval: float = 2.0):
             close()
 
 
-_whep_sessions: dict[str, set[str]] = {}
+# @claude The registry lives in the router DB (SDD §5.2): WebRTC media never
+# @claude re-authenticates after setup, so a replacement must stay able to
+# @claude close sessions registered before a router restart.
 _whep_lock = threading.Lock()
+
+
+def _whep_db() -> sqlite3.Connection:
+    return sqlite3.connect(DB_PATH)
 
 
 def _register_whep_session(username: str, session_path: str) -> None:
     with _whep_lock:
-        _whep_sessions.setdefault(username, set()).add(session_path)
+        conn = _whep_db()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO whep_sessions (session_path, username) VALUES (?, ?)",
+                (session_path, username),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def _unregister_whep_session(username: str, session_path: str) -> None:
     with _whep_lock:
-        _whep_sessions.get(username, set()).discard(session_path)
+        conn = _whep_db()
+        try:
+            conn.execute(
+                "DELETE FROM whep_sessions WHERE session_path = ? AND username = ?",
+                (session_path, username),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _register_whep_and_recheck(username: str, epoch: int, session_path: str) -> None:
+    _register_whep_session(username, session_path)
+    # @claude FR-047 residual window: a replacement that swept this account's
+    # @claude sessions while the setup was in flight missed this one — close
+    # @claude it now instead of leaking it until the next session event.
+    if _current_epoch(username) != epoch:
+        _terminate_whep_sessions(username)
 
 
 def _terminate_whep_sessions(username: str) -> None:
     with _whep_lock:
-        sessions = _whep_sessions.pop(username, set())
+        conn = _whep_db()
+        try:
+            rows = conn.execute(
+                "SELECT session_path FROM whep_sessions WHERE username = ?", (username,)
+            ).fetchall()
+            conn.execute("DELETE FROM whep_sessions WHERE username = ?", (username,))
+            conn.commit()
+        finally:
+            conn.close()
+        sessions = [row[0] for row in rows]
     for session_path in sessions:
         try:
             req = urllib.request.Request(
@@ -210,12 +275,17 @@ def login(body: LoginIn, db: sqlite3.Connection = Depends(get_db)):
 
 @app.post("/api/refresh", response_model=RefreshOut)
 def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
-    rotated = rotate_refresh_token(body.refresh_token, db)
-    if not rotated:
-        raise HTTPException(status_code=401, detail="invalid or expired refresh token")
-    username, new_refresh_token = rotated
+    # @claude Rotation and access-token minting share one critical section:
+    # @claude interleaved with a login replacement, the rotated pair could
+    # @claude otherwise outlive the replacement (FR-047, SDD §6.2).
+    with SESSION_LOCK:
+        rotated = rotate_refresh_token(body.refresh_token, db)
+        if not rotated:
+            raise HTTPException(status_code=401, detail="invalid or expired refresh token")
+        username, new_refresh_token = rotated
+        token = create_token(username, get_epoch(username, db) or 0)
     return RefreshOut(
-        token=create_token(username, get_epoch(username, db) or 0),
+        token=token,
         expires_in=JWT_EXPIRY,
         refresh_token=new_refresh_token,
         refresh_expires_in=REFRESH_EXPIRY,
@@ -228,16 +298,18 @@ def logout(body: LogoutIn, request: Request, db: sqlite3.Connection = Depends(ge
     bump revokes outstanding access tokens (FR-003); the username comes from
     the refresh token when present, else from a still-valid access token."""
     username = None
-    if body.refresh_token:
-        username = revoke_refresh_token(body.refresh_token, db)
-    if not username:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            claims = verify_token(auth_header[7:])
-            if claims:
-                username = claims.get("sub")
+    with SESSION_LOCK:
+        if body.refresh_token:
+            username = revoke_refresh_token(body.refresh_token, db)
+        if not username:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                claims = verify_token(auth_header[7:])
+                if claims:
+                    username = claims.get("sub")
+        if username:
+            bump_epoch(username, db)
     if username:
-        bump_epoch(username, db)
         _terminate_whep_sessions(username)
     return {"ok": True}
 
@@ -287,26 +359,35 @@ def switch_vlm(payload: dict, _=Depends(require_auth)):
 
 
 def _fan_out(targets: tuple) -> tuple[dict, list]:
-    """POST to each internal target; collect status codes and failures."""
+    """POST to each internal target; collect status codes and failures.
+    A leg fails on transport error, an error status, or a body that reports
+    ok=false — the streamer reports an unapplied source detach that way, and
+    hiding it would defeat the re-request repair (SDD §6.1)."""
     results = {}
     failures = []
     for name, base, path in targets:
         try:
             response = forward_json(base, "POST", path, {})
             results[name] = response.status_code
+            body = json.loads(response.body) if response.body else None
+            ok = body.get("ok", True) if isinstance(body, dict) else True
+            if response.status_code >= 400 or not ok:
+                failures.append(name)
         except Exception:
             results[name] = 502
             failures.append(name)
     return results, failures
 
 
-def _streaming_active() -> bool:
-    """Ask the streamer whether live streaming is active (FR-050 precheck)."""
+def _streaming_active() -> bool | None:
+    """Ask the streamer whether live streaming is active (FR-050 precheck).
+    None when the streamer cannot be reached — an unreachable streamer must
+    surface as 502, not masquerade as "not active" (SDD §6.5)."""
     try:
         with urllib.request.urlopen(f"{STREAMER_URL}/status", timeout=5) as resp:
             return bool(json.loads(resp.read().decode()).get("streaming_active"))
     except Exception:
-        return False
+        return None
 
 
 # ── Live streaming lifecycle ─────────────────────────────────────────────────
@@ -340,7 +421,10 @@ def analysis_start(_=Depends(require_auth)):
     recorder. Requires live streaming to be active (FR-050). Idempotent;
     a partial failure is reported and repaired by re-requesting (SDD §6.1).
     """
-    if not _streaming_active():
+    active = _streaming_active()
+    if active is None:
+        raise HTTPException(status_code=502, detail="cannot verify streaming state")
+    if not active:
         raise HTTPException(status_code=409, detail="live streaming is not active")
     results, failures = _fan_out((
         ("analyzer", ANALYZER_URL, "/start"),
@@ -446,7 +530,11 @@ async def whep_open(request: Request, user: dict = Depends(require_auth)):
     if response.status_code == 201:
         location = response.headers.get("location")
         if location:
-            _register_whep_session(user["sub"], location)
+            # @claude Registry I/O blocks (DB writes; HTTP DELETEs in the race
+            # @claude branch) — keep it off the event loop, like relay_raw does.
+            await run_in_threadpool(
+                _register_whep_and_recheck, user["sub"], user["epoch"], location
+            )
     return response
 
 
@@ -457,5 +545,7 @@ async def whep_patch(session: str, request: Request, _=Depends(require_auth)):
 
 @app.delete("/live/whep/{session:path}")
 async def whep_close(session: str, request: Request, user: dict = Depends(require_auth)):
-    _unregister_whep_session(user["sub"], f"/live/whep/{session}")
+    await run_in_threadpool(
+        _unregister_whep_session, user["sub"], f"/live/whep/{session}"
+    )
     return await relay_raw(request, STREAMER_WEBRTC_URL, f"/live/whep/{session}")

@@ -17,6 +17,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 
@@ -34,6 +35,13 @@ DEFAULT_PASS = os.environ.get("DEFAULT_PASS", "admin")
 # @claude 10 failures -> 30-minute lockout (FR-007). Persisted in the users table.
 _LOCKOUT_THRESHOLD = 10
 _LOCKOUT_SECONDS = 1800
+
+# @claude Serializes session-mutating operations: login replacement, refresh
+# @claude rotation, logout, password change (SDD §6.2). Without it, a rotation
+# @claude interleaved with a login's revoke-all could insert its new refresh
+# @claude token after the sweep and mint an access token with the post-bump
+# @claude epoch — a replaced session surviving the replacement (FR-047).
+SESSION_LOCK = threading.Lock()
 
 
 def seed_default_user(db: sqlite3.Connection) -> None:
@@ -207,13 +215,14 @@ def authenticate(
     # @claude FR-047: a new login replaces the account's existing session —
     # @claude refresh tokens via revocation, access tokens via the epoch bump.
     # @claude The new access token must carry the post-bump epoch.
-    revoke_all_refresh_tokens(username, db)
-    bump_epoch(username, db)
-    return {
-        "token": create_token(username, get_epoch(username, db) or 0),
-        "must_change_password": not row["password_changed"],
-        "refresh_token": issue_refresh_token(username, db) if remember_me else None,
-    }
+    with SESSION_LOCK:
+        revoke_all_refresh_tokens(username, db)
+        bump_epoch(username, db)
+        return {
+            "token": create_token(username, get_epoch(username, db) or 0),
+            "must_change_password": not row["password_changed"],
+            "refresh_token": issue_refresh_token(username, db) if remember_me else None,
+        }
 
 
 # ── Refresh Token ────────────────────────────────────────────────────────────
@@ -293,6 +302,7 @@ def change_password(
     db.commit()
     # @claude FR-005: drop every existing token — refresh via revocation,
     # @claude access via epoch bump (require_auth compares epochs per request).
-    revoke_all_refresh_tokens(username, db)
-    bump_epoch(username, db)
+    with SESSION_LOCK:
+        revoke_all_refresh_tokens(username, db)
+        bump_epoch(username, db)
     return True

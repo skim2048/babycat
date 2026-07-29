@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     created_at  INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_username ON refresh_tokens(username);
+
+CREATE TABLE IF NOT EXISTS whep_sessions (
+    session_path TEXT    PRIMARY KEY,
+    username     TEXT    NOT NULL,
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_whep_sessions_username ON whep_sessions(username);
 """
 
 

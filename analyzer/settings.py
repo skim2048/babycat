@@ -28,13 +28,17 @@ def load() -> dict:
 
 
 def save(prompt: str, keywords: list[str], analysis_active: bool) -> None:
+    # @claude Temp file + os.replace: a crash mid-write must not leave a torn
+    # @claude file that silently resets the settings on restore (SDD §5.4).
     with _lock:
         try:
             Path(STATE_PATH).parent.mkdir(parents=True, exist_ok=True)
-            with open(STATE_PATH, "w", encoding="utf-8") as f:
+            tmp = f"{STATE_PATH}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(
                     {"prompt": prompt, "keywords": keywords, "analysis_active": analysis_active},
                     f, ensure_ascii=False, indent=2,
                 )
+            os.replace(tmp, STATE_PATH)
         except OSError as e:
             log.error("settings save failed: %s", e)

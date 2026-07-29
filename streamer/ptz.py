@@ -184,9 +184,14 @@ def get_status() -> Optional[dict]:
 # ── Home position save/load ──────────────────────────────────────────────────
 
 def load_home(data: Optional[dict]) -> None:
-    """Apply a ptz_home dict read from the saved profile. @claude"""
+    """Apply a ptz_home dict read from the saved profile. An empty value
+    resets the in-memory home — a profile switch that invalidated the stored
+    home (SDD §4.2) must not leave the previous camera's coordinates
+    lingering in memory. @claude"""
     global _saved
     if not data:
+        with _lock:
+            _saved = {"pan": None, "tilt": None}
         return
     try:
         with _lock:
