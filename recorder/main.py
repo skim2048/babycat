@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 import finalize
 import segments
+from clip_storage import MIN_CLIP_SIZE, clip_count, count_removed_clip, recount_clips
 from events_db import get_db, init_db
 from hardware import HardwareMonitor, disk_usage
 from status import status
@@ -33,7 +34,6 @@ log = logging.getLogger(__name__)
 
 CLIP_DIR = os.getenv("CLIP_DIR", "/data/clips")
 STATE_PATH = os.getenv("STATE_PATH", "/data/state/recorder.json")
-MIN_CLIP_SIZE = 10240  # @claude 10KB — excludes partially-written files.
 
 _hw = HardwareMonitor()
 
@@ -64,6 +64,9 @@ async def lifespan(app: FastAPI):
     )
     init_db()
     Path(CLIP_DIR).mkdir(parents=True, exist_ok=True)
+    # @claude One full walk at startup seeds the in-memory clip counter; every
+    # @claude later mutation adjusts it (no per-poll tree walk in /status).
+    log.info("clip counter seeded: %d clips", recount_clips(CLIP_DIR))
     if _load_state().get("buffer_active"):
         # @claude Restore the pre-restart operating state (FR-014, SDD §3.5).
         status.set_buffer_active(True)
@@ -313,9 +316,11 @@ def delete_clips(body: ClipDeleteIn):
         if fpath is None:
             continue
         try:
+            size = fpath.stat().st_size
             fpath.unlink()
         except FileNotFoundError:
             continue
+        count_removed_clip(size)
         fpath.with_suffix(".json").unlink(missing_ok=True)
         deleted += 1
     return DeletedOut(deleted=deleted)
@@ -331,9 +336,11 @@ def delete_all_clips():
         if not f.is_file():
             continue
         try:
+            size = f.stat().st_size
             f.unlink()
         except FileNotFoundError:
             continue
+        count_removed_clip(size)
         f.with_suffix(".json").unlink(missing_ok=True)
         deleted += 1
     return DeletedOut(deleted=deleted)
@@ -393,14 +400,10 @@ def delete_events(db: sqlite3.Connection = Depends(get_db)):
 
 @app.get("/status")
 def get_status(db: sqlite3.Connection = Depends(get_db)):
-    clip_count = sum(
-        1 for f in Path(CLIP_DIR).rglob("*.mp4")
-        if f.is_file() and f.stat().st_size >= MIN_CLIP_SIZE
-    ) if Path(CLIP_DIR).exists() else 0
     return {
         **_hw.snapshot(),
         **disk_usage(CLIP_DIR),
         **status.snapshot(),
-        "clip_count": clip_count,
+        "clip_count": clip_count(),
         "event_count": db.execute("SELECT COUNT(*) FROM events").fetchone()[0],
     }

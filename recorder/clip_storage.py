@@ -1,8 +1,51 @@
-"""Helpers for clip-storage capacity checks and old-clip pruning."""
+"""Helpers for clip-storage capacity checks, old-clip pruning, and the
+in-memory clip counter."""
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
+
+# @claude Files below this size are partially-written outputs; the clip
+# @claude listing and the counter exclude them by the same rule.
+MIN_CLIP_SIZE = 10240
+
+# @claude In-memory clip counter: /status serves this instead of walking the
+# @claude clip tree on every monitoring poll (2s). Recomputed once at startup;
+# @claude every mutation site — finalize, direct record, user deletion,
+# @claude capacity pruning — adjusts it. The count doubles as the clip-list
+# @claude invalidation signal for the client, so it must move immediately.
+_count_lock = threading.Lock()
+_clip_count = 0
+
+
+def recount_clips(base: str | Path) -> int:
+    global _clip_count
+    count = sum(1 for p in list_clip_files(base) if p.stat().st_size >= MIN_CLIP_SIZE)
+    with _count_lock:
+        _clip_count = count
+    return count
+
+
+def clip_count() -> int:
+    with _count_lock:
+        return _clip_count
+
+
+def count_added_clip(size_bytes: int) -> None:
+    global _clip_count
+    if size_bytes < MIN_CLIP_SIZE:
+        return
+    with _count_lock:
+        _clip_count += 1
+
+
+def count_removed_clip(size_bytes: int) -> None:
+    global _clip_count
+    if size_bytes < MIN_CLIP_SIZE:
+        return
+    with _count_lock:
+        _clip_count = max(0, _clip_count - 1)
 
 
 @dataclass(frozen=True)
@@ -54,8 +97,10 @@ def delete_clip_pair(mp4_path: str | Path) -> int:
     deleted_bytes = 0
 
     if path.exists():
-        deleted_bytes += path.stat().st_size
+        mp4_size = path.stat().st_size
+        deleted_bytes += mp4_size
         path.unlink()
+        count_removed_clip(mp4_size)
 
     meta_path = path.with_suffix(".json")
     if meta_path.exists():

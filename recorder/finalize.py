@@ -24,6 +24,7 @@ from clip_storage import (
     ClipStorageResult,
     bytes_to_mb,
     cleanup_partial_outputs,
+    count_added_clip,
     ensure_clip_capacity,
     list_clip_files,
 )
@@ -230,6 +231,7 @@ def _finalize_rollover_clip(
             pass
 
     clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
+    count_added_clip(clip_size_bytes)
     clip_duration_s = probe_clip_duration_seconds(out_path)
     log.info(
         "trigger-clip finalize done: %s (segments=%d, size=%d, duration=%s)",
@@ -328,6 +330,7 @@ def _record_direct_clip(
         return None
 
     clip_size_bytes = out_path.stat().st_size if out_path.exists() else 0
+    count_added_clip(clip_size_bytes)
     _write_sidecar(
         meta_path,
         build_trigger_clip_meta(
