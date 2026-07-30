@@ -100,7 +100,7 @@
 
 MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에서 localhost로 호출하는 프로세스 간 인터페이스이므로 이 표에 넣지 않는다(§4.2).
 
-이벤트 통지(`/notify`)의 본문은 매칭 키워드 목록, 장면 설명 텍스트, 판정 시각, VLM이 본 마지막 프레임의 캡처 시각, 그리고 진단용 추론 시각 정보다. 프레임 캡처 시각은 클립 창의 기준점이므로 계약 필드다(§7.2). ***Event recorder***는 수신 즉시 응답하고 클립 결합은 작업 스레드에서 수행한다(§3.4). 통지가 유실되면 해당 이벤트는 기록되지 않으며, 이를 좁히는 재전송은 두지 않는다 — 추론 주기가 수 초이므로 지속되는 상황은 다음 추론에서 다시 판정된다.
+이벤트 통지(`/notify`)의 본문은 매칭 키워드 목록, 장면 설명 텍스트, 판정 시각, VLM이 본 마지막 프레임의 캡처 시각, 그리고 진단용 추론 시각 정보다. 프레임 캡처 시각은 클립 창의 기준점이므로 계약 필드다(§7.2). ***Event recorder***는 수신 즉시 응답하고 클립 결합은 작업 스레드에서 수행한다(§3.4). 통지가 유실되면 그 이벤트는 기록되지 않으며, 이를 좁히는 재전송은 두지 않는다 — 추론 주기가 수 초이므로 지속되는 상황은 다음 추론에서 다시 판정된다.
 
 ## 6.4 스트리밍 인터페이스 (Streaming Interface)
 
@@ -120,7 +120,7 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 
 ### (4) 모니터링 스트림 합성
 
-`FR-042`·`FR-043`의 실시간 제공은 ***Request router***의 합성으로 실현한다. ***Request router***는 `analyzer`의 SSE를 구독하여 추론·파이프라인 상태 변화를 즉시 받고, `recorder`와 `streamer`의 `/status`를 주기(2초)로 수집하여, 세 출처를 하나의 평면 JSON 스냅숏으로 병합해 `/state` SSE로 내보낸다. 어느 출처가 응답하지 않으면 해당 필드 그룹을 결측으로 표시하고 나머지는 계속 전달한다 — 관측은 부분 실패에도 살아 있어야 한다(§2.1 목표 3).
+`FR-042`·`FR-043`의 실시간 제공은 ***Request router***의 합성으로 실현한다. ***Request router***는 `analyzer`의 SSE를 구독하여 추론·파이프라인 상태 변화를 즉시 받고, `recorder`와 `streamer`의 `/status`를 주기(2초)로 수집하여, 세 출처를 하나의 평면 JSON 스냅숏으로 병합해 `/state` SSE로 내보낸다. 어느 출처가 응답하지 않으면 그 필드 그룹을 결측으로 표시하고 나머지는 계속 전달한다 — 관측은 부분 실패에도 살아 있어야 한다(§2.1 목표 3).
 
 클립의 생성·삭제는 이 스냅숏의 클립 계수 변화로 드러나고, ***Client app***은 계수 변화를 클립 목록 갱신의 신호로 쓴다. 따라서 계수의 변화는 그 변화가 목록 조회로 관찰 가능해진 뒤에만 일어나야 한다 — 신호가 데이터보다 앞서면 갱신이 새 클립을 얻지 못한 채 끝나고, 다음 계수 변화가 있을 때까지 목록에 반영되지 않는다.
 
@@ -149,7 +149,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
   <figcaption><em>그림 6-1. 자격증명 및 로그인 유지</em></figcaption>
 </figure>
 
-1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다. 로그인 유지를 원하는지도 함께 전달한다.
+1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다. 로그인 유지 여부도 함께 전달한다.
     - 형태: `HTTP(8000/tcp), POST /api/login, application/json`
     - 자격증명과 로그인 유지 여부는 JSON 본문에 담긴다.
     - 프로토타이핑은 HTTP를 사용하였으나, 프로덕션용은 반드시 HTTPS로 구현하여야 한다(SRS §2.7).
@@ -158,8 +158,8 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 입력된 비밀번호를 내부에 저장된 해시와 대조한다.
 3. ***Request router***는 검증 결과를 ***Client app***에게 응답한다.
     - 형태: `200 OK, application/json`
-    - 자격증명이 정당하면, 해당 계정의 기존 로그인 세션을 무효화한 뒤(`FR-047`, §6.2) 액세스 토큰을 발급하여 응답에 담는다.
-    - 자격증명이 정당하고 로그인 유지가 요청되었다면, 리프레시 토큰도 함께 발급한다.
+    - 자격증명이 정당하면, 그 계정의 기존 로그인 세션을 무효화한 뒤(`FR-047`, §6.2) 액세스 토큰을 발급하여 응답에 담는다.
+    - 자격증명이 정당하고 사용자가 로그인 유지를 요청했다면, 리프레시 토큰도 함께 발급한다.
     - 자격증명이 정당하지 않으면 거부한다.
 4. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보낸다.
     - ***Request router***는 토큰이 없거나 유효하지 않은 요청을 거부한다.
@@ -257,13 +257,13 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
   <figcaption><em>그림 6-6. 이벤트 감지와 기록 - 자동 실행</em></figcaption>
 </figure>
 
-1. ***Video analyzer***는 장면 분석 파이프라인을 통해 생성된 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
-2. 키워드가 포함되어 있으면, ***Video analyzer***는 해당 상황을 이벤트 발생으로 판단하여 ***Event recorder***에게 기록을 요청한다.
+1. ***Video analyzer***는 장면 분석 파이프라인이 생성한 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
+2. 키워드가 포함되어 있으면, ***Video analyzer***는 그 상황을 이벤트 발생으로 판단하여 ***Event recorder***에게 기록을 요청한다.
     - 형태: `HTTP(8400/tcp), POST /notify, application/json`
     - 일치한 키워드, 생성된 텍스트, 판정 시각과 마지막 프레임 시각은 JSON 본문에 담긴다(§6.3).
 3. ***Event recorder***는 응답 후 기록을 준비한다.
     - 형태: `202 Accepted, application/json`
-4. ***Event recorder***는 해당 구간의 비디오 클립과 발생 이력을 저장한다.
+4. ***Event recorder***는 그 구간의 비디오 클립과 발생 이력을 저장한다.
     - 가용 저장 공간이 임계치 이하로 떨어지면, 가장 오래된 클립과 이력부터 순차적으로 삭제하여 공간을 확보한다(`FR-033`).
 
 ### (7) 라이브 비디오 재생
@@ -281,7 +281,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8888/tcp), GET /live/index.m3u8`
 3. ***Video streamer***는 라이브 비디오를 HLS로 전달한다.
-    - HLS 비디오는 ***Request router***를 경유하여 ***Client app***에게 전달된다.
+    - HLS 비디오는 ***Request router***가 ***Client app***에게 중계한다.
     - 형태(재생목록): `200 OK, application/vnd.apple.mpegurl`
     - 형태(세그먼트): `200 OK, video/mp4(segment)`
 
@@ -299,7 +299,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 형태: `HTTP(8889/tcp), POST /live/whep, application/sdp`
 3. ***Video streamer***는 시그널링에 응답한다.
     - 형태: `201 Created, application/sdp`
-4. WebRTC 비디오는 저지연을 위해 ***Request router***를 경유하지 않고 ***Client app***에게 직접 전달된다.
+4. ***Video streamer***는 저지연을 위해 ***Request router***를 거치지 않고 WebRTC 비디오를 ***Client app***에게 직접 전달한다.
     - 형태: `WebRTC(8189/udp), SRTP/H.264`
 
 ### (8) 비디오 소스 PTZ 제어
@@ -314,13 +314,13 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 동작의 종류(이동·정지·홈 저장·홈 복귀)와 이동량은 JSON 본문에 담긴다.
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
     - 형태: `HTTP(8200/tcp), POST /ptz, application/json`
-3. ***Video streamer***는 요청을 수신했음을 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+3. ***Video streamer***는 요청을 수신했다는 응답을 ***Request router***를 거쳐 ***Client app***에게 보낸다.
     - 형태: `200 OK, application/json`
-    - 이 응답이 ONVIF 제어의 완료를 의미하는 것은 아니다.
+    - 이 응답이 ONVIF 제어가 완료되었다는 뜻은 아니다.
 4. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
     - 형태: `HTTP(onvif_port/tcp), ONVIF PTZ 서비스, application/soap+xml`
     - 접속 포트는 프로필에 등록된 `onvif_port`를 따른다.
-    - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청은 별도의 오류 없이 무시된다(`FR-020`).
+    - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청을 별도의 오류 없이 무시한다(`FR-020`).
 
 ### (9) 이벤트 클립과 이력 관리
 
@@ -354,7 +354,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 2. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
     - 형태(재생): `HTTP(8400/tcp), GET /clips/{name}`
     - 형태(삭제): `HTTP(8400/tcp), DELETE /clips, application/json`
-3. ***Event recorder***는 해당 클립을 반환하거나 삭제하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
+3. ***Event recorder***는 그 클립을 반환하거나 삭제하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
     - 형태(재생 응답): `200 OK, video/mp4`
       - 구간(Range) 요청에는 `206 Partial Content`로 응답한다.
     - 형태(삭제 응답): `200 OK, application/json`

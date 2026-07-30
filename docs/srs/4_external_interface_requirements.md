@@ -58,8 +58,8 @@
 ### IF-003: 라이브 스트리밍 (***Video streamer*** → ***Client app***)
 
 - 프로토콜: HLS/WebRTC.
-- HLS 비디오와 WebRTC 시그널링은 ***Request router***를 경유하여 전달되며, ***Request router***가 `IF-001`과 동일한 방식으로 인증한다. 별도의 스트림 접근 토큰은 두지 않으며, ***Video streamer***는 자체 접근 통제를 수행하지 않는다.
-- WebRTC 미디어는 저지연을 위해 ***Request router***를 경유하지 않고 ***Client app***에게 직접 전달된다. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
+- HLS 비디오와 WebRTC 시그널링은 ***Request router***를 경유하며, ***Request router***가 `IF-001`과 동일한 방식으로 인증한다. 별도의 스트림 접근 토큰은 두지 않으며, ***Video streamer***는 자체 접근 통제를 수행하지 않는다.
+- WebRTC 미디어는 저지연을 위해 ***Request router***를 거치지 않고 ***Video streamer***가 ***Client app***에게 직접 전달한다. WebRTC는 외부 도달 가능한 IP를 ICE 후보로 광고하여 미디어 연결을 수립한다.
 
 ### IF-004: PTZ 제어 (***Video streamer*** → ***Video source***)
 
@@ -69,7 +69,7 @@
 
 ## 4.2 사용자 인터페이스 (User Interface)
 
-이 시스템에는 사용자 인터페이스 요구사항이 없다. `Babycat`은 백엔드이며 사용자 인터페이스는 ***Client app***의 책임이다. `Babycat`이 제공하는 것은 `IF-001`의 HTTP API뿐이다.
+이 시스템에는 사용자 인터페이스 요구사항이 없다. `Babycat`은 백엔드이며 사용자 인터페이스는 ***Client app***의 책임이다. `Babycat`은 `IF-001`의 HTTP API만을 제공한다.
 
 ## 4.3 하드웨어 인터페이스 (Hardware Interface)
 
