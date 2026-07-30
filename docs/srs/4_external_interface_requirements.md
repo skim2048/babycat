@@ -23,7 +23,9 @@
 |`/api/change-password`|POST|비밀번호 변경.|필요|
 |`/health`|GET|서버 상태 확인.|불필요|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|
-|`/camera`|POST|비디오 소스 프로필 적용.|필요|
+|`/camera`|POST|비디오 소스 프로필 등록(수정).|필요|
+|`/streaming/start`|POST|라이브 스트리밍 시작. 재시작을 겸한다.|필요|
+|`/streaming/stop`|POST|라이브 스트리밍 종료. 진행 중인 분석·버퍼링도 함께 정지.|필요|
 |`/clips`|GET|클립 목록 조회(키워드, 날짜 필터, 페이지네이션).|필요|
 |`/clips/{name}`|GET|클립 재생(HTTP Range 지원).|필요|
 |`/clips`|DELETE|선택 클립 삭제.|필요|
@@ -34,6 +36,7 @@
 |`/ptz`|POST|비디오 소스 PTZ 제어(이동/정지/홈 저장/홈 복귀).|필요|
 |`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정.|필요|
 |`/analysis/start`|POST|장면 분석 시작/재시작.|필요|
+|`/analysis/stop`|POST|장면 분석 종료. 라이브 스트리밍은 유지.|필요|
 |`/vlm/switch`|POST|VLM 모델 전환(`P3`).|필요|
 |`/state`|GET|시스템 상태 실시간 수신(SSE).|필요|
 |`/stream`|GET|VLM 입력 프레임 수신(MJPEG, `P3`).|필요|
@@ -48,9 +51,9 @@
 ### IF-002: 비디오 스트림 수신 (***Video source*** → ***Video streamer***)
 
 - ***Video source***는 H.264로 인코딩된 비디오 스트림을 제공해야 한다.
-- ***Video streamer***는 저장된 비디오 소스 프로필의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
-- 발생 빈도: 비디오 소스 프로필이 활성화된 동안 상시 연결.
-- 에러 처리: 연결 실패 시 재시도한다. 재시도 정책은 작성을 보류한다.
+- ***Video streamer***는 적용 프로필(§2.3 (3))의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
+- 발생 빈도: 라이브 스트리밍이 진행 중인 동안 상시 연결.
+- 에러 처리: 연결 실패 시 접속을 재시도한다(`FR-049`).
 
 ### IF-003: 라이브 스트리밍 (***Video streamer*** → ***Client app***)
 
@@ -92,4 +95,4 @@
 |8189/udp|UDP|***Video streamer***|WebRTC 미디어/ICE(`IF-003`).|
 
 - 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다.
-- 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성을 보류한다.
+- 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성을 보류한다(`NFR-016`).
