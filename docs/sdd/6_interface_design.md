@@ -29,13 +29,13 @@
 |`/streaming/start`|POST|라이브 스트리밍 시작(`FR-048`). 등록 프로필을 적용 프로필로 승격하여 소스 연결.|필요|`streamer`|
 |`/streaming/stop`|POST|라이브 스트리밍 종료(`FR-049`). 소스 해제와 분석·버퍼 연쇄 정지.|필요|셋 모두|
 
-### 장면 분석
+### 비디오 분석
 
 |경로|메서드|기능|인증|전달 대상|
 |---|---|---|---|---|
 |`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정. 분석을 시작하지 않는다(`FR-025`).|필요|`analyzer`|
-|`/analysis/start`|POST|장면 분석 시작/재시작(`FR-024`). 스트리밍 진행 중이 아니면 거부(`FR-050`). `analyzer`·`recorder`에 병렬 전달(SRS §2.3 (5)).|필요|`analyzer`·`recorder`|
-|`/analysis/stop`|POST|장면 분석 종료(`FR-051`). 스트리밍은 유지.|필요|`analyzer`·`recorder`|
+|`/analysis/start`|POST|비디오 분석 시작/재시작(`FR-024`). 스트리밍 진행 중이 아니면 거부(`FR-050`). `analyzer`·`recorder`에 병렬 전달(SRS §2.3 (5)).|필요|`analyzer`·`recorder`|
+|`/analysis/stop`|POST|비디오 분석 종료(`FR-051`). 스트리밍은 유지.|필요|`analyzer`·`recorder`|
 |`/vlm/switch`|POST|VLM 모델 전환(`FR-032`, `P3`).|필요|`analyzer`|
 
 ### 모니터링
@@ -158,9 +158,9 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 입력된 비밀번호를 내부에 저장된 해시와 대조한다.
 3. ***Request router***는 검증 결과를 ***Client app***에게 응답한다.
     - 형태: `200 OK, application/json`
-    - 자격증명이 정당함 → 기존 로그인 세션 무효화(`FR-047`, §6.2) 후 액세스 토큰 발급
-    - 자격증명이 정당하고 로그인 유지를 요청함 → 기존 로그인 세션 무효화 후 액세스 토큰·리프레시 토큰 발급
-    - 자격증명이 정당하지 않음 → 거부
+    - 자격증명 O, 로그인 유지 X → 기존 로그인 세션 무효화(`FR-047`, §6.2), 액세스 토큰 발급
+    - 자격증명 O, 로그인 유지 O → 기존 로그인 세션 무효화, 액세스 토큰 + 리프레시 토큰 발급
+    - 자격증명 X → 거부
 4. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보낸다.
     - ***Request router***는 토큰이 없거나 유효하지 않은 요청을 거부한다.
 
@@ -170,11 +170,11 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 - 로그아웃: `HTTP(8000/tcp), POST /api/logout, application/json` → `200 OK, application/json`. 리프레시 토큰이 없는 세션은 액세스 토큰을 `Authorization` 헤더로 대신 제출한다.
 - 비밀번호 변경: `HTTP(8000/tcp), POST /api/change-password, application/json` → `200 OK, application/json`. 성공하면 계정의 기존 토큰 전체가 폐기된다.
 
-### (2) 비디오 소스 프로필 등록
+### (2) 라이브 스트리밍 - 비디오 소스 프로필 등록
 
 <figure align="center">
   <img src="figs/6-2.drawio.svg" width="100%">
-  <figcaption><em>그림 6-2. 비디오 소스 프로필 등록</em></figcaption>
+  <figcaption><em>그림 6-2. 라이브 스트리밍 - 비디오 소스 프로필 등록</em></figcaption>
 </figure>
 
 1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
@@ -182,14 +182,15 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 프로필은 JSON 본문에 담긴다.
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8200/tcp), POST /profile, application/json`
-3. ***Video streamer***는 프로필을 저장하고, 그 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+3. ***Video streamer***는 프로필을 등록(저장)하고, 그 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
     - 형태: `200 OK, application/json`
+    - 주의: 등록은 라이브 스트리밍 시작 과정을 수반하지 않는다(`FR-048`).
 
-### (3) 라이브 스트리밍 시작과 종료
+### (3) 라이브 스트리밍 - 시작과 종료
 
 <figure align="center">
   <img src="figs/6-3.drawio.svg" width="100%">
-  <figcaption><em>그림 6-3. 라이브 스트리밍 시작과 종료</em></figcaption>
+  <figcaption><em>그림 6-3. 라이브 스트리밍 - 시작과 종료</em></figcaption>
 </figure>
 
 1. ***User***가 라이브 스트리밍 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
@@ -197,7 +198,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 이 요청은 본문이 없다.
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8200/tcp), POST /streaming/start, application/json`
-3. ***Video streamer***는 그 시점의 등록 프로필을 적용 프로필로 삼아, RTSP로 ***Video source***에 접속하여 스트림을 수신한다.
+3. ***Video streamer***는 등록된(저장된) 프로필이 가리키는 ***Video source***에 접속(RTSP)하여 스트림을 수신한다.
     - 형태: `RTSP(rtsp_port/tcp), RTP/H.264`
     - 접속 포트는 프로필에 등록된 `rtsp_port`를 따른다.
 4. ***Video streamer***는 수신한 스트림을 내부에 재배포하고, 수락 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
@@ -209,11 +210,11 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 - 종료 요청: `HTTP(8000/tcp), POST /streaming/stop` → `200 OK, application/json`
 - 내부 전달: `HTTP(8200/tcp), POST /streaming/stop, application/json` · `HTTP(8300/tcp), POST /stop, application/json` · `HTTP(8400/tcp), POST /buffer/stop, application/json`
 
-### (4) 비디오 분석 조건 설정
+### (4) 비디오 분석 - 조건 설정
 
 <figure align="center">
   <img src="figs/6-4.drawio.svg" width="100%">
-  <figcaption><em>그림 6-4. 비디오 분석 조건 설정</em></figcaption>
+  <figcaption><em>그림 6-4. 비디오 분석 - 조건 설정</em></figcaption>
 </figure>
 
 1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
@@ -225,11 +226,11 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 형태: `200 OK, application/json`
     - 설정이 저장되더라도 분석은 자동으로 시작되지 않는다(`FR-025`).
 
-### (5) 비디오 분석 시작과 종료
+### (5) 비디오 분석 - 시작과 종료
 
 <figure align="center">
   <img src="figs/6-5.drawio.svg" width="100%">
-  <figcaption><em>그림 6-5. 비디오 분석 시작과 종료</em></figcaption>
+  <figcaption><em>그림 6-5. 비디오 분석 - 시작과 종료</em></figcaption>
 </figure>
 
 1. ***User***가 분석 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
@@ -240,7 +241,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     1. 형태(→***Video analyzer***): `HTTP(8300/tcp), POST /start, application/json`
     2. 형태(→***Event recorder***): `HTTP(8400/tcp), POST /buffer/start, application/json`
     3. 둘이 모두 수락하면, ***Request router***는 ***Client app***에게 성공을 응답한다. 형태: `200 OK, application/json`
-3. ***Video analyzer***는 재배포 스트림에 접속하여 장면 분석 파이프라인을 가동한다.
+3. ***Video analyzer***는 재배포 스트림에 접속하여 비디오 분석 파이프라인을 가동한다.
     - 형태: `RTSP(8554/tcp), RTP/H.264`
 4. ***Event recorder***는 재배포 스트림에 접속하여, 이벤트 직전 구간을 클립에 담기 위한 최근 구간의 비디오 보관을 시작한다.
     - 형태: `RTSP(8554/tcp), RTP/H.264`
@@ -250,14 +251,14 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 - 종료 요청: `HTTP(8000/tcp), POST /analysis/stop` → `200 OK, application/json`
 - 내부 전달: `HTTP(8300/tcp), POST /stop, application/json` · `HTTP(8400/tcp), POST /buffer/stop, application/json`
 
-### (6) 이벤트 감지와 기록 - 자동 실행
+### (6) 이벤트 감지와 기록 (자동 실행)
 
 <figure align="center">
   <img src="figs/6-6.drawio.svg" width="100%">
-  <figcaption><em>그림 6-6. 이벤트 감지와 기록 - 자동 실행</em></figcaption>
+  <figcaption><em>그림 6-6. 이벤트 감지와 기록 (자동 실행)</em></figcaption>
 </figure>
 
-1. ***Video analyzer***는 장면 분석 파이프라인이 생성한 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
+1. ***Video analyzer***는 비디오 분석 파이프라인이 생성한 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
 2. 키워드가 포함되어 있으면, ***Video analyzer***는 그 상황을 이벤트 발생으로 판단하여 ***Event recorder***에게 기록을 요청한다.
     - 형태: `HTTP(8400/tcp), POST /notify, application/json`
     - 일치한 키워드, 생성된 텍스트, 판정 시각과 마지막 프레임 시각은 JSON 본문에 담긴다(§6.3).
@@ -277,13 +278,13 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 
 1. ***User***가 라이브 비디오 재생을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), GET /live/hls/index.m3u8`
-    - 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8888/tcp), GET /live/index.m3u8`
 3. ***Video streamer***는 라이브 비디오를 HLS로 전달한다.
     - HLS 비디오는 ***Request router***가 ***Client app***에게 중계한다.
     - 형태(재생목록): `200 OK, application/vnd.apple.mpegurl`
     - 형태(세그먼트): `200 OK, video/mp4(segment)`
+    - 주의: 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 
 #### WebRTC 기반
 
@@ -294,13 +295,13 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 
 1. ***User***가 라이브 비디오 재생을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /live/whep, application/sdp`
-    - 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8889/tcp), POST /live/whep, application/sdp`
 3. ***Video streamer***는 시그널링에 응답한다.
     - 형태: `201 Created, application/sdp`
 4. ***Video streamer***는 저지연을 위해 ***Request router***를 거치지 않고 WebRTC 비디오를 ***Client app***에게 직접 전달한다.
     - 형태: `WebRTC(8189/udp), SRTP/H.264`
+    - 주의: 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 
 ### (8) 비디오 소스 PTZ 제어
 
@@ -321,6 +322,7 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 형태: `HTTP(onvif_port/tcp), ONVIF PTZ 서비스, application/soap+xml`
     - 접속 포트는 프로필에 등록된 `onvif_port`를 따른다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청을 별도의 오류 없이 무시한다(`FR-020`).
+    - 주의: 라이브 스트리밍이 진행 중일 때 PTZ 제어가 가능하며, 라이브 스트리밍이 종료되면 PTZ 연결도 종료된다(`FR-016`).
 
 ### (9) 이벤트 클립과 이력 관리
 

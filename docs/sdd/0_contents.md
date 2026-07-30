@@ -43,7 +43,7 @@
 
 #### 7. 동작 설계 (Behavioral Design)
 - 7.1 주요 시나리오 흐름 (Primary Scenario Flows)
-- 7.2 장면 분석 파이프라인 (Scene Analysis Pipeline)
+- 7.2 비디오 분석 파이프라인 (Video Analysis Pipeline)
 - 7.3 상태 전이 (State Transitions)
 - 7.4 동시성과 자원 경합 (Concurrency and Resource Contention)
 - 7.5 오류 처리와 복구 (Error Handling and Recovery)

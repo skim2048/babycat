@@ -35,8 +35,8 @@
 |`/events`|DELETE|이벤트 이력 전체 삭제.|필요|
 |`/ptz`|POST|비디오 소스 PTZ 제어(이동/정지/홈 저장/홈 복귀).|필요|
 |`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정.|필요|
-|`/analysis/start`|POST|장면 분석 시작/재시작.|필요|
-|`/analysis/stop`|POST|장면 분석 종료. 라이브 스트리밍은 유지.|필요|
+|`/analysis/start`|POST|비디오 분석 시작/재시작.|필요|
+|`/analysis/stop`|POST|비디오 분석 종료. 라이브 스트리밍은 유지.|필요|
 |`/vlm/switch`|POST|VLM 모델 전환(`P3`).|필요|
 |`/state`|GET|시스템 상태 실시간 수신(SSE).|필요|
 |`/stream`|GET|VLM 입력 프레임 수신(MJPEG, `P3`).|필요|
@@ -51,7 +51,7 @@
 ### IF-002: 비디오 스트림 수신 (***Video source*** → ***Video streamer***)
 
 - ***Video source***는 H.264로 인코딩된 비디오 스트림을 제공해야 한다.
-- ***Video streamer***는 적용 프로필(§2.3 (3))의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
+- ***Video streamer***는 스트리밍 시작 시점에 등록되어 있던 프로필(§2.3 (3))의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
 - 발생 빈도: 라이브 스트리밍이 진행 중인 동안 상시 연결.
 - 에러 처리: 연결 실패 시 접속을 재시도한다(`FR-049`).
 

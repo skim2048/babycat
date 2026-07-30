@@ -60,7 +60,7 @@
 - 7.2 비디오 소스 프로필 관리 (Video Source Profile Management)
 - 7.3 비디오 소스 PTZ 제어 (Video Source PTZ Control)
 - 7.4 라이브 스트리밍 (Live Streaming)
-- 7.5 장면 분석 및 이벤트 기록 (Scene Analysis and Event Recording)
+- 7.5 비디오 분석 및 이벤트 기록 (Video Analysis and Event Recording)
 - 7.6 이벤트 발생 이력 관리 (Event History Management)
 - 7.7 비디오 클립 관리 (Video Clip Management)
 - 7.8 시스템 실시간 모니터링 (Real-time System Monitoring)
