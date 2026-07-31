@@ -2,10 +2,42 @@
 
 ## 3.1 아키텍처 개요 (Architecture Overview)
 
-<figure align="center">
-  <img src="figs/3-1.drawio.svg" width="100%">
-  <figcaption><em>그림 3-1. 아키텍처 조망도</em></figcaption>
-</figure>
+```mermaid
+flowchart LR
+    User(("User"))
+    ClientApp["Client app"]
+    VideoSource["Video source"]
+
+    subgraph Babycat
+        Router["router"]
+        Streamer["streamer"]
+        Analyzer["analyzer"]
+        Recorder["recorder"]
+    end
+
+    User --> ClientApp
+
+    ClientApp -->|"제어·조회 (HTTP/JSON): 8000"| Router
+    ClientApp -->|"모니터링 스트림 (HTTP/SSE·MJPEG): 8000"| Router
+    ClientApp -->|"HLS 중계 (HTTP/m3u8·fMP4): 8000"| Router
+    ClientApp -->|"WHEP 시그널링 (HTTP/SDP): 8000"| Router
+    ClientApp -->|"클립 재생 (HTTP/mp4): 8000"| Router
+    ClientApp <-.->|"WebRTC Media/ICE (SRTP/H.264): 8189/udp"| Streamer
+
+    Router -->|"프로필·PTZ·스트리밍 시작/종료·상태 (HTTP/JSON): 8080"| Streamer
+    Router -->|"HLS 중계 (HTTP/m3u8·fMP4): 8888"| Streamer
+    Router -->|"WHEP 시그널링 (HTTP/SDP): 8889"| Streamer
+    Router -->|"분석 설정·시작/종료·상태 (HTTP/JSON·SSE·MJPEG): 8080"| Analyzer
+    Router -->|"버퍼 시작/종료·이력·클립 관리·상태 (HTTP/JSON): 8080"| Recorder
+    Router -->|"클립 재생 (HTTP/mp4): 8080"| Recorder
+
+    Streamer <-->|"스트림 수신 (RTSP/H.264): rtsp_port"| VideoSource
+    Streamer -->|"PTZ 제어 (ONVIF/SOAP): onvif_port"| VideoSource
+    Streamer <-->|"스트림 재배포 (RTSP/H.264): 8554"| Analyzer
+    Streamer <-->|"스트림 재배포 (RTSP/H.264): 8554"| Recorder
+
+    Analyzer -->|"이벤트 통지 (HTTP/JSON): 8080"| Recorder
+```
 
 `Babycat`은 SRS §2.2의 네 구성요소를 각각 하나의 컨테이너로 실현한다(§2.4 (1)). 시스템 외부에는 ***User***가 조작하는 ***Client app***과 라이브 비디오를 제공하는 ***Video source***가 있다.
 

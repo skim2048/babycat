@@ -81,7 +81,7 @@
 
 ## 6.3 컴포넌트 간 인터페이스 (Inter-component Interface)
 
-내부 호출은 컨테이너 네트워크의 HTTP이며 인증을 두지 않는다(§2.2). 내부 포트는 `streamer`의 동반 프로세스 8200, `analyzer` 8300, `recorder` 8400이며 어느 것도 호스트에 공개하지 않는다. 계정 인증은 ***Request router***의 내부 기능이므로 컴포넌트 간 인터페이스가 아니다.
+내부 호출은 컨테이너 네트워크의 HTTP이며 인증을 두지 않는다(§2.2). 내부 포트는 세 컴포넌트(`streamer`의 동반 프로세스·`analyzer`·`recorder`) 모두 8080이며 어느 것도 호스트에 공개하지 않는다 — 목적지는 호스트명이 식별하므로 포트를 구분하지 않는다. 계정 인증은 ***Request router***의 내부 기능이므로 컴포넌트 간 인터페이스가 아니다.
 
 |제공자|경로|호출자|기능|
 |---|---|---|---|
@@ -135,33 +135,51 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 
 ## 6.6 동작별 메시지 흐름 (Message Flows by Operation)
 
-SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS §2.3에 없는 실시간 모니터링을 (10)으로 보탠다. 각 그림의 간선 번호는 본문의 단계 번호와 일대일로 대응한다. 표기 규약은 다음과 같다.
+SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS §2.3에 없는 실시간 모니터링을 (10)으로 보탠다. 각 동작은 시퀀스 다이어그램과 단계 서술의 쌍이며, 다이어그램의 자동 번호가 본문 단계 번호의 원천이다. 표기 규약은 다음과 같다.
 
+- 다이어그램에서 실선은 요청과 데이터 전달이고, 점선은 응답이다. 지속되는 스트림은 라벨에 "(지속)"을 적는다. alt는 택일 분기이며 갈래마다 번호를 받는다. par는 병렬 전달이다. ***Request router***를 거쳐 돌아오는 응답은 한 화살표로 그리고 "(Router 경유)"를 적는다.
 - `형태:`는 한 이동의 전송 형식이다. 요청은 "규약(포트), 메서드 경로, 본문 타입"으로, 응답은 "상태 코드, 본문 타입"으로 적는다. 응답은 요청과 같은 연결로 돌아오므로 포트를 반복하지 않는다.
 - 본문이 없는 이동은 본문 타입을 생략한다.
-- 그림과 형태는 대표 성공 경로만 나타낸다. 오류 응답은 §6.5의 규약을 따른다.
+- 다이어그램과 형태는 대표 경로만 나타낸다. alt로 담기지 않은 오류 응답은 §6.5의 규약을 따른다.
 - 고정 번호가 아닌 포트(***Video source***의 RTSP·ONVIF 포트)는 프로필 항목 이름으로 적는다.
 
 ### (1) 자격증명 및 로그인 유지
 
-<figure align="center">
-  <img src="figs/6-1.drawio.svg" width="100%">
-  <figcaption><em>그림 6-1. 자격증명 및 로그인 유지</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
 
-1. ***User***가 자격증명을 입력하여 로그인을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다. 로그인 유지 여부도 함께 전달한다.
+    U->>C: 자격증명·로그인 유지 여부 입력
+    C->>R: 로그인 요청 (POST /api/login)
+    R->>R: 자격증명 검증 (내부)
+    alt 자격증명 O, 로그인 유지 X
+        R-->>C: 기존 세션 무효화, 액세스 토큰 발급
+    else 자격증명 O, 로그인 유지 O
+        R-->>C: 기존 세션 무효화, 액세스 토큰 + 리프레시 토큰 발급
+    else 자격증명 X
+        R-->>C: 거부
+    end
+    C->>R: 이후 모든 요청에 액세스 토큰 첨부
+```
+
+1. ***User***가 자격증명을 입력하여 로그인을 요청한다. 로그인 유지 여부도 함께 입력한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /api/login, application/json`
     - 자격증명과 로그인 유지 여부는 JSON 본문에 담긴다.
     - 프로토타이핑은 HTTP를 사용하였으나, 프로덕션용은 반드시 HTTPS로 구현하여야 한다(SRS §2.7).
-2. ***Request router***는 전달받은 자격증명을 검증한다.
+3. ***Request router***는 전달받은 자격증명을 검증한다.
     - 검증은 내부에 저장된 계정 정보를 이용해 외부 통신 없이 수행한다.
     - 입력된 비밀번호를 내부에 저장된 해시와 대조한다.
-3. ***Request router***는 검증 결과를 ***Client app***에게 응답한다.
+4. 자격증명 O, 로그인 유지 X → 기존 로그인 세션 무효화(`FR-047`, §6.2), 액세스 토큰 발급 응답
     - 형태: `200 OK, application/json`
-    - 자격증명 O, 로그인 유지 X → 기존 로그인 세션 무효화(`FR-047`, §6.2), 액세스 토큰 발급
-    - 자격증명 O, 로그인 유지 O → 기존 로그인 세션 무효화, 액세스 토큰 + 리프레시 토큰 발급
-    - 자격증명 X → 거부
-4. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보낸다.
+5. 자격증명 O, 로그인 유지 O → 기존 로그인 세션 무효화, 액세스 토큰 + 리프레시 토큰 발급 응답
+    - 형태: `200 OK, application/json`
+6. 자격증명 X → 거부 응답
+    - 형태: `401 Unauthorized, application/json`
+7. ***Client app***은 이후의 모든 요청에 발급받은 액세스 토큰을 함께 보낸다.
     - ***Request router***는 토큰이 없거나 유효하지 않은 요청을 거부한다.
 
 계정 관리의 나머지 동작은 ***Request router*** 안에서 끝나는 같은 왕복 구조이므로 형태만 적는다. 의미는 §6.2가 정의한다.
@@ -172,95 +190,243 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 
 ### (2) 라이브 스트리밍 - 비디오 소스 프로필 등록
 
-<figure align="center">
-  <img src="figs/6-2.drawio.svg" width="100%">
-  <figcaption><em>그림 6-2. 라이브 스트리밍 - 비디오 소스 프로필 등록</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
 
-1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 프로필 입력
+    C->>R: 등록 요청 (POST /camera)
+    R->>S: 중개 (POST /profile)
+    S->>S: 프로필 등록(저장)
+    S-->>C: 등록 결과 응답 (Router 경유)
+```
+
+1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /camera, application/json`
     - 프로필은 JSON 본문에 담긴다.
-2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
-    - 형태: `HTTP(8200/tcp), POST /profile, application/json`
-3. ***Video streamer***는 프로필을 등록(저장)하고, 그 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
-    - 형태: `200 OK, application/json`
+3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+    - 형태: `HTTP(8080/tcp), POST /profile, application/json`
+4. ***Video streamer***는 프로필을 등록(저장)한다.
     - 주의: 등록은 라이브 스트리밍 시작 과정을 수반하지 않는다(`FR-048`).
+5. ***Video streamer***는 등록 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+    - 형태: `200 OK, application/json`
 
 ### (3) 라이브 스트리밍 - 시작과 종료
 
-<figure align="center">
-  <img src="figs/6-3.drawio.svg" width="100%">
-  <figcaption><em>그림 6-3. 라이브 스트리밍 - 시작과 종료</em></figcaption>
-</figure>
+#### 시작
 
-1. ***User***가 라이브 스트리밍 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
+    participant V as Video source
+
+    U->>C: 라이브 스트리밍 시작 요청
+    C->>R: POST /streaming/start
+    R->>S: 중개 (POST /streaming/start)
+    S->>V: RTSP 접속 (rtsp_port/tcp)
+    V->>S: 스트림 수신 (RTP/H.264, 지속)
+    S->>S: 내부 재배포 시작 (RTSP 8554)
+    S-->>C: 수락 응답 (Router 경유)
+```
+
+1. ***User***가 라이브 스트리밍 시작을 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /streaming/start`
     - 이 요청은 본문이 없다.
-2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
-    - 형태: `HTTP(8200/tcp), POST /streaming/start, application/json`
-3. ***Video streamer***는 등록된(저장된) 프로필이 가리키는 ***Video source***에 접속(RTSP)하여 스트림을 수신한다.
-    - 형태: `RTSP(rtsp_port/tcp), RTP/H.264`
+3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+    - 형태: `HTTP(8080/tcp), POST /streaming/start, application/json`
+4. ***Video streamer***는 등록된(저장된) 프로필이 가리키는 ***Video source***에 RTSP로 접속한다.
     - 접속 포트는 프로필에 등록된 `rtsp_port`를 따른다.
-4. ***Video streamer***는 수신한 스트림을 내부에 재배포하고, 수락 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
-    - 형태(재배포): `RTSP(8554/tcp), RTP/H.264`
-    - 형태(응답): `200 OK, application/json`
+5. ***Video streamer***는 스트림을 수신한다.
+    - 형태: `RTSP(rtsp_port/tcp), RTP/H.264`
+6. ***Video streamer***는 수신한 스트림의 내부 재배포를 시작한다.
+    - 형태: `RTSP(8554/tcp), RTP/H.264`
+7. ***Video streamer***는 수락 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+    - 형태: `200 OK, application/json`
 
-종료는 같은 왕복 구조에 연쇄 정지가 더해진다. ***Request router***는 종료 요청을 ***Video streamer***(소스 해제)·***Video analyzer***(분석 정지)·***Event recorder***(버퍼 정지)에게 병렬 전달한다(`FR-049`).
+#### 종료
 
-- 종료 요청: `HTTP(8000/tcp), POST /streaming/stop` → `200 OK, application/json`
-- 내부 전달: `HTTP(8200/tcp), POST /streaming/stop, application/json` · `HTTP(8300/tcp), POST /stop, application/json` · `HTTP(8400/tcp), POST /buffer/stop, application/json`
+종료는 연쇄 정지를 포함한다(`FR-049`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
+    participant A as Video analyzer
+    participant REC as Event recorder
+    participant V as Video source
+
+    U->>C: 라이브 스트리밍 종료 요청
+    C->>R: POST /streaming/stop
+    par 병렬 전달
+        R->>S: 소스 해제 (POST /streaming/stop)
+    and
+        R->>A: 분석 정지 (POST /stop)
+    and
+        R->>REC: 버퍼 정지 (POST /buffer/stop)
+    end
+    S->>V: 접속 해제
+    R-->>C: 200 OK
+```
+
+1. ***User***가 라이브 스트리밍 종료를 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    - 형태: `HTTP(8000/tcp), POST /streaming/stop`
+3. ***Request router***는 ***Video streamer***에 소스 해제를 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /streaming/stop, application/json`
+    - 3~5는 병렬 전달이다.
+4. ***Request router***는 ***Video analyzer***에 분석 정지를 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /stop, application/json`
+5. ***Request router***는 ***Event recorder***에 버퍼 정지를 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /buffer/stop, application/json`
+6. ***Video streamer***는 ***Video source*** 접속을 해제한다.
+7. ***Request router***는 종료 결과를 ***Client app***에게 응답한다.
+    - 형태: `200 OK, application/json`
 
 ### (4) 비디오 분석 - 조건 설정
 
-<figure align="center">
-  <img src="figs/6-4.drawio.svg" width="100%">
-  <figcaption><em>그림 6-4. 비디오 분석 - 조건 설정</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant A as Video analyzer
 
-1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 프롬프트·이벤트 키워드 입력
+    C->>R: 설정 요청 (POST /prompt)
+    R->>A: 중개 (POST /prompt)
+    A->>A: 설정(저장)
+    A-->>C: 설정 결과 응답 (Router 경유)
+```
+
+1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /prompt, application/json`
     - 프롬프트와 이벤트 키워드는 JSON 본문에 담긴다.
-2. ***Request router***는 전달받은 요청을 ***Video analyzer***에게 중개한다.
-    - 형태: `HTTP(8300/tcp), POST /prompt, application/json`
-3. ***Video analyzer***는 프롬프트와 이벤트 키워드를 저장하고, 그 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+3. ***Request router***는 전달받은 요청을 ***Video analyzer***에게 중개한다.
+    - 형태: `HTTP(8080/tcp), POST /prompt, application/json`
+4. ***Video analyzer***는 프롬프트와 이벤트 키워드를 설정(저장)한다.
+    - 주의: 설정은 분석 시작 과정을 수반하지 않는다(`FR-025`).
+5. ***Video analyzer***는 설정 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
     - 형태: `200 OK, application/json`
-    - 설정이 저장되더라도 분석은 자동으로 시작되지 않는다(`FR-025`).
 
 ### (5) 비디오 분석 - 시작과 종료
 
-<figure align="center">
-  <img src="figs/6-5.drawio.svg" width="100%">
-  <figcaption><em>그림 6-5. 비디오 분석 - 시작과 종료</em></figcaption>
-</figure>
+#### 시작
 
-1. ***User***가 분석 시작을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant A as Video analyzer
+    participant REC as Event recorder
+    participant S as Video streamer
+
+    U->>C: 분석 시작 요청
+    C->>R: POST /analysis/start
+    alt 라이브 스트리밍 진행 중 O
+        par 병렬 전달
+            R->>A: POST /start
+        and
+            R->>REC: POST /buffer/start
+        end
+        R-->>C: 성공 응답 (둘 다 수락 시)
+        A->>S: 재배포 스트림 접속 (RTSP 8554)
+        S->>A: 스트림 (RTP/H.264, 지속)
+        REC->>S: 재배포 스트림 접속 (RTSP 8554)
+        S->>REC: 스트림 (RTP/H.264, 지속)
+    else 라이브 스트리밍 진행 중 X
+        R-->>C: 거부 (FR-050)
+    end
+```
+
+1. ***User***가 분석 시작을 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /analysis/start`
     - 이 요청은 본문이 없다.
-    - 라이브 스트리밍이 진행 중이 아니면, ***Request router***는 이 요청을 거부한다(`FR-050`, §6.5).
-2. ***Request router***는 이 요청을 ***Video analyzer***와 ***Event recorder***에게 병렬 전달한다.
-    1. 형태(→***Video analyzer***): `HTTP(8300/tcp), POST /start, application/json`
-    2. 형태(→***Event recorder***): `HTTP(8400/tcp), POST /buffer/start, application/json`
-    3. 둘이 모두 수락하면, ***Request router***는 ***Client app***에게 성공을 응답한다. 형태: `200 OK, application/json`
-3. ***Video analyzer***는 재배포 스트림에 접속하여 비디오 분석 파이프라인을 가동한다.
+    - 라이브 스트리밍 진행 여부에 따라 3~9(진행 중 O) 또는 10(진행 중 X)으로 갈린다.
+3. ***Request router***는 ***Video analyzer***에 시작을 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /start, application/json`
+    - 3~4는 병렬 전달이다.
+4. ***Request router***는 ***Event recorder***에 버퍼 시작을 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /buffer/start, application/json`
+5. 둘이 모두 수락하면, ***Request router***는 ***Client app***에게 성공을 응답한다.
+    - 형태: `200 OK, application/json`
+6. ***Video analyzer***는 재배포 스트림에 접속한다.
+7. ***Video analyzer***는 스트림을 수신하여 비디오 분석 파이프라인을 가동한다.
     - 형태: `RTSP(8554/tcp), RTP/H.264`
-4. ***Event recorder***는 재배포 스트림에 접속하여, 이벤트 직전 구간을 클립에 담기 위한 최근 구간의 비디오 보관을 시작한다.
+8. ***Event recorder***는 재배포 스트림에 접속한다.
+9. ***Event recorder***는 스트림을 수신하여, 이벤트 직전 구간을 클립에 담기 위한 최근 구간의 비디오 보관을 시작한다.
     - 형태: `RTSP(8554/tcp), RTP/H.264`
+10. 라이브 스트리밍 진행 중 X → 거부 응답(`FR-050`)
+    - 형태: `409 Conflict, application/json`
 
-종료는 같은 왕복 구조로, 라이브 스트리밍을 유지한 채 분석과 보관만 정지한다(`FR-051`).
+#### 종료
 
-- 종료 요청: `HTTP(8000/tcp), POST /analysis/stop` → `200 OK, application/json`
-- 내부 전달: `HTTP(8300/tcp), POST /stop, application/json` · `HTTP(8400/tcp), POST /buffer/stop, application/json`
+종료는 라이브 스트리밍을 유지한 채 분석과 보관만 정지한다(`FR-051`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant A as Video analyzer
+    participant REC as Event recorder
+
+    U->>C: 분석 종료 요청
+    C->>R: POST /analysis/stop
+    par 병렬 전달
+        R->>A: 분석 정지 (POST /stop)
+    and
+        R->>REC: 버퍼 정지 (POST /buffer/stop)
+    end
+    R-->>C: 200 OK
+```
+
+1. ***User***가 분석 종료를 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    - 형태: `HTTP(8000/tcp), POST /analysis/stop`
+3. ***Request router***는 ***Video analyzer***에 분석 정지를 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /stop, application/json`
+    - 3~4는 병렬 전달이다.
+4. ***Request router***는 ***Event recorder***에 버퍼 정지를 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /buffer/stop, application/json`
+5. ***Request router***는 종료 결과를 ***Client app***에게 응답한다.
+    - 형태: `200 OK, application/json`
 
 ### (6) 이벤트 감지와 기록 (자동 실행)
 
-<figure align="center">
-  <img src="figs/6-6.drawio.svg" width="100%">
-  <figcaption><em>그림 6-6. 이벤트 감지와 기록 (자동 실행)</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Video analyzer
+    participant REC as Event recorder
+
+    A->>A: 생성 텍스트의 이벤트 키워드 검사
+    A->>REC: 이벤트 통지 (POST /notify)
+    REC-->>A: 접수 응답 (202 Accepted)
+    REC->>REC: 클립·이력 저장 (공간 부족 시 오래된 것부터 삭제)
+```
 
 1. ***Video analyzer***는 비디오 분석 파이프라인이 생성한 텍스트에 ***User***가 설정한 이벤트 키워드가 포함되어 있는지 검사한다.
 2. 키워드가 포함되어 있으면, ***Video analyzer***는 그 상황을 이벤트 발생으로 판단하여 ***Event recorder***에게 기록을 요청한다.
-    - 형태: `HTTP(8400/tcp), POST /notify, application/json`
+    - 형태: `HTTP(8080/tcp), POST /notify, application/json`
     - 일치한 키워드, 생성된 텍스트, 판정 시각과 마지막 프레임 시각은 JSON 본문에 담긴다(§6.3).
 3. ***Event recorder***는 응답 후 기록을 준비한다.
     - 형태: `202 Accepted, application/json`
@@ -271,54 +437,88 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 
 #### HLS 기반
 
-<figure align="center">
-  <img src="figs/6-7-a.drawio.svg" width="100%">
-  <figcaption><em>그림 6-7-a. 라이브 비디오 재생 - HLS</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
 
-1. ***User***가 라이브 비디오 재생을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 재생 요청
+    C->>R: GET /live/hls/index.m3u8
+    R->>S: 중개 (GET /live/index.m3u8)
+    S->>R: HLS 비디오 (재생목록·세그먼트, 지속)
+    R->>C: HLS 비디오 중계 (지속)
+```
+
+1. ***User***가 라이브 비디오 재생을 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), GET /live/hls/index.m3u8`
-2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8888/tcp), GET /live/index.m3u8`
-3. ***Video streamer***는 라이브 비디오를 HLS로 전달한다.
-    - HLS 비디오는 ***Request router***가 ***Client app***에게 중계한다.
+4. ***Video streamer***는 HLS 비디오를 ***Request router***에게 전달한다.
     - 형태(재생목록): `200 OK, application/vnd.apple.mpegurl`
     - 형태(세그먼트): `200 OK, video/mp4(segment)`
+5. ***Request router***는 HLS 비디오를 ***Client app***에게 중계한다.
     - 주의: 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 
 #### WebRTC 기반
 
-<figure align="center">
-  <img src="figs/6-7-b.drawio.svg" width="100%">
-  <figcaption><em>그림 6-7-b. 라이브 비디오 재생 - WebRTC</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
 
-1. ***User***가 라이브 비디오 재생을 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 재생 요청
+    C->>R: 시그널링 (POST /live/whep, SDP)
+    R->>S: 중개 (POST /live/whep)
+    S-->>C: 201 Created (SDP, Router 경유)
+    S->>C: WebRTC 미디어 (8189/udp, Router 미경유, 지속)
+```
+
+1. ***User***가 라이브 비디오 재생을 요청한다.
+2. ***Client app***은 시그널링 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /live/whep, application/sdp`
-2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
+3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8889/tcp), POST /live/whep, application/sdp`
-3. ***Video streamer***는 시그널링에 응답한다.
+4. ***Video streamer***는 시그널링 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
     - 형태: `201 Created, application/sdp`
-4. ***Video streamer***는 저지연을 위해 ***Request router***를 거치지 않고 WebRTC 비디오를 ***Client app***에게 직접 전달한다.
+5. ***Video streamer***는 ***Request router***를 거치지 않고 WebRTC 비디오를 ***Client app***에게 직접 전달한다.
     - 형태: `WebRTC(8189/udp), SRTP/H.264`
     - 주의: 재생은 라이브 스트리밍이 진행 중일 때 가능하다(`FR-048`).
 
 ### (8) 비디오 소스 PTZ 제어
 
-<figure align="center">
-  <img src="figs/6-8.drawio.svg" width="100%">
-  <figcaption><em>그림 6-8. 비디오 소스 PTZ 제어</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant S as Video streamer
+    participant V as Video source
 
-1. ***User***가 팬·틸트·줌 제어를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 팬·틸트·줌 제어 요청
+    C->>R: POST /ptz
+    R->>S: 전달 (POST /ptz)
+    S-->>C: 수신 확인 응답 (Router 경유, 제어 완료 아님)
+    S->>V: ONVIF 제어 (onvif_port/tcp)
+```
+
+1. ***User***가 팬·틸트·줌 제어를 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /ptz, application/json`
     - 동작의 종류(이동·정지·홈 저장·홈 복귀)와 이동량은 JSON 본문에 담긴다.
-2. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
-    - 형태: `HTTP(8200/tcp), POST /ptz, application/json`
-3. ***Video streamer***는 요청을 수신했다는 응답을 ***Request router***를 거쳐 ***Client app***에게 보낸다.
+3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
+    - 형태: `HTTP(8080/tcp), POST /ptz, application/json`
+4. ***Video streamer***는 요청을 수신했다는 응답을 ***Request router***를 거쳐 ***Client app***에게 보낸다.
     - 형태: `200 OK, application/json`
     - 이 응답이 ONVIF 제어가 완료되었다는 뜻은 아니다.
-4. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
+5. ***Video streamer***는 ONVIF를 이용하여 ***Video source***를 직접 제어한다.
     - 형태: `HTTP(onvif_port/tcp), ONVIF PTZ 서비스, application/soap+xml`
     - 접속 포트는 프로필에 등록된 `onvif_port`를 따른다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청을 별도의 오류 없이 무시한다(`FR-020`).
@@ -328,38 +528,64 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
 
 #### 이벤트 클립 및 이력 조회
 
-<figure align="center">
-  <img src="figs/6-9-a.drawio.svg" width="100%">
-  <figcaption><em>그림 6-9-a. 이벤트 클립 및 이력 조회</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant REC as Event recorder
 
-1. ***User***가 조건(키워드·날짜)으로 조회를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 조건(키워드·날짜) 입력
+    C->>R: GET /events 또는 GET /clips
+    R->>REC: 중개
+    REC-->>C: 조회 결과 응답 (Router 경유)
+```
+
+1. ***User***가 조건(키워드·날짜)으로 조회를 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태(이력): `HTTP(8000/tcp), GET /events`
     - 형태(클립 목록): `HTTP(8000/tcp), GET /clips`
     - 조회 조건은 쿼리 문자열에 담긴다.
-2. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다. ***Event recorder***는 조건에 일치하는 이력을 조회하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
-    - 형태(이력): `HTTP(8400/tcp), GET /events`
-    - 형태(클립 목록): `HTTP(8400/tcp), GET /clips`
-    - 형태(응답): `200 OK, application/json`
+3. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
+    - 형태(이력): `HTTP(8080/tcp), GET /events`
+    - 형태(클립 목록): `HTTP(8080/tcp), GET /clips`
+4. ***Event recorder***는 조건에 일치하는 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
+    - 형태: `200 OK, application/json`
 
 #### 이벤트 클립 재생·삭제
 
-<figure align="center">
-  <img src="figs/6-9-b.drawio.svg" width="100%">
-  <figcaption><em>그림 6-9-b. 이벤트 클립 재생·삭제</em></figcaption>
-</figure>
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant C as Client app
+    participant R as Request router
+    participant REC as Event recorder
 
-1. ***User***가 특정 클립의 재생이나 삭제를 요청하면, ***Client app***은 이 요청을 ***Request router***에게 전달한다.
+    U->>C: 재생 또는 삭제 요청
+    C->>R: GET /clips/{name} 또는 DELETE /clips
+    R->>REC: 중개
+    alt 재생
+        REC->>C: 클립 반환 (video/mp4, Range 지원, Router 중계)
+    else 삭제
+        REC-->>C: 삭제 결과 응답 (Router 경유)
+    end
+```
+
+1. ***User***가 특정 클립의 재생이나 삭제를 요청한다.
+2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태(재생): `HTTP(8000/tcp), GET /clips/{name}`
     - 형태(삭제): `HTTP(8000/tcp), DELETE /clips, application/json`
     - 삭제할 클립의 이름들은 JSON 본문에 담긴다.
-2. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
-    - 형태(재생): `HTTP(8400/tcp), GET /clips/{name}`
-    - 형태(삭제): `HTTP(8400/tcp), DELETE /clips, application/json`
-3. ***Event recorder***는 그 클립을 반환하거나 삭제하고, ***Request router***는 그 결과를 ***Client app***에게 전달한다.
-    - 형태(재생 응답): `200 OK, video/mp4`
+3. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
+    - 형태(재생): `HTTP(8080/tcp), GET /clips/{name}`
+    - 형태(삭제): `HTTP(8080/tcp), DELETE /clips, application/json`
+4. 재생 → 그 클립 반환 (Router 중계)
+    - 형태: `200 OK, video/mp4`
       - 구간(Range) 요청에는 `206 Partial Content`로 응답한다.
-    - 형태(삭제 응답): `200 OK, application/json`
+5. 삭제 → 그 클립 삭제 후 결과 응답 (Router 경유)
+    - 형태: `200 OK, application/json`
 
 ### (10) 시스템 실시간 모니터링
 
@@ -369,13 +595,13 @@ SRS §2.3의 아홉 동작을 이동(메시지) 단위로 상세화하고, SRS �
     - 형태: `HTTP(8000/tcp), GET /state`
     - 형태(응답): `200 OK, text/event-stream`
 2. ***Request router***는 ***Video analyzer***의 상태 스트림을 상시 구독한다.
-    - 형태: `HTTP(8300/tcp), GET /events`
+    - 형태: `HTTP(8080/tcp), GET /events`
     - 형태(응답): `200 OK, text/event-stream`
 3. ***Request router***는 ***Video streamer***와 ***Event recorder***의 상태를 주기적으로 수집한다.
-    - 형태(→***Video streamer***): `HTTP(8200/tcp), GET /status`
-    - 형태(→***Event recorder***): `HTTP(8400/tcp), GET /status`
+    - 형태(→***Video streamer***): `HTTP(8080/tcp), GET /status`
+    - 형태(→***Event recorder***): `HTTP(8080/tcp), GET /status`
     - 형태(응답): `200 OK, application/json`
 4. ***User***가 VLM 입력 프레임 보기를 요청하면, ***Client app***은 ***Request router***를 거쳐 ***Video analyzer***의 프레임 스트림을 받는다.
     - 형태(***Client app***→): `HTTP(8000/tcp), GET /stream`
-    - 형태(중개): `HTTP(8300/tcp), GET /stream`
+    - 형태(중개): `HTTP(8080/tcp), GET /stream`
     - 형태(응답): `200 OK, multipart/x-mixed-replace`
