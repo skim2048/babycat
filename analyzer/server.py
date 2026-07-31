@@ -219,7 +219,7 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
 
 # ── Server bootstrap ─────────────────────────────────────────────────────────
 
-def start_server(port: int = 8300):
+def start_server(port: int = 8080):
     server = ThreadingHTTPServer(("0.0.0.0", port), AnalyzerHandler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()

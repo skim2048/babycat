@@ -47,9 +47,9 @@ from auth import (
 from database import DB_PATH, get_db, init_db
 from proxy import forward_json, relay_raw, relay_stream
 
-STREAMER_URL = os.environ.get("STREAMER_URL", "http://streamer:8200")
-ANALYZER_URL = os.environ.get("ANALYZER_URL", "http://analyzer:8300")
-RECORDER_URL = os.environ.get("RECORDER_URL", "http://recorder:8400")
+STREAMER_URL = os.environ.get("STREAMER_URL", "http://streamer:8080")
+ANALYZER_URL = os.environ.get("ANALYZER_URL", "http://analyzer:8080")
+RECORDER_URL = os.environ.get("RECORDER_URL", "http://recorder:8080")
 STREAMER_HLS_URL = os.environ.get("STREAMER_HLS_URL", "http://streamer:8888")
 STREAMER_WEBRTC_URL = os.environ.get("STREAMER_WEBRTC_URL", "http://streamer:8889")
 

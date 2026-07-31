@@ -19,9 +19,9 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-ANALYZER_URL = os.environ.get("ANALYZER_URL", "http://analyzer:8300")
-RECORDER_URL = os.environ.get("RECORDER_URL", "http://recorder:8400")
-STREAMER_URL = os.environ.get("STREAMER_URL", "http://streamer:8200")
+ANALYZER_URL = os.environ.get("ANALYZER_URL", "http://analyzer:8080")
+RECORDER_URL = os.environ.get("RECORDER_URL", "http://recorder:8080")
+STREAMER_URL = os.environ.get("STREAMER_URL", "http://streamer:8080")
 
 POLL_INTERVAL = 2.0
 CLIENT_TICK = 0.3

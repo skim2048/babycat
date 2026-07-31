@@ -52,7 +52,7 @@ N_FRAMES   = int(os.getenv("N_FRAMES",   "4"))
 
 RING_SIZE = int(os.getenv("RING_SIZE", "30"))
 
-SERVER_PORT = int(os.getenv("SERVER_PORT", "8300"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
 
 # @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
 VLM_INPUT_SIZE = (384, 384)

@@ -32,4 +32,4 @@ RUN pip3 install --no-cache-dir fastapi uvicorn[standard] pydantic
 WORKDIR /app
 COPY recorder/ .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8400"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

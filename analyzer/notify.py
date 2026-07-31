@@ -7,7 +7,7 @@ import urllib.request
 
 log = logging.getLogger(__name__)
 
-RECORDER_URL = os.getenv("RECORDER_URL", "http://recorder:8400")
+RECORDER_URL = os.getenv("RECORDER_URL", "http://recorder:8080")
 
 
 def notify_event(
