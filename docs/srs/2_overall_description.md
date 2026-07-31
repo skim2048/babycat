@@ -4,10 +4,20 @@
 
 아래 조망도는 `Babycat`과 ***Jetson Board***, 그리고 외부 시스템인 ***Client app***과 ***Video source***의 관계를 나타낸다. 이후의 다이어그램에서는 ***Jetson Board***를 생략한다.
 
-<figure align="center">
-  <img src="figs/2-1.drawio.svg" width="85%">
-  <figcaption><em>그림 2-1. 제품 조망도</em></figcaption>
-</figure>
+```mermaid
+flowchart LR
+    User(("User"))
+    ClientApp["Client app"]
+    VideoSource["Video source"]
+
+    subgraph JetsonBoard["Jetson Board"]
+        Babycat["Babycat"]
+    end
+
+    User --> ClientApp
+    ClientApp --> Babycat
+    Babycat --> VideoSource
+```
 
 - ***User*** : ***Client app***을 통해 `Babycat`을 사용하는 사용자.
 - ***Client app*** : `Babycat` 사용자용 프론트엔드 앱.
@@ -15,10 +25,33 @@
 
 ## 2.2 전체 시스템 구성 (Overall System Configuration)
 
-<figure align="center">
-  <img src="figs/2-2.drawio.svg" width="100%">
-  <figcaption><em>그림 2-2. 전체 시스템 구성도</em></figcaption>
-</figure>
+```mermaid
+flowchart TB
+    User(("User"))
+    ClientApp["Client app"]
+    VideoSource["Video source"]
+
+    subgraph Babycat
+        RequestRouter["Request router"]
+        VideoStreamer["Video streamer"]
+        VideoAnalyzer["Video analyzer"]
+        EventRecorder["Event recorder"]
+    end
+
+    User --> ClientApp
+    ClientApp --> RequestRouter
+    ClientApp <-.-> VideoStreamer
+
+    RequestRouter --> VideoStreamer
+    RequestRouter --> VideoAnalyzer
+    RequestRouter --> EventRecorder
+
+    VideoStreamer <--> VideoSource
+    VideoStreamer <--> VideoAnalyzer
+    VideoStreamer <--> EventRecorder
+
+    VideoAnalyzer --> EventRecorder
+```
 
 - ***Request router*** : 단일 외부 진입점. 계정을 인증·관리하며, 요청에 실린 액세스 토큰을 검증하여 라우팅한다.
 - ***Video streamer*** : 비디오 소스 프로필을 관리하고 비디오 스트림을 재배포하며, PTZ를 제어한다.
