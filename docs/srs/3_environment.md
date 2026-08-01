@@ -48,7 +48,7 @@
 ## 3.4 개발 환경 (Development Environment)
 
 - ***Video analyzer***와 ***Event recorder***는 하드웨어 가속기와 Jetson 플랫폼 라이브러리에 의존하므로 Jetson 실기에서만 개발할 수 있다.
-- ***Request router***는 일반 PC에서 개발할 수 있다.
+- ***Request router***와 ***Video streamer***의 동반 프로세스는 일반 PC에서 개발할 수 있다.
 - 개발에는 Git과 Docker가 필요하다.
 
 ## 3.5 테스트 환경 (Test Environment)

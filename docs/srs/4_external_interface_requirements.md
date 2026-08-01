@@ -83,7 +83,7 @@
 |NanoLLM|작성 보류 (버전 고정 필요)|jetson-containers|VLM 추론 스택(***Video analyzer*** 베이스 이미지).|
 |GStreamer|1.x (베이스 이미지 및 호스트 NVIDIA 플러그인)|JetPack / 베이스 이미지|비디오 파이프라인(디코딩, 프레임 추출, 클립 인코딩).|
 |SQLite|Python 내장 `sqlite3`|Python 표준 라이브러리|사용자, 토큰, 이벤트 영속화.|
-|FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|***Request router*** 프레임워크.|
+|FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|***Request router***·***Video streamer***(동반 프로세스)·***Event recorder***의 HTTP 서버 프레임워크.|
 
 ## 4.5 통신 인터페이스 (Communication Interface)
 
