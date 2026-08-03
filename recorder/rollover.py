@@ -115,10 +115,3 @@ def write_concat_manifest(segment_paths: list[Path], manifest_path: str | Path) 
         lines.append(f"file '{escaped}'\n")
     manifest.write_text("".join(lines), encoding="utf-8")
     return manifest
-
-
-def bool_env(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
