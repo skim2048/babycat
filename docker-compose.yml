@@ -13,7 +13,7 @@ services:
     image: babycat-streamer
     restart: unless-stopped
     environment:
-      - TZ=Asia/Seoul
+      - TZ=${TZ:-Asia/Seoul}
       # 브라우저 클라이언트가 MediaMTX의 WebRTC 스트림에 접속할 수 있도록
       # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
@@ -31,13 +31,14 @@ services:
     ports:
       - "8000:8000"  # 단일 외부 진입점(IF-001)
     environment:
-      - TZ=Asia/Seoul
+      - TZ=${TZ:-Asia/Seoul}
       - DB_PATH=/data/db/router.db
       - JWT_SECRET=${JWT_SECRET:?required}
       - JWT_EXPIRY=${JWT_EXPIRY:-600}
       - REFRESH_EXPIRY=${REFRESH_EXPIRY:-2592000}
       - DEFAULT_USER=${DEFAULT_USER:?required}
       - DEFAULT_PASS=${DEFAULT_PASS:?required}
+      - CORS_EXTRA_ORIGINS=${CORS_EXTRA_ORIGINS:-}  # 사설망 규칙 밖에서 추가 허용할 origin 목록
       - STREAMER_URL=http://streamer:8080
       - ANALYZER_URL=http://analyzer:8080
       - RECORDER_URL=http://recorder:8080
@@ -58,7 +59,7 @@ services:
     restart: unless-stopped
     runtime: nvidia
     environment:
-      - TZ=Asia/Seoul
+      - TZ=${TZ:-Asia/Seoul}
       - MEDIAMTX_URL=rtsp://streamer:8554/live
       - RECORDER_URL=http://recorder:8080
       - STATE_PATH=/data/state/analyzer.json
@@ -96,12 +97,20 @@ services:
     restart: unless-stopped
     runtime: nvidia
     environment:
-      - TZ=Asia/Seoul
+      - TZ=${TZ:-Asia/Seoul}
       - MEDIAMTX_URL=rtsp://streamer:8554/live
       - DB_PATH=/data/db/recorder.db
       - CLIP_DIR=/data/clips
       - STATE_PATH=/data/state/recorder.json
       - TRIGGER_SEGMENT_DIR=/run/babycat-segments/live
+      - TRIGGER_COOLDOWN=${TRIGGER_COOLDOWN:-30}
+      - TRIGGER_CLIP_DUR=${TRIGGER_CLIP_DUR:-5}
+      - TRIGGER_PRE_EVENT_SEC=${TRIGGER_PRE_EVENT_SEC:-2}
+      - TRIGGER_POST_EVENT_SEC=${TRIGGER_POST_EVENT_SEC:-${TRIGGER_CLIP_DUR:-5}}  # 미설정 시 TRIGGER_CLIP_DUR을 따릅니다.
+      - CLIP_MIN_FREE_MB=${CLIP_MIN_FREE_MB:-512}
+      - CLIP_TARGET_FREE_MB=${CLIP_TARGET_FREE_MB:-1024}
+      - RECORDER_ENCODE_BITRATE=${RECORDER_ENCODE_BITRATE:-4000000}
+      - RECORDER_ENCODE_FPS=${RECORDER_ENCODE_FPS:-30}
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
