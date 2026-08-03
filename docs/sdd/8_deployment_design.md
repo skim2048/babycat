@@ -31,6 +31,12 @@
 |`DEFAULT_USER`·`DEFAULT_PASS`|`router`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
 |`VLM_MODELS`|`analyzer`|필수|후보 VLM 모델 목록(SRS §3.2)|
 |`MAX_NEW_TOKENS`|`analyzer`|선택|생성 토큰 상한(§7.2)|
+|`TZ`|전체|선택|컨테이너 로컬 시간대. 날짜 필터의 달력 기준(기본 Asia/Seoul)|
+|`CORS_EXTRA_ORIGINS`|`router`|선택|사설망 허용 규칙 밖에서 추가로 허용할 origin 목록|
+|`TRIGGER_COOLDOWN`|`recorder`|선택|이벤트 묶음 처리 간격(SRS `FR-030`)|
+|`TRIGGER_CLIP_DUR`·`TRIGGER_PRE_EVENT_SEC`·`TRIGGER_POST_EVENT_SEC`|`recorder`|선택|클립 창(§7.2). 사후 구간은 미설정 시 기본 길이를 따름|
+|`CLIP_MIN_FREE_MB`·`CLIP_TARGET_FREE_MB`|`recorder`|선택|자동 정리 발동·회복 여유 수위(SRS `FR-033`)|
+|`RECORDER_ENCODE_BITRATE`·`RECORDER_ENCODE_FPS`|`recorder`|선택|세그먼트 재인코딩 비트레이트와 소스 프레임레이트 가정(§4.4)|
 
 ## 8.4 로그와 진단 (Logging and Diagnostics)
 
