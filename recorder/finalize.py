@@ -55,12 +55,15 @@ TRIGGER_POST_EVENT_SEC = float(os.getenv("TRIGGER_POST_EVENT_SEC", str(TRIGGER_C
 
 CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "512"))
 CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "1024"))
-CLIP_PRUNE_MAX_FILES = int(os.getenv("CLIP_PRUNE_MAX_FILES", "50"))
+
+# @claude 1회 정리당 삭제 상한(내부 안전판). 운영자가 조정할 값이 아니므로
+# @claude 환경 변수로 노출하지 않고 고정한다.
+CLIP_PRUNE_MAX_FILES = 50
 
 CLIP_STORAGE_POLICY = ClipStoragePolicy(
     min_free_bytes=max(0, CLIP_MIN_FREE_MB) * 1024 * 1024,
     target_free_bytes=max(CLIP_MIN_FREE_MB, CLIP_TARGET_FREE_MB) * 1024 * 1024,
-    prune_max_files=max(0, CLIP_PRUNE_MAX_FILES),
+    prune_max_files=CLIP_PRUNE_MAX_FILES,
 )
 
 # @claude The cooldown anchor survives a restart (FR-030, SDD §5.4): a restart
