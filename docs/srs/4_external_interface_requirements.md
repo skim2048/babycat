@@ -69,7 +69,7 @@
 
 ## 4.2 사용자 인터페이스 (User Interface)
 
-이 시스템에는 사용자 인터페이스 요구사항이 없다. `Babycat`은 백엔드이며 사용자 인터페이스는 ***Client app***의 책임이다. `Babycat`은 `IF-001`의 HTTP API만을 제공한다.
+이 시스템에는 사용자 인터페이스 요구사항이 없다. `Babycat`은 백엔드이며 사용자 인터페이스는 ***Client app***의 책임이다. `Babycat`은 `IF-001`의 HTTP API만을 제공한다. ***Client app***의 예시 구현을 참조용으로 저장소에 함께 제공하나, 이는 제품 범위에 포함되지 않는다.
 
 ## 4.3 하드웨어 인터페이스 (Hardware Interface)
 
