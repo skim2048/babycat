@@ -201,10 +201,12 @@ def _finalize_rollover_clip(
     manifest_path = Path(SEGMENT_DIR) / f"{base}.segments.txt"
     write_concat_manifest(selected_segments, manifest_path)
 
+    # @claude +faststart moves the moov atom to the front so browsers can read
+    # @claude the metadata (thumbnail frame) without ranging to the file end.
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "warning", "-y",
         "-f", "concat", "-safe", "0", "-i", str(manifest_path),
-        "-c", "copy", "-f", "mp4", str(part_path),
+        "-c", "copy", "-movflags", "+faststart", "-f", "mp4", str(part_path),
     ]
     ffmpeg_started_at = time.time()
     try:
@@ -319,6 +321,7 @@ def _record_direct_clip(
         "-i", MEDIAMTX_URL,
         "-t", str(TRIGGER_CLIP_DUR),
         "-c:v", "copy", "-an",
+        "-movflags", "+faststart",
         "-f", "mp4", str(part_path),
     ]
     ffmpeg_started_at = time.time()
