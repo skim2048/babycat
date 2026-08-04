@@ -104,6 +104,13 @@ class AppState:
     def set_analysis_active(self, active: bool):
         with self._lock:
             self.analysis_active = active
+            if not active:
+                # @claude Stop clears the last judgment: without this the final
+                # @claude event stays in every later SSE snapshot and the UI
+                # @claude keeps showing it (bulb, overlay) after analysis ends.
+                self.infer_label = ""
+                self.infer_raw = ""
+                self.event_triggered = False
         self._sse_push()
 
     def is_analysis_active(self) -> bool:
