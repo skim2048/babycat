@@ -262,16 +262,19 @@ def rotate_refresh_token(token: str, db: sqlite3.Connection) -> tuple[str, str] 
 
 
 def revoke_refresh_token(token: str, db: sqlite3.Connection) -> str | None:
-    """Revoke a single refresh token; returns the owning username when found. @claude"""
+    """Revoke a single refresh token; returns the owning username only when an
+    active token was actually revoked. An already-revoked token belongs to a
+    replaced session — letting it identify the user would bump the epoch and
+    kill the replacing session (FR-047). @claude"""
     row = db.execute(
         "SELECT username FROM refresh_tokens WHERE token_hash = ?", (_hash_refresh(token),)
     ).fetchone()
-    db.execute(
+    cur = db.execute(
         "UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0",
         (_hash_refresh(token),),
     )
     db.commit()
-    return row["username"] if row else None
+    return row["username"] if row and cur.rowcount > 0 else None
 
 
 def revoke_all_refresh_tokens(username: str, db: sqlite3.Connection) -> int:

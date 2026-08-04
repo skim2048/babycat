@@ -296,7 +296,9 @@ def refresh(body: RefreshIn, db: sqlite3.Connection = Depends(get_db)):
 def logout(body: LogoutIn, request: Request, db: sqlite3.Connection = Depends(get_db)):
     """No auth requirement (the access token may already be lost). The epoch
     bump revokes outstanding access tokens (FR-003); the username comes from
-    the refresh token when present, else from a still-valid access token."""
+    the refresh token when present, else from a still-current access token.
+    Credentials of a replaced session identify no one — their logout must not
+    bump the epoch again and kill the replacing session (FR-047)."""
     username = None
     with SESSION_LOCK:
         if body.refresh_token:
@@ -305,7 +307,8 @@ def logout(body: LogoutIn, request: Request, db: sqlite3.Connection = Depends(ge
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
                 claims = verify_token(auth_header[7:])
-                if claims:
+                # @claude Stale-epoch tokens are a replaced session's leftovers.
+                if claims and claims.get("epoch", -1) == get_epoch(claims.get("sub", ""), db):
                     username = claims.get("sub")
         if username:
             bump_epoch(username, db)
