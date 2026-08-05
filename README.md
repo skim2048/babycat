@@ -52,7 +52,7 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 | Jetson module | AGX Orin 64 GB | Orin NX 16 GB |
 | Storage | NVMe SSD 512 GB | NVMe SSD 256 GB |
 
-Tested on JetPack 6.2.1 (L4T R36.x); other versions are unverified.
+Tested on JetPack 6.2.1 (L4T R36.x). JetPack 7.x is not supported — it changes the GPU driver and device-node layout, and the inference stack depends on the JetPack 6 CUDA generation — so flash the board with JetPack 6.x.
 
 **2. The hardware video encoder and decoder.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes are provided by JetPack's multimedia stack and may be missing after a bare OS flash. Confirm both exist:
 

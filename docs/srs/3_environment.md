@@ -23,9 +23,7 @@
 |Docker|29.1.3|Docker Compose 플러그인(v5.0.0) 포함|
 |NVIDIA Container Toolkit|1.16.2|-|
 
-- 25-08-27, Jetson Jetpack 7.0이 출시되었으나 아직 고려되지 않음
-- 26-01-12, Jetson Jetpack 7.1이 출시되었으나 아직 고려되지 않음
-- 26-06-01, Jetson Jetpack 7.2가 출시되었으나 아직 고려되지 않음
+- 26-08-05, JetPack 7.x(7.0·7.1·7.2)는 지원하지 않는 것으로 확정함. GPU 드라이버와 장치 노드 구성이 변경되었고, 추론 스택이 JetPack 6 세대의 CUDA에 의존함
 
 ## 3.2 제품 설치 및 설정 (Product Installation and Configuration)
 
