@@ -43,10 +43,30 @@ Externally published ports:
 
 ## Requirements
 
-- An NVIDIA Jetson board with JetPack (tested on JetPack 6.2.1 / L4T R36.x) and the NVIDIA Container Toolkit.
-- The hardware video encoder/decoder devices (`/dev/v4l2-nvdec`, `/dev/v4l2-nvenc`).
-- A video source that provides an H.264 RTSP stream (an IP camera, or a substitute source replaying recorded video).
-- Docker Engine with the Compose plugin.
+Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one another: the board decides which hardware you have, and how JetPack was flashed decides which of the required software is actually present.
+
+**1. An NVIDIA Jetson board.** A minimum-spec board offers the same functionality, but with fewer resources the choice of runnable VLMs narrows and inference latency grows.
+
+| | Recommended | Minimum |
+|---|---|---|
+| Jetson module | AGX Orin 64 GB | Orin NX 16 GB |
+| Storage | NVMe SSD 512 GB | NVMe SSD 256 GB |
+
+Tested on JetPack 6.2.1 (L4T R36.x); other versions are unverified.
+
+**2. The hardware video encoder and decoder.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes are provided by JetPack's multimedia stack and may be missing after a bare OS flash. Confirm both exist:
+
+```bash
+ls /dev/v4l2-nvdec /dev/v4l2-nvenc
+```
+
+If either is absent, install the full JetPack component set on the device with `sudo apt install nvidia-jetpack`.
+
+**3. Docker Engine with the Compose plugin.** Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions.
+
+**4. The NVIDIA Container Toolkit.** Required to expose the GPU and hardware codecs to the containers. As with the multimedia stack, it may be missing after a bare flash; it ships with `nvidia-jetpack`, or install it on its own per the [NVIDIA Container Toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
+Separately, a video source that provides an H.264 RTSP stream is required — an IP camera, or a substitute source replaying recorded video.
 
 ## Getting Started
 
