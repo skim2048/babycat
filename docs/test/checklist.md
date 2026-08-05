@@ -1,8 +1,8 @@
 # 실기 테스트 체크리스트 (Test Checklist)
 
-작성과 검토: @claude, @skim
+작성 및 검토: @claude, @skim
 
-test_scenarios.md의 실행 안내서이다. 각 항목의 상세 절차와 확인 기준은 시나리오 ID(M-xx, W-xx)로 원문을 참조하고, 이 문서는 진행 순서, 담당 구분, 시간 배치만 다룬다. 항목을 마치면 체크하고, 실패하면 하단의 결함 기록에 남긴다.
+senarios.md의 실행 안내서이다. 각 항목의 상세 절차와 확인 기준은 시나리오 ID(M-xx, W-xx)로 원문을 참조하고, 이 문서는 진행 순서, 담당 구분, 시간 배치만 다룬다. 항목을 마치면 체크하고, 실패하면 하단의 결함 기록에 남긴다.
 
 **메시지 응답 규칙** — 항목 아래의 대화는 항목 바로 밑의 코드 블록에 기록한다. 사용자가 `@skim:`으로 메시지를 남기면, 클로드는 같은 블록에 `@claude:`로 시작하는 의견을 덧붙인다.
 
@@ -643,7 +643,7 @@ test_scenarios.md의 실행 안내서이다. 각 항목의 상세 절차와 확�
 ```
 @skim: W-16에서 streaming 상태일 때 stop analysis를 클릭하면 stopped가 아닌, idle 상태가 된다. stopped가 매우 빨리 지나가서 못본 것인지 아니면 생략된 것인지 잘 모르겠다. 이 점 빼고는 잘 전환된다.
 
-@claude: 생략된 것도 놓친 것도 아니고, idle이 설계상 맞습니다. 분석 정지는 파이프라인을 '시작 대기(idle, waiting_for_start)'로 되돌리며, stopped는 analyzer 프로세스가 종료(shutdown)될 때에만 표시되는 상태입니다(pipeline_lifecycle.mark_waiting_for_start → idle / main.py의 종료 처리에서만 stopped). 시나리오 문구(정지 → stopped)가 부정확했던 것이므로 test_scenarios.md의 W-16 기대를 바로잡았습니다. 관찰하신 전이는 전부 정상입니다.
+@claude: 생략된 것도 놓친 것도 아니고, idle이 설계상 맞습니다. 분석 정지는 파이프라인을 '시작 대기(idle, waiting_for_start)'로 되돌리며, stopped는 analyzer 프로세스가 종료(shutdown)될 때에만 표시되는 상태입니다(pipeline_lifecycle.mark_waiting_for_start → idle / main.py의 종료 처리에서만 stopped). 시나리오 문구(정지 → stopped)가 부정확했던 것이므로 senarios.md의 W-16 기대를 바로잡았습니다. 관찰하신 전이는 전부 정상입니다.
 ```
 - [x] W-17 카메라 패널 / W-18 프롬프트 패널 / W-19 PTZ 컨트롤
 - [x] W-20 클립 패널 전 기능
