@@ -689,12 +689,14 @@ M-31도 208 노드의 W-11로 검증되어(핵심 메커니즘 통과, HOST_IP �
 |4|M-15|세션 대체 시 두 브라우저가 모두 로그아웃됨 — 대체된 세션의 자동 로그아웃 호출이 새 세션의 토큰까지 무효화|중|router의 /api/logout이 이미 회수된 리프레시 토큰과 구 epoch 액세스 토큰으로도 사용자를 식별해 epoch를 올림(재현 확정). 서버측 검증 보강이 근본 수정, 웹의 sessionReplaced 시 revoke 생략은 보조 수정|
 |5|M-35 / W-20|이벤트 클립 썸네일이 6개 중 1~2개만 출력됨|경|추정: ClipItem.vue가 `<video preload=metadata>`로 클립을 직접 로드, 라우터 relay_raw의 통째 버퍼링과 동시 Range 요청이 겹침. 원인 미확정 — W-20에서 확정|
 |6|M-35·M-37|분석 정지 후에도 전구·추론 오버레이가 마지막 이벤트 상태로 고정됨|중|백엔드(analyzer). set_analysis_active(False)가 event_triggered·infer_raw·infer_label을 초기화하지 않아 SSE에 잔존. web은 정상 반영. 정지 시 세 값 리셋 필요|
+|7|Wally 연동 시험 중 발견|동시 요청이 많을 때(특히 LL-HLS 재생 중) 임의의 API가 간헐적으로 500을 반환하고, CORS 헤더가 없어 브라우저에는 CORS 오류로 표시됨|중|백엔드(router). get_db가 동기 제너레이터 의존성이라 연결 생성과 정리(commit·close)가 서로 다른 스레드풀 워커에서 실행될 수 있는데, sqlite3 기본값(check_same_thread=True)이 이를 금지하여 ProgrammingError 발생. 미처리 예외의 500은 CORS 미들웨어를 거치지 않음. 동시성이 낮으면 드물게만 발생하여 기존 테스트를 통과함|
 
-### 수정 결과 (전 6건 수정 완료)
+### 수정 결과 (전 7건 수정 완료)
 - 결함1 [web] 최초 로그인 강제 변경 흐름 추가 — 수정 완료. W-07 실기 확인. (web/은 gitignore, 미커밋)
 - 결함2 [web] 카메라 오버레이 저장 시 자동 닫힘 제거 — 수정 완료. W-17 확인.
 - 결함3 [web] 프로필 저장 시 강제 재연결(reconnectKey) 전면 제거 — 수정 완료. W-11 확인.
 - 결함4 [백엔드+web] logout 검증 보강(회수된 리프레시·구 epoch 토큰 거부) + web revoke 생략 — 수정·커밋(5a49996). W-03 관찰6·M-15 재검증·M-13 회귀로 확인.
 - 결함5 [백엔드] 클립 ffmpeg 두 경로에 -movflags +faststart — 수정·커밋(05eda88). moov 선두 이동 실측, W-20 확인.
 - 결함6 [백엔드] 정지 시 판정 상태(infer_label·infer_raw·event_triggered) 초기화 — 수정·커밋(2eb6c43). 실측 확인, SDD §7.3 보강.
-- SRS·SDD 반영: 결함6에 한해 SDD §7.3 한 구절 보강. 결함4는 SDD §6.2가 이미 정확(코드를 문서에 맞춤), 결함5(faststart)는 구현 세부라 문서 미반영.
+- 결함7 [백엔드] get_db의 SQLite 연결에 check_same_thread=False 적용 — 수정·커밋(fcd2504). LL-HLS 지속 재생과 초기 비밀번호 변경·카메라 설정 흐름에서 500·CORS 오류 무발생 실기 확인.
+- SRS·SDD 반영: 결함6에 한해 SDD §7.3 한 구절 보강. 결함4는 SDD §6.2가 이미 정확(코드를 문서에 맞춤), 결함5(faststart)는 구현 세부라 문서 미반영. 결함7은 구현 세부라 문서 미반영.
