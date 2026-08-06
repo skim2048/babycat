@@ -54,7 +54,10 @@ def init_db() -> None:
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    # FastAPI runs sync generator dependencies in a threadpool, and the setup
+    # and teardown may land on different workers. Each request still owns its
+    # connection exclusively, so cross-thread sequential use is safe.
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     try:
