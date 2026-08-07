@@ -3,14 +3,12 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
-import { useTheme } from '../composables/useTheme.js'
 import { getEditableBabycatHost, applyBabycatHost } from '../endpoints.js'
 import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
 const { login, consumeLogoutNotice } = useAuth()
 const { t } = useLocale()
-const { theme } = useTheme()
 
 const username = ref('')
 const password = ref('')
@@ -54,52 +52,37 @@ async function handleLogin() {
 <template>
   <div class="login-page">
     <ThemeToggle class="theme-toggle-fixed" />
-    <form class="login-form" @submit.prevent="handleLogin" novalidate>
-      <img :src="theme === 'dark' ? '/banner-dark-theme.png' : '/banner-light-theme.png'" alt="Babycat" class="login-banner" />
-
-      <p v-if="noticeKey" class="login-notice">{{ t(noticeKey) }}</p>
-
-      <input
-        v-model="username"
-        type="text"
-        :placeholder="t('login.usernamePlaceholder')"
-        class="login-input"
-        autocomplete="username"
-        required
-      />
-      <input
-        v-model="password"
-        type="password"
-        :placeholder="t('login.passwordPlaceholder')"
-        class="login-input"
-        autocomplete="current-password"
-        required
-      />
-      <input
-        v-model="babycatHost"
-        type="text"
-        :placeholder="t('login.backendHostPlaceholder')"
-        class="login-input"
-        autocomplete="off"
-        spellcheck="false"
-        @change="normalizeHostField"
-      />
-
-      <div class="login-options">
-        <label class="login-remember">
-          <input v-model="rememberMe" type="checkbox" />
-          <span>{{ t('login.rememberMe') }}</span>
-        </label>
-        <a class="login-find" @click.prevent="error = t('login.error.unsupported')">{{ t('login.findAccount') }}</a>
+    <form class="login-card" @submit.prevent="handleLogin" novalidate>
+      <div class="login-head">
+        <div class="login-mark"><i class="ph ph-cat"></i></div>
+        <h1 class="login-title">{{ t('login.title') }}</h1>
+        <p class="login-sub">{{ t('login.subtitle') }}</p>
       </div>
 
-      <hr class="login-divider" />
+      <div v-if="error || noticeKey" class="login-notice">
+        <i class="ph ph-warning-circle"></i>
+        <span>{{ error || t(noticeKey) }}</span>
+      </div>
 
-      <button type="submit" class="login-btn" :disabled="loading">
+      <div class="login-fields">
+        <label class="login-field">{{ t('login.usernamePlaceholder') }}
+          <input v-model="username" type="text" autocomplete="username" required />
+        </label>
+        <label class="login-field">{{ t('login.passwordPlaceholder') }}
+          <input v-model="password" type="password" autocomplete="current-password" required />
+        </label>
+        <label class="login-field">{{ t('login.backendHostPlaceholder') }}
+          <input v-model="babycatHost" type="text" autocomplete="off" spellcheck="false" @change="normalizeHostField" />
+        </label>
+        <button type="button" class="login-remember" @click="rememberMe = !rememberMe">
+          <span class="login-check" :class="{ on: rememberMe }"><i v-if="rememberMe" class="ph ph-check"></i></span>
+          {{ t('login.rememberMe') }}
+        </button>
+      </div>
+
+      <button type="submit" class="login-submit" :disabled="loading">
         {{ loading ? t('login.loading') : t('login.submit') }}
       </button>
-
-      <p v-if="error" class="login-error">{{ error }}</p>
     </form>
   </div>
 </template>
@@ -110,111 +93,129 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-surface);
-  padding: 1.5rem;
+  background: var(--color-bg);
+  padding: 40px;
 }
 
-.login-form {
-  width: min(90%, 25rem);
+.login-card {
+  width: min(100%, 420px);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 22px;
 }
 
-.login-banner {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-bottom: 0;
-}
-
-.login-input {
-  width: 100%;
-  padding: 0.65rem 0.75rem;
-  font-size: 0.85rem;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius);
-  background: var(--input-bg);
-  color: var(--text-1);
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.login-input::placeholder {
-  color: var(--text-4);
-}
-.login-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-
-.login-options {
+.login-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 0.5rem;
+  flex-direction: column;
+  gap: 8px;
 }
-.login-remember {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-  color: var(--text-2);
-  cursor: pointer;
-  user-select: none;
+.login-mark {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-accent);
+  font-size: 18px;
 }
-.login-find {
-  font-size: 0.75rem;
-  color: var(--text-3);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
+.login-title {
+  font-size: 30px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: -0.01em;
+  margin-top: 10px;
+  line-height: 1.2;
 }
-.login-find:hover {
-  color: var(--text-1);
-}
-.login-remember input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
-
-.login-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 0.25rem 0;
-}
-
-.login-btn {
-  width: 100%;
-  padding: 0.65rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  background: var(--text-1);
-  color: var(--bg-surface);
-  border: none;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.login-btn:hover {
-  opacity: 0.85;
-}
-.login-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.login-error {
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--danger);
+.login-sub {
+  font-size: 13.5px;
+  color: var(--color-neutral-500);
+  line-height: 1.5;
+  text-wrap: pretty;
 }
 
 .login-notice {
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--accent);
+  display: flex;
+  gap: 9px;
+  padding: 12px 13px;
+  border-radius: 8px;
+  background: var(--color-neutral-900);
+  border-left: 2px solid var(--color-accent);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-neutral-300);
+  align-items: flex-start;
 }
+.login-notice i {
+  color: var(--color-accent);
+  font-size: 16px;
+  flex: none;
+  margin-top: 1px;
+}
+
+.login-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+}
+.login-field input {
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--color-neutral-800);
+  background: transparent;
+  color: var(--color-text);
+  padding: 0 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  caret-color: var(--color-accent);
+}
+.login-field input:hover { border-color: var(--color-neutral-700); }
+.login-field input:focus-visible { border-color: var(--color-accent); outline: none; }
+
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-neutral-400);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.login-check {
+  width: 18px; height: 18px;
+  border-radius: 5px;
+  border: 1px solid var(--color-neutral-700);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  color: var(--color-accent);
+}
+.login-check.on { background: var(--color-accent-900); border-color: var(--color-accent); }
+
+.login-submit {
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
+  font-size: 14px;
+  font-weight: var(--font-heading-weight);
+  font-family: inherit;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px;
+}
+.login-submit:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
+.login-submit:active { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.login-submit:disabled { opacity: 0.55; cursor: default; }
 
 .theme-toggle-fixed {
   position: fixed;
