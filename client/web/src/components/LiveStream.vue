@@ -4,18 +4,20 @@ import { useCamera } from '../composables/useCamera.js'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useSSE } from '../composables/useSSE.js'
+import { useStreamProtocol } from '../composables/useStreamProtocol.js'
 import InferenceOverlay from './InferenceOverlay.vue'
-import LiveStreamSystemPanel from './LiveStreamSystemPanel.vue'
+import StatCards from './StatCards.vue'
 import { useStreamStats } from '../composables/useStreamStats.js'
 import { getHlsUrl, getWhepUrl } from '../endpoints.js'
 import { usePtz } from '../composables/usePtz.js'
+
+const emit = defineEmits(['open-prompt'])
 
 const {
   state: sseState,
   pipelineStateLabel,
   pipelineDetailLabel,
 } = useSSE()
-const { isAuthenticated, isPersistentSession, sessionRemainingSeconds } = useAuth()
 const { t } = useLocale()
 
 const { accessToken } = useAuth()
@@ -62,11 +64,19 @@ async function handleSaveHome() {
   if (saveResetTimer) clearTimeout(saveResetTimer)
   saveResetTimer = setTimeout(() => { saveState.value = null }, 1500)
 }
+
+// @claude The 3x3 pad renders row-wise; null cells are decorative spacers and
+// @claude the center cell is the crosshair.
 const ptzDirs = [
-  { id: 'up',    pan:  0, tilt:  1 },
-  { id: 'down',  pan:  0, tilt: -1 },
-  { id: 'left',  pan: -1, tilt:  0 },
-  { id: 'right', pan:  1, tilt:  0 },
+  { id: 'up',    pan:  0, tilt:  1, icon: 'ph ph-caret-up' },
+  { id: 'down',  pan:  0, tilt: -1, icon: 'ph ph-caret-down' },
+  { id: 'left',  pan: -1, tilt:  0, icon: 'ph ph-caret-left' },
+  { id: 'right', pan:  1, tilt:  0, icon: 'ph ph-caret-right' },
+]
+const ptzPad = [
+  null, ptzDirs[0], null,
+  ptzDirs[2], { id: 'center', icon: 'ph ph-crosshair' }, ptzDirs[3],
+  null, ptzDirs[1], null,
 ]
 
 function ptzDown(dir, event) {
@@ -122,30 +132,9 @@ let pc = null
 let sessionId = 0
 const STALL_TIMEOUT = 8000
 const RETRY_BACKOFF = 3000
-const DEFAULT_STREAM_PROTOCOL = 'hls'
-const STREAM_PROTOCOL_STORAGE_KEY = 'babycat_stream_protocol'
-const STREAM_PROTOCOLS = new Set(['hls', 'webrtc'])
 
-function readStoredProtocol() {
-  if (typeof window === 'undefined') return DEFAULT_STREAM_PROTOCOL
-  try {
-    const value = window.localStorage.getItem(STREAM_PROTOCOL_STORAGE_KEY)
-    return STREAM_PROTOCOLS.has(value) ? value : DEFAULT_STREAM_PROTOCOL
-  } catch {
-    return DEFAULT_STREAM_PROTOCOL
-  }
-}
-
-function writeStoredProtocol(protocol) {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(STREAM_PROTOCOL_STORAGE_KEY, protocol)
-  } catch {
-    // Browser storage can be unavailable in restricted contexts; keep runtime selection.
-  }
-}
-
-const preferredProtocol = ref(readStoredProtocol())
+// @claude The preference is shared with the dashboard top bar's pill.
+const { preferredProtocol } = useStreamProtocol()
 const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !stopped.value)
@@ -156,15 +145,13 @@ watch(canUseToolbarPtz, (nextValue) => {
   stopToolbarPtzMotion()
   ptzControlOpen.value = false
 })
-const showSessionRemaining = computed(() =>
-  isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
-)
-const sessionRemainingText = computed(() => {
-  const total = sessionRemainingSeconds.value
-  const minutes = Math.floor(total / 60)
-  const seconds = total % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+
+watch(preferredProtocol, (protocol) => {
+  activeProtocol.value = protocol
+  if (stopped.value) return
+  restartStream()
 })
+
 const { stats, startStats, stopStats } = useStreamStats({
   videoRef,
   isWebRTC,
@@ -182,6 +169,7 @@ function handleConnect() {
 function handleDisconnect() {
   stopActivePtzMotion()
   ptzControlOpen.value = false
+  inferOpen.value = false
   stopped.value = true
   destroyAll()
   disconnect()
@@ -215,15 +203,6 @@ function clearAllTimers() {
   if (stallTimer) { clearInterval(stallTimer); stallTimer = null }
   if (retryTimer) { clearTimeout(retryTimer); retryTimer = null }
   if (pipelineRecoveryTimer) { clearTimeout(pipelineRecoveryTimer); pipelineRecoveryTimer = null }
-}
-
-function selectProtocol(protocol) {
-  if (!STREAM_PROTOCOLS.has(protocol) || preferredProtocol.value === protocol) return
-  preferredProtocol.value = protocol
-  activeProtocol.value = protocol
-  writeStoredProtocol(protocol)
-  if (stopped.value) return
-  restartStream()
 }
 
 function browserPlaybackUnavailable() {
@@ -463,449 +442,334 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="video-box">
-    <div class="video-box-body">
+  <div class="live">
 
-      <!-- ── Left Sidebar ── -->
-      <div class="video-sidebar">
-        <LiveStreamSystemPanel />
-      </div>
+    <!-- ── Video ── -->
+    <div ref="videoWrapRef" class="video-card">
+      <video ref="videoRef" muted playsinline />
 
-      <!-- ── Video wrap ── -->
-      <div class="video-wrap" ref="videoWrapRef">
-        <video ref="videoRef" muted playsinline />
+      <span v-if="isPlaying" class="live-badge"><span class="live-dot"></span>LIVE</span>
 
-        <div class="video-top-bar">
-          <div v-if="showSessionRemaining" class="session-remaining-badge">
-            {{ t('live.sessionRemaining', { time: sessionRemainingText }) }}
-          </div>
-          <div class="proto-toggle" aria-label="Stream protocol">
-            <button
-              type="button"
-              class="proto-opt"
-              :class="{ active: preferredProtocol === 'hls' }"
-              :aria-pressed="preferredProtocol === 'hls'"
-              @click="selectProtocol('hls')"
-            >HLS</button>
-            <button
-              type="button"
-              class="proto-opt"
-              :class="{ active: preferredProtocol === 'webrtc' }"
-              :aria-pressed="preferredProtocol === 'webrtc'"
-              @click="selectProtocol('webrtc')"
-            >WebRTC</button>
-          </div>
-        </div>
+      <button
+        class="fs-btn"
+        :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')"
+        @click="toggleFullscreen"
+      >
+        <i :class="fullscreen ? 'ph ph-corners-in' : 'ph ph-corners-out'"></i>
+      </button>
 
-        <div v-if="stopped" class="video-overlay clickable" @click="handleConnect">
-          <div class="overlay-icon" aria-hidden="true">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <polygon points="19,14 19,34 36,24" fill="currentColor"/>
-            </svg>
-          </div>
-          <span class="overlay-text">{{ t('live.connectIdle') }}</span>
-        </div>
+      <InferenceOverlay :open="inferOpen && isPlaying" />
 
-        <div v-else-if="loading" class="video-overlay clickable" @click="handleDisconnect">
-          <div class="overlay-icon" aria-hidden="true">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <rect x="19" y="14" width="5" height="20" rx="1.5" fill="currentColor"/>
-              <rect x="31" y="14" width="5" height="20" rx="1.5" fill="currentColor"/>
-            </svg>
-          </div>
-          <span class="overlay-text">
-            {{ t('live.connectingPrefix', { protocol: activeProtocol.toUpperCase() }) }}
-            <span class="inline-spinner" />
-          </span>
-        </div>
+      <button v-if="stopped" class="video-overlay" @click="handleConnect">
+        <span class="play-ring"><i class="ph-fill ph-play"></i></span>
+        <span class="overlay-text">{{ t('live.connectIdle') }}</span>
+      </button>
 
-        <InferenceOverlay :open="inferOpen && isPlaying" />
-
-        <!-- Bottom-right toolbar -->
-        <div class="video-bar">
-
-          <!-- PTZ expanded row -->
-          <div v-if="showToolbarPtz && ptzControlOpen" class="ptz-bar-row">
-            <!-- 현재위치 저장 -->
-            <button class="toolbar-btn" :class="{ 'save-ok': saveState === 'ok', 'save-fail': saveState === 'fail', 'save-saving': saveState === 'saving' }" :disabled="!canUseToolbarPtz" @click="handleSaveHome" :title="t('live.ptz.saveHome')">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="8" y1="2" x2="8" y2="11" />
-                <polyline points="4.5,7.5 8,11 11.5,7.5" />
-                <line x1="3" y1="14" x2="13" y2="14" />
-              </svg>
-            </button>
-            <!-- 저장위치 로드 -->
-            <button class="toolbar-btn" :disabled="!canUseToolbarPtz" @click="handleToolbarGotoHome" :title="t('live.ptz.gotoHome')">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M 6,5 H 11 A 3,3 0 0 1 11,11 H 5"/>
-                <polyline points="5.5,8.5 2.5,11 5.5,13.5"/>
-              </svg>
-            </button>
-            <!-- 상 -->
-            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'up' }" :disabled="!canUseToolbarPtz"
-              @mousedown="(e) => ptzDown(ptzDirs[0], e)" @mouseup="ptzUp(ptzDirs[0])" @mouseleave="ptzUp(ptzDirs[0])"
-              @touchstart.prevent="(e) => ptzDown(ptzDirs[0], e)" @touchend="ptzUp(ptzDirs[0])" :title="t('live.ptz.up')">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,9.5 7,4.5 12,9.5"/></svg>
-            </button>
-            <!-- 하 -->
-            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'down' }" :disabled="!canUseToolbarPtz"
-              @mousedown="(e) => ptzDown(ptzDirs[1], e)" @mouseup="ptzUp(ptzDirs[1])" @mouseleave="ptzUp(ptzDirs[1])"
-              @touchstart.prevent="(e) => ptzDown(ptzDirs[1], e)" @touchend="ptzUp(ptzDirs[1])" :title="t('live.ptz.down')">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,4.5 7,9.5 12,4.5"/></svg>
-            </button>
-            <!-- 좌 -->
-            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'left' }" :disabled="!canUseToolbarPtz"
-              @mousedown="(e) => ptzDown(ptzDirs[2], e)" @mouseup="ptzUp(ptzDirs[2])" @mouseleave="ptzUp(ptzDirs[2])"
-              @touchstart.prevent="(e) => ptzDown(ptzDirs[2], e)" @touchend="ptzUp(ptzDirs[2])" :title="t('live.ptz.left')">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9.5,2 4.5,7 9.5,12"/></svg>
-            </button>
-            <!-- 우 -->
-            <button class="toolbar-btn" :class="{ 'ptz-pressing': ptzPressing === 'right' }" :disabled="!canUseToolbarPtz"
-              @mousedown="(e) => ptzDown(ptzDirs[3], e)" @mouseup="ptzUp(ptzDirs[3])" @mouseleave="ptzUp(ptzDirs[3])"
-              @touchstart.prevent="(e) => ptzDown(ptzDirs[3], e)" @touchend="ptzUp(ptzDirs[3])" :title="t('live.ptz.right')">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,2 9.5,7 4.5,12"/></svg>
-            </button>
-          </div>
-
-          <!-- Main toolbar row -->
-          <div class="toolbar-row">
-            <!-- Inference toggle -->
-            <button
-              class="toolbar-btn infer-btn"
-              :class="{ 'infer-triggered': sseState.event_triggered, 'toolbar-btn-disabled': !isPlaying }"
-              :disabled="!isPlaying"
-              @click.stop="inferOpen = !inferOpen"
-              :title="t('live.inference')"
-            >
-              <svg v-if="!sseState.event_triggered" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5.5 14 L10.5 14" />
-                <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="none" />
-              </svg>
-              <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5.5 14 L10.5 14" stroke="rgba(255,220,50,0.9)" />
-                <path d="M6 12 L6 10.5 Q4 9 4 6.5 Q4 3 8 2 Q12 3 12 6.5 Q12 9 10 10.5 L10 12 Z" fill="rgba(255,220,50,0.3)" stroke="rgba(255,220,50,0.9)" />
-                <line x1="8" y1="0" x2="8" y2="1" stroke="rgba(255,220,50,0.6)" />
-                <line x1="2" y1="3" x2="3" y2="4" stroke="rgba(255,220,50,0.6)" />
-                <line x1="14" y1="3" x2="13" y2="4" stroke="rgba(255,220,50,0.6)" />
-                <line x1="1" y1="7" x2="2.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-                <line x1="15" y1="7" x2="13.5" y2="7" stroke="rgba(255,220,50,0.6)" />
-              </svg>
-            </button>
-
-            <!-- PTZ Control -->
-            <button v-if="showToolbarPtz" class="toolbar-btn" :class="{ 'ptz-active': ptzControlOpen }"
-              @click.stop="ptzControlOpen = !ptzControlOpen" :title="t('live.ptz')">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <circle cx="10" cy="10" r="3"/>
-                <polygon points="10,0  7.5,5  12.5,5"/>
-                <polygon points="10,20  12.5,15  7.5,15"/>
-                <polygon points="0,10  5,7.5  5,12.5"/>
-                <polygon points="20,10  15,12.5  15,7.5"/>
-              </svg>
-            </button>
-
-            <!-- Disconnect -->
-            <button v-if="!stopped" class="toolbar-btn disconnect-btn" @click="handleDisconnect" :title="t('live.disconnect')">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <line x1="3" y1="3" x2="13" y2="13" />
-                <line x1="13" y1="3" x2="3" y2="13" />
-              </svg>
-            </button>
-
-            <!-- Fullscreen -->
-            <button class="toolbar-btn" @click="toggleFullscreen" :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')">
-              <svg v-if="!fullscreen" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="11,1 17,1 17,7" />
-                <polyline points="7,17 1,17 1,11" />
-              </svg>
-              <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="17,7 11,7 11,1" />
-                <polyline points="1,11 7,11 7,17" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
+      <button v-else-if="loading" class="video-overlay" @click="handleDisconnect">
+        <span class="spinner"></span>
+        <span class="overlay-text">{{ t('live.connectingCancel', { protocol: activeProtocol.toUpperCase() }) }}</span>
+      </button>
     </div>
 
-    <!-- Status bar -->
-    <div class="status-bar">
-      <span class="sb-item">
-        <span class="sb-key">{{ t('live.pipeline') }}</span>
-        <span class="sb-val">{{ pipelineStateLabel }}<template v-if="pipelineDetailLabel"> ({{ pipelineDetailLabel }})</template></span>
+    <!-- ── Status line ── -->
+    <div class="status-line">
+      <span class="pipe">
+        <span class="pipe-dot" :class="{ on: isPlaying }"></span>{{ pipelineStateLabel }}
       </span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">{{ t('live.resolution') }}</span><span class="sb-val">{{ stats.resolution || '–' }}</span></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">FPS</span><span class="sb-val">{{ stats.fps || '–' }}</span></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">{{ t('live.bitrate') }}</span><span class="sb-val">{{ stats.bitrate || '–' }}</span></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">{{ t('live.codec') }}</span><span class="sb-val">{{ stats.codec || '–' }}</span></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">{{ t('live.latency') }}</span><span class="sb-val">{{ stats.rtt || '–' }}</span></span>
-      <span class="sb-sep">·</span>
-      <span class="sb-item"><span class="sb-key">{{ t('live.packetLoss') }}</span><span class="sb-val">{{ stats.packetLoss || '–' }}</span></span>
+      <template v-if="pipelineDetailLabel">
+        <span class="sep">·</span><span>{{ pipelineDetailLabel }}</span>
+      </template>
+      <span class="metrics">{{ stats.resolution || '–' }} · {{ stats.fps || 0 }} FPS</span>
     </div>
+
+    <!-- ── Toolbar ── -->
+    <div class="tool-row">
+      <button
+        class="tool-btn"
+        :class="{ on: inferOpen && isPlaying }"
+        :disabled="!isPlaying"
+        @click="inferOpen = !inferOpen"
+      >
+        <i :class="sseState.event_triggered && isPlaying ? 'ph-fill ph-lightbulb' : 'ph ph-lightbulb'"></i>
+        {{ t('live.inference') }}
+      </button>
+      <button class="tool-btn" @click="emit('open-prompt')">
+        <i class="ph ph-chat-text"></i>{{ t('dashboard.menu.promptShort') }}
+      </button>
+      <button
+        v-if="ptzEnabled"
+        class="tool-btn"
+        :class="{ on: ptzControlOpen }"
+        :disabled="!canUseToolbarPtz"
+        @click="ptzControlOpen = !ptzControlOpen"
+      >
+        <i class="ph ph-arrows-out-cardinal"></i>PTZ
+      </button>
+      <button class="tool-btn" :disabled="stopped" @click="handleDisconnect">
+        <i class="ph ph-plugs"></i>{{ t('live.disconnect') }}
+      </button>
+    </div>
+
+    <!-- ── Hardware ── -->
+    <StatCards />
+
+    <!-- ── PTZ pad ── -->
+    <div v-if="ptzControlOpen && canUseToolbarPtz" class="ptz-card">
+      <div class="ptz-pad">
+        <template v-for="(cell, i) in ptzPad" :key="i">
+          <span v-if="!cell" class="ptz-cell empty"></span>
+          <span v-else-if="cell.id === 'center'" class="ptz-cell center"><i :class="cell.icon"></i></span>
+          <button
+            v-else
+            class="ptz-cell"
+            :class="{ pressing: ptzPressing === cell.id }"
+            :title="t(`live.ptz.${cell.id}`)"
+            @mousedown="(e) => ptzDown(cell, e)"
+            @mouseup="ptzUp(cell)"
+            @mouseleave="ptzUp(cell)"
+            @touchstart.prevent="(e) => ptzDown(cell, e)"
+            @touchend="ptzUp(cell)"
+          >
+            <i :class="cell.icon"></i>
+          </button>
+        </template>
+      </div>
+      <div class="ptz-side">
+        <span class="ptz-label">PTZ</span>
+        <button
+          class="ptz-action primary"
+          :class="{ ok: saveState === 'ok', fail: saveState === 'fail' }"
+          :disabled="saveState === 'saving'"
+          @click="handleSaveHome"
+        >{{ t('live.ptz.saveHome') }}</button>
+        <button class="ptz-action" @click="handleToolbarGotoHome">{{ t('live.ptz.gotoHome') }}</button>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <style scoped>
-
-.video-box {
-  gap: 0;
-  background: var(--bg-surface);
-}
-
-.video-box-body {
+.live {
   flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: row;
-}
-
-/* ── Sidebar ── */
-.video-sidebar {
-  width: 210px;
-  flex-shrink: 0;
-  background: var(--bg-surface-secondary);
-  border-right: 1px solid var(--border);
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-gutter: stable;
-}
-.video-sidebar::-webkit-scrollbar { width: 4px; }
-.video-sidebar::-webkit-scrollbar-track { background: transparent; }
-.video-sidebar::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
-
-/* ── Sidebar separators ── */
-.video-sidebar :deep(.vsb-acc + .vsb-acc) {
-  border-top: 1px solid var(--border);
-}
-/* ── Status bar ── */
-.status-bar {
-  flex-shrink: 0;
-  height: 26px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  overflow: hidden;
-}
-.sb-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-}
-.sb-sep {
-  margin: 0 7px;
-  color: var(--border-accent);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-.sb-key {
-  font-size: 10px;
-  color: var(--text-4);
-  font-weight: 600;
-}
-.sb-val {
-  font-size: 10px;
-  color: var(--text-2);
-  font-weight: 700;
+  gap: 14px;
 }
 
-/* ── Video wrap ── */
-.video-wrap {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
+/* — video — */
+.video-card {
   position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #10121c 0%, #1a1d2e 55%, #0d0f18 100%);
 }
-.video-wrap video {
-  display: block;
+.video-card video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #000;
-  clip-path: inset(0 0 1px 0);
 }
-.video-wrap:fullscreen { background: #000; }
-.video-wrap:fullscreen video { clip-path: none; }
-
-.video-top-bar {
+.live-badge {
   position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
+  top: 12px;
+  left: 14px;
   display: flex;
   align-items: center;
   gap: 6px;
-}
-.session-remaining-badge {
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.65);
-  color: rgba(255,255,255,0.9);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  letter-spacing: 0.1em;
+  color: #e9e9ed;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 5px 9px;
+  border-radius: 5px;
+  backdrop-filter: blur(6px);
 }
-.proto-toggle {
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #e05b6a;
+}
+.fs-btn {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 34px; height: 34px;
   display: flex;
   align-items: center;
-  background: rgba(0,0,0,0.65);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 999px;
-  padding: 2px;
-  gap: 2px;
+  justify-content: center;
+  border-radius: 17px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-.proto-opt {
-  border: 0;
-  background: transparent;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.38);
+  color: #e9e9ed;
+  font-size: 15px;
   cursor: pointer;
-  transition: background 0.22s, color 0.22s;
-}
-.proto-opt:hover {
-  color: rgba(255,255,255,0.78);
-}
-.proto-opt.active {
-  background: rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.95);
-}
-.disconnect-btn:hover {
-  background: rgba(255,255,255,0.16);
-  color: #fff;
+  z-index: 5;
 }
 .video-overlay {
   position: absolute;
   inset: 0;
+  border: none;
+  background: rgba(10, 11, 18, 0.55);
+  color: #e9e9ed;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: rgba(0,0,0,0.6);
+  cursor: pointer;
+  font-family: inherit;
+  z-index: 4;
 }
-.video-overlay.clickable { cursor: pointer; }
-.video-overlay.clickable:hover .overlay-icon {
-  color: rgba(255,255,255,0.96);
-  transform: scale(1.08);
-}
-.overlay-icon {
+.play-ring {
+  width: 70px; height: 70px;
+  border-radius: 50%;
+  border: 1px solid var(--color-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.85);
-  transition: color 0.15s, transform 0.15s;
+  font-size: 30px;
+  color: var(--color-accent);
 }
-.inline-spinner {
-  display: inline-block;
-  width: 0.85em;
-  height: 0.85em;
-  vertical-align: -0.12em;
-  border: 1.5px solid rgba(255,255,255,0.25);
-  border-top-color: rgba(255,255,255,0.8);
+.spinner {
+  width: 38px; height: 38px;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  flex-shrink: 0;
+  border: 2px solid var(--color-neutral-800);
+  border-top-color: var(--color-accent);
+  animation: live-spin 900ms linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
-
+@keyframes live-spin { to { transform: rotate(360deg); } }
 .overlay-text {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
   font-size: 13px;
-  color: rgba(255,255,255,0.7);
-  font-weight: 500;
+  color: var(--color-neutral-400);
 }
 
-/* ── Video bar ── */
-.video-bar {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
+/* — status line — */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  font-size: 11.5px;
+  color: var(--color-neutral-500);
+  border-bottom: 1px solid var(--color-divider);
+}
+.pipe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text);
+}
+.pipe-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-neutral-600);
+}
+.pipe-dot.on { background: #5fbf8a; }
+.sep { color: var(--color-neutral-700); }
+.metrics {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* — toolbar — */
+.tool-row {
+  display: flex;
+  gap: 10px;
+}
+.tool-btn {
+  flex: 1;
+  height: 48px;
+  border-radius: 8px;
+  border: 1px solid var(--color-neutral-800);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.tool-btn i { font-size: 17px; }
+.tool-btn:hover:not(:disabled) { border-color: var(--color-accent); }
+.tool-btn.on {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.tool-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* — PTZ card — */
+.ptz-card {
+  border: 1px solid var(--color-neutral-800);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: var(--color-neutral-900);
+}
+.ptz-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 44px);
+  gap: 5px;
+}
+.ptz-cell {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--color-neutral-900);
+  border-radius: 7px;
+  color: var(--color-text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ptz-cell.empty,
+.ptz-cell.center {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+}
+.ptz-cell.center { color: var(--color-neutral-500); }
+.ptz-cell.pressing {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+.ptz-side {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 5px 6px;
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  z-index: 5;
+  gap: 8px;
+  max-width: 220px;
+  flex: 1;
 }
-.ptz-bar-row,
-.toolbar-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.ptz-label {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  letter-spacing: 0.06em;
 }
-.ptz-active {
-  background: rgba(255,255,255,0.16);
-  color: #fff;
-}
-.ptz-pressing {
-  background: rgba(100,160,255,0.35);
-  color: #fff;
-}
-
-.toolbar-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.ptz-action {
+  height: 38px;
+  border-radius: 7px;
+  border: 1px solid var(--color-neutral-800);
+  background: none;
+  color: var(--color-text);
+  font-size: 12px;
+  font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
 }
-.toolbar-btn:hover {
-  background: rgba(255,255,255,0.16);
-  color: #fff;
+.ptz-action.primary {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
-.toolbar-btn-disabled {
-  color: rgba(255,255,255,0.25);
-  cursor: default;
-  pointer-events: none;
-}
-.infer-triggered {
-  background: rgba(255,220,50,0.25);
-}
-.save-saving {
-  opacity: 0.5;
-  pointer-events: none;
-}
-.save-ok {
-  background: rgba(80,200,120,0.35);
-  color: rgb(120,230,150);
-}
-.save-fail {
-  background: rgba(220,80,80,0.35);
-  color: rgb(255,130,130);
-}
+.ptz-action.primary.ok { border-color: #5fbf8a; color: #5fbf8a; }
+.ptz-action.primary.fail { border-color: var(--danger); color: var(--danger); }
+.ptz-action:hover:not(:disabled) { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
 </style>
