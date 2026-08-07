@@ -4,6 +4,39 @@
    Dark / Light theme via data-theme attribute + CSS custom properties
    ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── Fonts — 폐쇄망 운용을 위해 public/fonts에 내장 ── */
+@font-face {
+  font-family: 'NanumSquare';
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/nanumsquare/NanumSquareL.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'NanumSquare';
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/nanumsquare/NanumSquareR.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'NanumSquare';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/nanumsquare/NanumSquareB.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'NanumSquare';
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/nanumsquare/NanumSquareEB.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/inter/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215;
+}
+
 /* ── Theme Tokens ── */
 :root {
   color-scheme: dark;
