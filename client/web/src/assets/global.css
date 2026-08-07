@@ -1,121 +1,85 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    Babycat — Global Stylesheet
-   Light / Dark theme via prefers-color-scheme + CSS custom properties
+   Nocturne design system (tmp/design/nocturne) — dark native, light derived
+   Dark / Light theme via data-theme attribute + CSS custom properties
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Theme Tokens ── */
 :root {
-  color-scheme: light;
-
-  /* Background */
-  --bg-page:              #f0f1f4;
-  --bg-surface:           #fff;
-  --bg-surface-secondary: #f6f7f9;
-  --bg-surface-hover:     #ecedf1;
-  --bg-surface-active:    #e2e3e8;
-
-  /* Elevation */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.10);
-
-  /* Border */
-  --border:        #d8dae0;
-  --border-accent: #cccfd6;
-  --border-input:  #b8bcc6;
-  --border-subtle: #e8e9ee;
-  --radius:        8px;
-  --radius-lg:     12px;
-
-  /* Text */
-  --text-1: #1a1c24;
-  --text-2: #4a4d58;
-  --text-3: #7c7f8c;
-  --text-4: #a0a3b0;
-
-  /* Accent */
-  --accent:        #3b82d6;
-  --accent-bg:     #e0edfb;
-  --accent-shadow:  rgba(59, 130, 214, 0.25);
-
-  /* Status */
-  --success:        #16864a;
-  --success-bg:     #e6f7ee;
-  --success-border: #9dd4b4;
-  --success-hover:  #ccecda;
-
-  --danger:         #d03838;
-  --danger-bg:      #fde8e8;
-  --danger-border:  #eba8a8;
-  --danger-bg-soft: #fef4f4;
-
-  --warning:    #a07a00;
-  --warning-bg: #fdf5dc;
-
-  /* Bars */
-  --bar-bg:  #dddee4;
-  --bar-cpu: #3b82d6;
-  --bar-ram: #d09540;
-  --bar-gpu: #2aa858;
-  --bar-disk: #7c6fd6;
-
-  /* Input */
-  --input-bg: #fff;
-
-  /* Scrollbar */
-  --scrollbar: #c0c3cc;
-  --scrollbar-hover: #a8aab4;
-
-  /* Clip player */
-  --clip-bg:       #0c0c10;
-  --clip-bar:      #161620;
-  --clip-text:     #b0b0bc;
-  --clip-text-hi:  #fff;
-  --clip-progress: #3a3a48;
-  --clip-meta:     #808090;
-
-  /* Misc */
-  --overlay:          rgba(0, 0, 0, 0.35);
-  --play-icon-bg:     rgba(255, 255, 255, 0.92);
-  --play-icon-arrow:  #1a1c24;
-
-  /* Typography */
-  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
-}
-
-/* ── Dark Theme ── */
-[data-theme="dark"] {
   color-scheme: dark;
 
-  /* Background */
-  --bg-page:              #111118;
-  --bg-surface:           #1a1a24;
-  --bg-surface-secondary: #16161e;
-  --bg-surface-hover:     #22222e;
-  --bg-surface-active:    #2a2a38;
+  /* ── Nocturne 원형 토큰 ── */
+  --color-bg:      #161826;
+  --color-surface: #232532;
+  --color-text:    #e9e9ed;
+  --color-accent:  #9184d9;
+  --color-accent-2: #a7a1db;
+  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
 
-  /* Elevation */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  /* Tonal ramps — OKLCH, 공유 명도 스케일 */
+  --color-neutral-100: #f3f5fe;
+  --color-neutral-200: #e4e7f5;
+  --color-neutral-300: #cfd3e5;
+  --color-neutral-400: #b2b6ca;
+  --color-neutral-500: #9397ab;
+  --color-neutral-600: #75798c;
+  --color-neutral-700: #595d6c;
+  --color-neutral-800: #3f424d;
+  --color-neutral-900: #292b31;
+
+  --color-accent-100: #f5f4ff;
+  --color-accent-200: #e7e5fe;
+  --color-accent-300: #d2cefd;
+  --color-accent-400: #b5abfc;
+  --color-accent-500: #968ae0;
+  --color-accent-600: #796cbf;
+  --color-accent-700: #5d5294;
+  --color-accent-800: #423a6a;
+  --color-accent-900: #2b2741;
+
+  /* Spacing (density 0.7×) */
+  --space-1: 2.8px;
+  --space-2: 5.6px;
+  --space-3: 8.4px;
+  --space-4: 11.2px;
+  --space-6: 16.8px;
+  --space-8: 22.4px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+
+  /* Elevation — 다크에서는 모서리 선 + 주변 어둠 */
+  --shadow-sm: 0 0 0 1px #3f424d;
+  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+
+  /* ── 기존 변수 → Nocturne 대응 ── */
+
+  /* Background */
+  --bg-page:              var(--color-bg);
+  --bg-surface:           var(--color-surface);
+  --bg-surface-secondary: #1c1e2b;
+  --bg-surface-hover:     #2a2c3a;
+  --bg-surface-active:    #323445;
 
   /* Border */
-  --border:        #2a2a36;
-  --border-accent: #32323e;
-  --border-input:  #3a3a48;
-  --border-subtle: #222230;
+  --border:        var(--color-divider);
+  --border-accent: color-mix(in srgb, var(--color-text) 12%, transparent);
+  --border-input:  color-mix(in srgb, var(--color-text) 28%, transparent);
+  --border-subtle: color-mix(in srgb, var(--color-text) 8%, transparent);
+  --radius:        var(--radius-md);
+  --radius-lg:     14px;
 
   /* Text */
-  --text-1: #e4e4ec;
-  --text-2: #a8a8b8;
-  --text-3: #6e6e80;
-  --text-4: #4a4a5c;
+  --text-1: var(--color-text);
+  --text-2: var(--color-neutral-400);
+  --text-3: var(--color-neutral-500);
+  --text-4: var(--color-neutral-600);
 
   /* Accent */
-  --accent:        #5b9ee6;
-  --accent-bg:     #1a2a40;
-  --accent-shadow: rgba(91, 158, 230, 0.2);
+  --accent:        var(--color-accent);
+  --accent-bg:     var(--color-accent-900);
+  --accent-shadow: color-mix(in srgb, var(--color-accent) 25%, transparent);
 
   /* Status */
   --success:        #34c06c;
@@ -132,30 +96,109 @@
   --warning-bg: #2a2210;
 
   /* Bars */
-  --bar-bg:  #2a2a36;
-  --bar-cpu: #5b9ee6;
+  --bar-bg:  var(--color-neutral-800);
+  --bar-cpu: var(--color-accent);
   --bar-ram: #d4a830;
   --bar-gpu: #34c06c;
-  --bar-disk: #9b8cff;
+  --bar-disk: var(--color-accent-2);
 
   /* Input */
-  --input-bg: #14141c;
+  --input-bg: #1b1d29;
 
   /* Scrollbar */
-  --scrollbar:       #3a3a48;
-  --scrollbar-hover: #4a4a5c;
+  --scrollbar:       var(--color-neutral-800);
+  --scrollbar-hover: var(--color-neutral-700);
 
   /* Clip player */
   --clip-bg:       #0c0c10;
   --clip-bar:      #14141c;
   --clip-text:     #808090;
-  --clip-text-hi:  #e4e4ec;
+  --clip-text-hi:  #e9e9ed;
   --clip-progress: #2a2a36;
   --clip-meta:     #5a5a6c;
 
   /* Misc */
   --overlay:         rgba(0, 0, 0, 0.55);
   --play-icon-bg:    rgba(255, 255, 255, 0.88);
+  --play-icon-arrow: #1a1c24;
+
+  /* Typography */
+  --font-heading: 'NanumSquare', 'Inter', system-ui, sans-serif;
+  --font-heading-weight: 500;
+  --font-body: 'NanumSquare', 'Inter', system-ui, sans-serif;
+  --font-ui:   var(--font-body);
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+}
+
+/* ── Light Theme — Web 시안의 [data-t="light"] 파생값 ── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Nocturne 기본 토큰의 라이트 재정의 */
+  --color-bg:      #eceef8;
+  --color-surface: #ffffff;
+  --color-text:    #292b31;
+  --color-accent:  #5d5294;
+  --color-divider: rgba(41, 43, 49, 0.14);
+
+  /* 램프 재대응 — 다크 기준으로 쓰인 짙은 단계가 라이트에서 옅은 값을 갖도록 */
+  --color-neutral-900: #e4e7f5;
+  --color-neutral-800: #cfd3e5;
+  --color-neutral-700: #b2b6ca;
+  --color-neutral-600: #9397ab;
+  --color-neutral-500: #75798c;
+  --color-neutral-400: #595d6c;
+  --color-neutral-300: #3f424d;
+  --color-accent-900: #e7e5fe;
+  --color-accent-800: #d2cefd;
+  --color-accent-400: #796cbf;
+  --color-accent-300: #5d5294;
+
+  /* Elevation — 라이트에서는 부드러운 그림자 */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.10);
+
+  /* Background */
+  --bg-surface-secondary: #f3f5fe;
+  --bg-surface-hover:     #e4e7f5;
+  --bg-surface-active:    #cfd3e5;
+
+  /* Border */
+  --border-input: rgba(41, 43, 49, 0.28);
+
+  /* Status */
+  --success:        #16864a;
+  --success-bg:     #e6f7ee;
+  --success-border: #9dd4b4;
+  --success-hover:  #ccecda;
+
+  --danger:         #d03838;
+  --danger-bg:      #fde8e8;
+  --danger-border:  #eba8a8;
+  --danger-bg-soft: #fef4f4;
+
+  --warning:    #a07a00;
+  --warning-bg: #fdf5dc;
+
+  /* Bars */
+  --bar-ram: #d09540;
+  --bar-gpu: #2aa858;
+
+  /* Input */
+  --input-bg: #fff;
+
+  /* Clip player */
+  --clip-bg:       #0c0c10;
+  --clip-bar:      #161620;
+  --clip-text:     #b0b0bc;
+  --clip-text-hi:  #fff;
+  --clip-progress: #3a3a48;
+  --clip-meta:     #808090;
+
+  /* Misc */
+  --overlay:         rgba(0, 0, 0, 0.35);
+  --play-icon-bg:    rgba(255, 255, 255, 0.92);
   --play-icon-arrow: #1a1c24;
 }
 

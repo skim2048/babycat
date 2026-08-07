@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 
 const THEME_KEY = 'theme'
-const DEFAULT_THEME = 'light'
+const DEFAULT_THEME = 'dark'
 const SUPPORTED_THEMES = new Set(['light', 'dark'])
 
 function hasWindow() {
@@ -19,8 +19,8 @@ function readStoredTheme() {
     return storedTheme
   }
 
-  if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark'
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light'
   }
 
   return DEFAULT_THEME
