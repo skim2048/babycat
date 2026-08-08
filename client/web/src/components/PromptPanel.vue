@@ -1,11 +1,11 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
 import { authFetch } from '../composables/useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 import { useLocale } from '../composables/useLocale.js'
 
-const emit = defineEmits(['close'])
+defineEmits(['close'])
 
 const { state } = useSSE()
 const { t } = useLocale()
@@ -13,6 +13,7 @@ const { t } = useLocale()
 const prompt = ref('')
 const triggers = ref('')
 const status = ref('')
+const statusWarn = ref(false)
 let loaded = false
 
 watch(
@@ -27,6 +28,12 @@ watch(
   { immediate: true },
 )
 
+function setStatus(text, { warn = false, transient = false } = {}) {
+  status.value = text
+  statusWarn.value = warn
+  if (transient) setTimeout(() => { status.value = '' }, 3000)
+}
+
 async function apply() {
   if (!prompt.value.trim()) return
   status.value = ''
@@ -38,222 +45,87 @@ async function apply() {
     })
     const data = await res.json()
     if (data.ok) {
-      status.value = t('prompt.status.applied')
-      setTimeout(() => { status.value = '' }, 2000)
+      setStatus(t('prompt.status.applied'), { transient: true })
     } else {
-      status.value = t('prompt.status.error', { message: data.error || t('prompt.status.unknown') })
+      setStatus(t('prompt.status.error', { message: data.error || t('prompt.status.unknown') }), { warn: true })
     }
   } catch {
-    status.value = t('prompt.status.failed')
+    setStatus(t('prompt.status.failed'), { warn: true })
   }
 }
 
 // @claude FR-024/FR-025: saving settings never starts analysis; this explicit
 // @claude action fans out to the analyzer and the recorder. FR-050: the router
 // @claude rejects a start while live streaming is inactive.
-const starting = ref(false)
-const stopping = ref(false)
+const busy = ref(false)
+
+// @claude idle means the pipeline waits for an explicit start (FR-024), so a
+// @claude streaming pipeline that is not idle is an analysis in progress.
+const analysisActive = computed(() => state.streaming_active && state.pipeline_state !== 'idle')
 
 async function startAnalysis() {
-  if (starting.value) return
-  starting.value = true
   status.value = ''
   try {
     const res = await authFetch(APP_ENDPOINTS.analysisStart, { method: 'POST' })
     const data = await res.json()
     if (res.ok && data.ok) {
-      status.value = t('prompt.status.started')
-      setTimeout(() => { status.value = '' }, 2000)
+      setStatus(t('prompt.status.started'), { transient: true })
     } else if (res.status === 409) {
-      status.value = t('prompt.status.needStreaming')
+      setStatus(t('prompt.status.needStreaming'), { warn: true })
     } else {
-      status.value = t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') })
+      setStatus(t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') }), { warn: true })
     }
   } catch {
-    status.value = t('prompt.status.startFailed')
-  } finally {
-    starting.value = false
+    setStatus(t('prompt.status.startFailed'), { warn: true })
   }
 }
 
 // @claude FR-051: stop analysis and buffering while streaming stays up.
 async function stopAnalysis() {
-  if (stopping.value) return
-  stopping.value = true
   status.value = ''
   try {
     const res = await authFetch(APP_ENDPOINTS.analysisStop, { method: 'POST' })
     const data = await res.json()
     if (res.ok && data.ok) {
-      status.value = t('prompt.status.stopped')
-      setTimeout(() => { status.value = '' }, 2000)
+      setStatus(t('prompt.status.stopped'), { transient: true })
     } else {
-      status.value = t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') })
+      setStatus(t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') }), { warn: true })
     }
   } catch {
-    status.value = t('prompt.status.stopFailed')
+    setStatus(t('prompt.status.stopFailed'), { warn: true })
+  }
+}
+
+async function toggleAnalysis() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    if (analysisActive.value) await stopAnalysis()
+    else await startAnalysis()
   } finally {
-    stopping.value = false
+    busy.value = false
   }
 }
 </script>
 
 <template>
-  <div class="prompt-form">
-    <label class="prompt-label">{{ t('prompt.label.query') }}</label>
-    <p class="prompt-hint">{{ t('prompt.hint.query') }}</p>
-    <textarea
-      class="prompt-input"
-      v-model="prompt"
-      :placeholder="t('prompt.placeholder.query')"
-      rows="3"
-    />
-
-    <label class="prompt-label">{{ t('prompt.label.triggers') }}</label>
-    <p class="prompt-hint">{{ t('prompt.hint.triggers') }}</p>
-    <div class="triggers-field">
-      <input
-        class="prompt-input"
-        v-model="triggers"
-        :placeholder="t('prompt.placeholder.triggers')"
-      />
-      <button
-        type="button"
-        class="triggers-clear"
-        :disabled="!triggers"
-        @click="triggers = ''"
-        :aria-label="t('prompt.action.clear')"
-        :title="t('prompt.action.clear')"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="2,4 14,4" />
-          <path d="M5 4 V2.5 Q5 2 5.5 2 H10.5 Q11 2 11 2.5 V4" />
-          <path d="M3.5 4 L4.5 14 Q4.5 14.5 5 14.5 H11 Q11.5 14.5 11.5 14 L12.5 4" />
-          <line x1="6.5" y1="7" x2="6.5" y2="12" />
-          <line x1="9.5" y1="7" x2="9.5" y2="12" />
-        </svg>
-      </button>
+  <div class="form-col">
+    <div v-if="status" class="form-note" :class="{ warn: statusWarn }">
+      <i class="ph ph-info"></i><span>{{ status }}</span>
     </div>
 
-    <div class="prompt-actions">
-      <span class="prompt-status">{{ status }}</span>
-      <button class="btn-cancel" @click="emit('close')">{{ t('prompt.action.close') }}</button>
-      <button class="btn-apply" @click="apply">{{ t('prompt.action.apply') }}</button>
-      <button class="btn-cancel" :disabled="stopping" @click="stopAnalysis">{{ t('prompt.action.stop') }}</button>
-      <button class="btn-apply" :disabled="starting || !state.streaming_active" @click="startAnalysis">{{ t('prompt.action.start') }}</button>
+    <label class="form-field">{{ t('prompt.label.query') }}
+      <textarea v-model="prompt" :placeholder="t('prompt.placeholder.query')" rows="4" />
+    </label>
+    <label class="form-field">{{ t('prompt.label.triggers') }}
+      <input v-model="triggers" :placeholder="t('prompt.placeholder.triggers')" />
+    </label>
+
+    <div class="form-actions">
+      <button class="form-btn primary" @click="apply">{{ t('prompt.action.apply') }}</button>
+      <button class="form-btn" :disabled="busy" @click="toggleAnalysis">
+        {{ analysisActive ? t('prompt.action.stop') : t('prompt.action.start') }}
+      </button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.prompt-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.prompt-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
-}
-.prompt-input {
-  width: 100%;
-  font-family: var(--font-ui);
-  font-size: 13px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius);
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text-1);
-  transition: border-color 0.15s, box-shadow 0.15s;
-  resize: vertical;
-}
-.prompt-input::placeholder {
-  color: var(--text-4);
-}
-.prompt-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-.prompt-hint {
-  margin: -4px 0 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-4);
-  font-weight: 400;
-}
-
-.triggers-field {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.triggers-field .prompt-input {
-  flex: 1;
-}
-.triggers-clear {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius);
-  background: var(--bg-surface);
-  color: var(--text-3);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.triggers-clear:hover:not(:disabled) {
-  background: var(--danger-bg);
-  border-color: var(--danger-border);
-  color: var(--danger);
-}
-.triggers-clear:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.prompt-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-.prompt-status {
-  flex: 1;
-  font-size: 12px;
-  color: var(--success);
-  font-weight: 500;
-}
-.btn-cancel {
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius);
-  background: var(--bg-surface);
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.btn-cancel:hover {
-  background: var(--bg-surface-hover);
-}
-.btn-apply {
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid var(--success-border);
-  border-radius: var(--radius);
-  background: var(--success-bg);
-  color: var(--success);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.btn-apply:hover {
-  background: var(--success-hover);
-}
-</style>

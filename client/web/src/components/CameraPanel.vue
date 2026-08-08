@@ -63,10 +63,6 @@ async function handleSave() {
   await save()
 }
 
-function handleCancel() {
-  emit('close')
-}
-
 // @claude FR-048/FR-049: registration never connects the source; these
 // @claude explicit actions start and stop live streaming.
 const streamingBusy = ref(false)
@@ -89,235 +85,88 @@ async function requestStreaming(url) {
   }
 }
 
-function startStreaming() {
-  return requestStreaming(APP_ENDPOINTS.streamingStart)
-}
-
-function stopStreaming() {
-  return requestStreaming(APP_ENDPOINTS.streamingStop)
+function toggleStreaming() {
+  return requestStreaming(state.streaming_active ? APP_ENDPOINTS.streamingStop : APP_ENDPOINTS.streamingStart)
 }
 </script>
 
 <template>
-  <div class="cam-panel">
-    <div class="cam-form">
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.username') }}</span>
-        <input class="cam-input" v-model="local.username" placeholder="admin" />
+  <div class="form-col">
+    <div v-if="status" class="form-note"><i class="ph ph-info"></i><span>{{ status }}</span></div>
+    <div v-if="state.profile_pending" class="form-note warn"><i class="ph ph-info"></i><span>{{ t('camera.streaming.pending') }}</span></div>
+    <div v-if="streamStatus" class="form-note warn"><i class="ph ph-info"></i><span>{{ streamStatus }}</span></div>
+
+    <div class="form-row">
+      <label class="form-field">{{ t('camera.field.username') }}
+        <input v-model="local.username" placeholder="admin" />
       </label>
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.password') }}</span>
-        <div class="pw-field">
-          <input class="cam-input pw-input" :class="{ 'pw-loaded': passwordLoaded }"
-                 v-model="local.password"
-                 :type="showPassword ? 'text' : 'password'"
-                 :placeholder="passwordLoaded ? t('camera.field.passwordPlaceholder') : ''"
-                 @focus="onPasswordFocus" />
-          <button type="button" class="pw-toggle"
-                  :class="{ disabled: passwordLoaded }"
-                  @click="togglePasswordVisibility"
-                  tabindex="-1">
-            <svg v-if="showPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-              <line x1="1" y1="1" x2="23" y2="23"/>
-            </svg>
+      <label class="form-field">{{ t('camera.field.password') }}
+        <span class="pw-wrap">
+          <input
+            v-model="local.password"
+            :class="{ 'pw-loaded': passwordLoaded }"
+            :type="showPassword ? 'text' : 'password'"
+            :placeholder="passwordLoaded ? t('camera.field.passwordPlaceholder') : ''"
+            @focus="onPasswordFocus"
+          />
+          <button type="button" class="pw-toggle" :class="{ disabled: passwordLoaded }" tabindex="-1" @click="togglePasswordVisibility">
+            <i :class="showPassword ? 'ph ph-eye-slash' : 'ph ph-eye'"></i>
           </button>
-        </div>
-      </label>
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.host') }}</span>
-        <input class="cam-input" v-model="local.ip" placeholder="192.168.1.101" />
-      </label>
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.rtspPort') }}</span>
-        <input class="cam-input" v-model.number="local.rtsp_port" type="number" />
-      </label>
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.onvifPort') }}</span>
-        <input class="cam-input" v-model.number="local.onvif_port" type="number"
-               placeholder="2020" />
-      </label>
-      <label class="cam-label">
-        <span class="cam-label-text">{{ t('camera.field.streamPath') }}</span>
-        <input class="cam-input" v-model="local.stream_path" placeholder="stream1" />
+        </span>
       </label>
     </div>
-    <div class="cam-actions">
-      <button class="cam-btn save" @click="handleSave">{{ t('camera.action.save') }}</button>
-      <button class="cam-btn cancel" @click="handleCancel">{{ t('camera.action.cancel') }}</button>
+    <label class="form-field">{{ t('camera.field.host') }}
+      <input v-model="local.ip" placeholder="192.168.1.101" />
+    </label>
+    <div class="form-row">
+      <label class="form-field">{{ t('camera.field.rtspPort') }}
+        <input v-model.number="local.rtsp_port" type="number" />
+      </label>
+      <label class="form-field">{{ t('camera.field.onvifPort') }}
+        <input v-model.number="local.onvif_port" type="number" placeholder="2020" />
+      </label>
     </div>
-    <div class="cam-status" v-if="status">{{ status }}</div>
+    <label class="form-field">{{ t('camera.field.streamPath') }}
+      <input v-model="local.stream_path" placeholder="stream1" />
+    </label>
 
-    <hr class="cam-divider" />
-
-    <div class="cam-stream-row">
-      <span class="cam-stream-state" :class="{ active: state.streaming_active }">
-        {{ state.streaming_active ? t('camera.streaming.active') : t('camera.streaming.inactive') }}
-      </span>
-      <button class="cam-btn save" :disabled="streamingBusy" @click="startStreaming">
-        {{ t('camera.streaming.start') }}
-      </button>
-      <button class="cam-btn cancel" :disabled="streamingBusy || !state.streaming_active" @click="stopStreaming">
-        {{ t('camera.streaming.stop') }}
+    <div class="form-actions">
+      <button class="form-btn primary" @click="handleSave">{{ t('camera.action.save') }}</button>
+      <button class="form-btn" :disabled="streamingBusy" @click="toggleStreaming">
+        {{ state.streaming_active ? t('camera.streaming.stop') : t('camera.streaming.start') }}
       </button>
     </div>
-    <div class="cam-pending" v-if="state.profile_pending">{{ t('camera.streaming.pending') }}</div>
-    <div class="cam-status" v-if="streamStatus">{{ streamStatus }}</div>
   </div>
 </template>
 
 <style scoped>
-.cam-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.cam-label {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.cam-label-text {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.cam-input {
-  width: 100%;
-  min-width: 0;
-  font-family: var(--font-ui);
-  font-size: 13px;
-  padding: 7px 10px;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius);
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text-1);
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.cam-input::placeholder {
-  color: var(--text-4);
-}
-.cam-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-.cam-input[type="number"]::-webkit-inner-spin-button,
-.cam-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-.cam-input[type="number"] {
-  -moz-appearance: textfield;
-}
-.pw-loaded {
-  color: var(--text-4);
-}
-.pw-field {
+.pw-wrap {
   position: relative;
   display: flex;
   align-items: center;
 }
-.pw-input {
-  padding-right: 34px;
-}
+.pw-wrap input { padding-right: 40px; }
 .pw-toggle {
   position: absolute;
   right: 6px;
-  background: none;
+  width: 30px; height: 30px;
   border: none;
-  padding: 4px;
+  background: none;
+  color: var(--color-neutral-500);
+  font-size: 16px;
   cursor: pointer;
-  color: var(--text-3);
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  transition: color 0.15s;
 }
-.pw-toggle:hover:not(.disabled) {
-  color: var(--text-1);
+.pw-toggle:hover { background: var(--color-neutral-900); color: var(--color-text); }
+.pw-toggle.disabled { opacity: 0.4; cursor: default; }
+input.pw-loaded { color: var(--color-neutral-500); }
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
-.pw-toggle.disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-.cam-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-.cam-btn {
-  flex: 1;
-  padding: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
-}
-.cam-btn:active {
-  transform: translateY(1px);
-}
-.cam-btn.save {
-  border: 1px solid var(--accent);
-  background: var(--accent-bg);
-  color: var(--accent);
-}
-.cam-btn.save:hover {
-  box-shadow: 0 0 0 3px var(--accent-shadow);
-}
-.cam-btn.cancel {
-  border: 1px solid var(--border-input);
-  background: var(--bg-surface);
-  color: var(--text-2);
-}
-.cam-btn.cancel:hover {
-  background: var(--bg-surface-hover);
-}
-.cam-status {
-  font-size: 11px;
-  color: var(--text-4);
-  text-align: center;
-  margin-top: 6px;
-  font-weight: 500;
-}
-.cam-divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 10px 0 0;
-}
-.cam-stream-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-.cam-stream-state {
-  flex: 1;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-3);
-  white-space: nowrap;
-}
-.cam-stream-state.active {
-  color: var(--accent);
-}
-.cam-stream-row .cam-btn {
-  flex: 0 1 auto;
-  padding: 8px 10px;
-}
-.cam-pending {
-  font-size: 11px;
-  color: var(--accent);
-  margin-top: 6px;
-  text-align: center;
-}
+input[type='number'] { -moz-appearance: textfield; }
 </style>

@@ -626,4 +626,15 @@ onMounted(loadCamera)
 .modal-leave-active { transition: opacity 0.2s; }
 .modal-enter-from,
 .modal-leave-to { opacity: 0; }
+
+/* — narrow widths: the log panel drops below the video — */
+@media (max-width: 1100px) {
+  .video-tab { flex-direction: column; }
+  .log-panel { width: auto; max-height: 320px; }
+}
+@media (max-width: 720px) {
+  .rail { position: absolute; z-index: 100; height: 100%; background: var(--color-bg); }
+  .rail.collapsed { width: 0; padding: 14px 0; border-right: none; }
+  .app-body { position: relative; }
+}
 </style>

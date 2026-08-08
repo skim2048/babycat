@@ -15,36 +15,32 @@ const { t } = useLocale()
 <template>
   <Teleport to="body">
     <Transition name="session-modal">
-      <div v-if="show" class="session-modal-backdrop" role="presentation">
+      <div v-if="show" class="session-backdrop" role="presentation">
         <div
-          class="session-modal"
+          class="session-frame"
           role="dialog"
           aria-modal="true"
           aria-labelledby="session-expiry-title"
-          aria-describedby="session-expiry-description"
         >
-          <p class="session-modal-label">{{ t('session.label') }}</p>
-          <h2 id="session-expiry-title" class="session-modal-title">{{ t('session.title') }}</h2>
-          <p id="session-expiry-description" class="session-modal-copy">
-            {{ t('session.copy', { seconds: remainingSeconds }) }}
-          </p>
-          <div class="session-modal-actions">
-            <button
-              v-if="canExtend"
-              type="button"
-              class="session-modal-btn session-modal-btn-primary"
-              :disabled="extending"
-              @click="$emit('extend')"
-            >
-              {{ extending ? t('session.extending') : t('session.extend') }}
-            </button>
-            <button
-              type="button"
-              class="session-modal-btn"
-              @click="$emit('logout')"
-            >
-              {{ t('session.logout') }}
-            </button>
+          <div class="session-head">
+            <span id="session-expiry-title" class="session-title">{{ t('session.title') }}</span>
+          </div>
+          <div class="session-body form-col">
+            <div class="session-copy">{{ t('session.copy', { seconds: remainingSeconds }) }}</div>
+            <div class="form-actions">
+              <button
+                v-if="canExtend"
+                type="button"
+                class="form-btn primary"
+                :disabled="extending"
+                @click="$emit('extend')"
+              >
+                {{ extending ? t('session.extending') : t('session.extend') }}
+              </button>
+              <button type="button" class="form-btn" @click="$emit('logout')">
+                {{ t('session.logout') }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -53,105 +49,48 @@ const { t } = useLocale()
 </template>
 
 <style scoped>
-.session-modal-backdrop {
+.session-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 300;
+  background: rgba(8, 9, 14, 0.62);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  background: var(--overlay);
-  z-index: 1000;
+  padding: 40px;
 }
-
-.session-modal {
-  width: min(100%, 26rem);
-  padding: 1.5rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-lg);
-}
-
-.session-modal-label {
-  margin-bottom: 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
-  text-transform: uppercase;
-}
-
-.session-modal-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-1);
-}
-
-.session-modal-copy {
-  margin-top: 0.65rem;
-  font-size: 0.92rem;
-  color: var(--text-2);
-}
-
-.session-modal-actions {
+.session-frame {
+  width: 420px;
+  max-width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-neutral-800);
+  border-radius: 12px;
   display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.2rem;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
-
-.session-modal-btn {
-  min-width: 6.25rem;
-  padding: 0.7rem 1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-surface-secondary);
-  color: var(--text-1);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
+.session-head {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--color-divider);
 }
-
-.session-modal-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+.session-title {
+  font-size: 15.5px;
+  font-weight: var(--font-heading-weight);
 }
-
-.session-modal-btn-primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+.session-body {
+  padding: 18px 20px 24px;
+}
+.session-copy {
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .session-modal-enter-active,
-.session-modal-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.session-modal-enter-active .session-modal,
-.session-modal-leave-active .session-modal {
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-
+.session-modal-leave-active { transition: opacity 0.2s; }
 .session-modal-enter-from,
-.session-modal-leave-to {
-  opacity: 0;
-}
-
-.session-modal-enter-from .session-modal,
-.session-modal-leave-to .session-modal {
-  opacity: 0;
-  transform: translateY(8px);
-}
-
-@media (max-width: 640px) {
-  .session-modal-actions {
-    flex-direction: column;
-  }
-
-  .session-modal-btn {
-    width: 100%;
-  }
-}
+.session-modal-leave-to { opacity: 0; }
 </style>
