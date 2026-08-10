@@ -281,7 +281,7 @@ function thumbUrl(clip) {
         <span class="clip-date">{{ clipDate(clip) }}</span>
         <span class="clip-caption">{{ clipCaption(clip) }}</span>
         <span v-if="selectMode" class="clip-pick" :class="{ on: selected.has(clip.name) }">
-          <i v-if="selected.has(clip.name)" class="ph-fill ph-check"></i>
+          <svg v-if="selected.has(clip.name)" class="check-glyph" viewBox="0 0 12 12" aria-hidden="true"><polyline points="2.5,6.5 5,9 9.5,3.5" /></svg>
         </span>
       </button>
     </div>
@@ -312,6 +312,16 @@ function thumbUrl(clip) {
 </template>
 
 <style scoped>
+.check-glyph {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .clips {
   flex: 1;
   min-height: 0;

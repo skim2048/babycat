@@ -271,16 +271,21 @@ onBeforeUnmount(() => {
         <span v-if="showSessionRemaining" class="session-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <div class="proto-pill" role="group">
-          <button
+        <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <button
+          class="proto-pill"
+          role="switch"
+          :aria-checked="preferredProtocol === 'webrtc'"
+          :aria-label="t('live.protocolToggle')"
+          @click="setProtocol(preferredProtocol === 'hls' ? 'webrtc' : 'hls')"
+        >
+          <span
             v-for="p in protocolOptions"
             :key="p.key"
             class="proto-opt"
             :class="{ active: preferredProtocol === p.key }"
-            :aria-pressed="preferredProtocol === p.key"
-            @click="setProtocol(p.key)"
-          >{{ p.label }}</button>
-        </div>
+          >{{ p.label }}</span>
+        </button>
       </div>
     </header>
 
@@ -458,7 +463,7 @@ onBeforeUnmount(() => {
                       @click="toggleLogEntry(entry.id)"
                     >
                       <span v-if="logSelectMode" class="log-check" :class="{ on: logSelected.has(entry.id) }">
-                        <i v-if="logSelected.has(entry.id)" class="ph-fill ph-check"></i>
+                        <svg v-if="logSelected.has(entry.id)" class="check-glyph" viewBox="0 0 12 12" aria-hidden="true"><polyline points="2.5,6.5 5,9 9.5,3.5" /></svg>
                       </span>
                       <span class="log-time">{{ entry.time }}</span>
                       <span class="log-text">{{ entry.text }}</span>
@@ -504,6 +509,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.check-glyph {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .app-frame {
   height: 100vh;
   display: flex;
@@ -565,16 +580,16 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-neutral-800);
   border-radius: 20px;
   padding: 2px;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 .proto-opt {
-  border: none;
   border-radius: 18px;
   padding: 5px 11px;
   font-size: 12.5px;
   background: transparent;
   color: var(--color-neutral-400);
-  cursor: pointer;
-  font-family: inherit;
 }
 .proto-opt.active {
   background: var(--color-accent);

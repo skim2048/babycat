@@ -524,16 +524,21 @@ onBeforeUnmount(() => {
         <span v-if="showSessionRemaining" class="fs-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <div class="fs-pill" role="group">
-          <button
+        <!-- 시안: 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <button
+          class="fs-pill"
+          role="switch"
+          :aria-checked="preferredProtocol === 'webrtc'"
+          :aria-label="t('live.protocolToggle')"
+          @click="setProtocol(preferredProtocol === 'hls' ? 'webrtc' : 'hls')"
+        >
+          <span
             v-for="p in protocolOptions"
             :key="p.key"
             class="fs-pill-opt"
             :class="{ active: preferredProtocol === p.key }"
-            :aria-pressed="preferredProtocol === p.key"
-            @click="setProtocol(p.key)"
-          >{{ p.label }}</button>
-        </div>
+          >{{ p.label }}</span>
+        </button>
         <button
           v-if="isPlaying"
           class="fs-round"
@@ -1060,17 +1065,16 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 20px;
   padding: 2px;
+  cursor: pointer;
+  font-family: inherit;
 }
 .fs-pill-opt {
-  border: none;
   border-radius: 18px;
   padding: 5px 12px;
   font-size: 13px;
   font-weight: 700;
   background: transparent;
   color: rgba(233, 233, 237, 0.92);
-  cursor: pointer;
-  font-family: inherit;
 }
 .fs-pill-opt.active {
   background: var(--color-accent);

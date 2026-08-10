@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Babycat</string>
+    <string name="title_activity_main">Babycat</string>
+    <string name="package_name">app.babycat.client</string>
+    <string name="custom_url_scheme">app.babycat.client</string>
+</resources>

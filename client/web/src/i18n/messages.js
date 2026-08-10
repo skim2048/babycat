@@ -222,6 +222,7 @@ export const messages = {
     en: 'No saved position in this slot.',
     ko: '저장된 위치가 없습니다.',
   },
+  'live.protocolToggle': { en: 'Switch streaming protocol', ko: '스트리밍 프로토콜 전환' },
   'live.connectIdle': { en: 'Click to connect', ko: '클릭하여 연결' },
   'live.connectingCancel': {
     en: '{protocol} connecting · click to cancel',

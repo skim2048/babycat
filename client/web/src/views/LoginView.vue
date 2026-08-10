@@ -72,7 +72,7 @@ async function handleLogin() {
           <input v-model="babycatHost" type="text" autocomplete="off" spellcheck="false" @change="normalizeHostField" />
         </label>
         <button type="button" class="login-remember" @click="rememberMe = !rememberMe">
-          <span class="login-check" :class="{ on: rememberMe }"><i v-if="rememberMe" class="ph-fill ph-check"></i></span>
+          <span class="login-check" :class="{ on: rememberMe }"><svg v-if="rememberMe" class="check-glyph" viewBox="0 0 12 12" aria-hidden="true"><polyline points="2.5,6.5 5,9 9.5,3.5" /></svg></span>
           {{ t('login.rememberMe') }}
         </button>
       </div>
@@ -85,6 +85,16 @@ async function handleLogin() {
 </template>
 
 <style scoped>
+.check-glyph {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .login-page {
   min-height: 100vh;
   display: flex;
