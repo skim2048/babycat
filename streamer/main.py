@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
         stream=sys.stdout,
     )
-    ptz.load_home(camera.load_applied().get("ptz_home"))
+    ptz.load_presets(camera.load_applied().get("ptz_presets"))
 
     threading.Thread(target=_mediamtx_supervisor, daemon=True).start()
     # @claude Apply the saved profile with retries until MediaMTX is up (FR-015);
@@ -144,16 +144,24 @@ async def control_ptz(request: Request):
         ptz.set_moving(False)
         threading.Thread(target=ptz.stop, daemon=True).start()
     elif action == "save":
-        home = ptz.save_home()
-        if home:
-            camera.save_home(home)
-        ok = home is not None
+        try:
+            slot = int(body.get("slot"))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="invalid preset slot")
+        presets = ptz.save_preset(slot)
+        if presets is not None:
+            camera.save_presets(presets)
+        ok = presets is not None
     elif action == "goto":
-        saved = ptz.get_saved()
-        if saved["pan"] is not None:
+        try:
+            slot = int(body.get("slot"))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="invalid preset slot")
+        preset = ptz.get_preset(slot)
+        if preset is not None:
             threading.Thread(
                 target=ptz.absolute_move,
-                args=(saved["pan"], saved["tilt"]),
+                args=(preset["pan"], preset["tilt"]),
                 daemon=True,
             ).start()
         else:
@@ -166,14 +174,13 @@ async def control_ptz(request: Request):
 def status():
     """PTZ position snapshot for the router's monitoring merge (SDD §6.4 (4))."""
     current = ptz.get_current()
-    saved = ptz.get_saved()
     with _mtx_lock:
         alive = _mtx_proc is not None and _mtx_proc.poll() is None
     return {
         "ptz_pan": current["pan"],
         "ptz_tilt": current["tilt"],
-        "ptz_saved_pan": saved["pan"],
-        "ptz_saved_tilt": saved["tilt"],
+        # @claude JSON keys are strings; the web client only needs which slots hold a position.
+        "ptz_presets": sorted(ptz.get_presets()),
         **camera.status_view(),
         "mediamtx_alive": alive,
     }

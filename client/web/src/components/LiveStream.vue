@@ -5,13 +5,11 @@ import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { useSSE } from '../composables/useSSE.js'
 import { useStreamProtocol } from '../composables/useStreamProtocol.js'
-import InferenceOverlay from './InferenceOverlay.vue'
-import StatCards from './StatCards.vue'
+import { useInferLog } from '../composables/useInferLog.js'
+import { useVlmStatus } from '../composables/useVlmStatus.js'
 import { useStreamStats } from '../composables/useStreamStats.js'
 import { getHlsUrl, getWhepUrl } from '../endpoints.js'
 import { usePtz } from '../composables/usePtz.js'
-
-const emit = defineEmits(['open-prompt'])
 
 const {
   state: sseState,
@@ -20,8 +18,10 @@ const {
 } = useSSE()
 const { t } = useLocale()
 
-const { accessToken } = useAuth()
+const { accessToken, isAuthenticated, isPersistentSession, sessionRemainingSeconds } = useAuth()
 const { configured, connecting, connected, ptzEnabled, setConnected, setDisconnected, disconnect } = useCamera()
+const { entries: inferLog } = useInferLog()
+const { vlmDot, vlmLabel } = useVlmStatus()
 
 // @claude Profile save no longer touches playback: registration does not
 // @claude change the stream (FR-048), so the old save-triggered reconnect
@@ -46,41 +46,60 @@ const videoWrapRef = ref(null)
 const loading = ref(false)
 const stopped = ref(true)
 const fullscreen = ref(false)
-const inferOpen = ref(false)
-const ptzControlOpen = ref(false)
 
-// ── Toolbar PTZ ──
-const { startMove, stopMove, saveHome, gotoHome } = usePtz()
-const ptzPressing = ref(null)
-const saveState = ref(null) // null | 'saving' | 'ok' | 'fail'
-let saveResetTimer = null
+// ── Fullscreen chrome (시안: 커스텀 오버레이 + 접이식 로그 패널) ──
+const fsLog = ref(true)
+const showSessionRemaining = computed(() =>
+  isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
+)
+const sessionRemainingText = computed(() => {
+  const total = sessionRemainingSeconds.value
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+})
+const protocolOptions = [
+  { key: 'hls', label: 'HLS' },
+  { key: 'webrtc', label: 'WebRTC' },
+]
 
-async function handleSaveHome() {
-  if (!canUseToolbarPtz.value) return
-  if (saveState.value === 'saving') return
-  saveState.value = 'saving'
-  const ok = await saveHome()
-  saveState.value = ok ? 'ok' : 'fail'
-  if (saveResetTimer) clearTimeout(saveResetTimer)
-  saveResetTimer = setTimeout(() => { saveState.value = null }, 1500)
+function fsLocalDate(offsetDays = 0) {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude The 3x3 pad renders row-wise; null cells are decorative spacers and
-// @claude the center cell is the crosshair.
+// @claude 날짜 구분선 규칙은 대시보드 로그 패널과 동일: 오늘 생략, 어제는
+// @claude 문구, 그 이전은 YY-MM-DD.
+const fsLogEntries = computed(() => {
+  const today = fsLocalDate()
+  const yesterday = fsLocalDate(-1)
+  let prevDay = null
+  return inferLog.map((entry) => {
+    let header = null
+    if (entry.day !== prevDay && entry.day !== today) {
+      header = entry.day === yesterday ? t('dashboard.day.yesterday') : entry.day.slice(2)
+    }
+    prevDay = entry.day
+    return { ...entry, header }
+  })
+})
+
+// ── PTZ panel ──
+const { speedLevel, setSpeedLevel, startMove, stopMove, savePreset, gotoPreset } = usePtz()
+const ptzPressing = ref(null)
+const ptzSaveMode = ref(false)
+const ptzMessage = ref('') // '' | 'saveFailed' | 'gotoEmpty'
+
+const savedSlots = computed(() => new Set(sseState.ptz_presets || []))
+
 const ptzDirs = [
   { id: 'up',    pan:  0, tilt:  1, icon: 'ph ph-caret-up' },
   { id: 'down',  pan:  0, tilt: -1, icon: 'ph ph-caret-down' },
   { id: 'left',  pan: -1, tilt:  0, icon: 'ph ph-caret-left' },
   { id: 'right', pan:  1, tilt:  0, icon: 'ph ph-caret-right' },
 ]
-const ptzPad = [
-  null, ptzDirs[0], null,
-  ptzDirs[2], { id: 'center', icon: 'ph ph-crosshair' }, ptzDirs[3],
-  null, ptzDirs[1], null,
-]
 
 function ptzDown(dir, event) {
-  if (!canUseToolbarPtz.value) return
+  if (ptzOff.value) return
   event.preventDefault()
   ptzPressing.value = dir.id
   startMove(dir.pan, dir.tilt)
@@ -92,20 +111,37 @@ function ptzUp(dir) {
   stopMove()
 }
 
-function stopToolbarPtzMotion() {
+function stopPtzMotion() {
   if (ptzPressing.value == null) return
   ptzPressing.value = null
   stopMove()
 }
 
-function handleToolbarGotoHome() {
-  if (!canUseToolbarPtz.value) return
-  gotoHome()
+// @claude 패드 가운데의 정지 버튼: 누름 상태와 무관하게 즉시 Stop을 보낸다.
+function ptzStopNow() {
+  if (ptzOff.value) return
+  ptzPressing.value = null
+  stopMove()
 }
 
-function stopActivePtzMotion() {
-  stopToolbarPtzMotion()
+async function onPresetClick(slot) {
+  if (ptzOff.value) return
+  ptzMessage.value = ''
+  if (ptzSaveMode.value) {
+    const ok = await savePreset(slot)
+    if (!ok) ptzMessage.value = 'saveFailed'
+    ptzSaveMode.value = false
+  } else {
+    const ok = await gotoPreset(slot)
+    if (!ok) ptzMessage.value = 'gotoEmpty'
+  }
 }
+
+const ptzHint = computed(() => {
+  if (ptzMessage.value === 'saveFailed') return t('live.ptz.saveFailed')
+  if (ptzMessage.value === 'gotoEmpty') return t('live.ptz.gotoEmpty')
+  return ptzSaveMode.value ? t('live.ptz.saveHint') : t('live.ptz.gotoHint')
+})
 
 // ── Stream ──
 
@@ -134,16 +170,21 @@ const STALL_TIMEOUT = 8000
 const RETRY_BACKOFF = 3000
 
 // @claude The preference is shared with the dashboard top bar's pill.
-const { preferredProtocol } = useStreamProtocol()
+const { preferredProtocol, setProtocol } = useStreamProtocol()
 const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !stopped.value)
-const showToolbarPtz = computed(() => ptzEnabled.value && !stopped.value)
-const canUseToolbarPtz = computed(() => showToolbarPtz.value && isPlaying.value)
-watch(canUseToolbarPtz, (nextValue) => {
-  if (nextValue) return
-  stopToolbarPtzMotion()
-  ptzControlOpen.value = false
+
+// @claude 낙관적 활성 정책 (시안 CLAUDE.md): 사전 비활성은 스트림 미연결과
+// @claude PTZ 포트 미입력뿐이다. 명령 실패는 잠그지 않고 안내 줄로만 알린다.
+// @claude isPlaying 선언 뒤에 있어야 한다 — watch가 setup 중에 초기값을 즉시
+// @claude 평가하므로, 앞에 두면 TDZ 참조로 마운트가 실패한다.
+const ptzOff = computed(() => !ptzEnabled.value || !isPlaying.value)
+watch(ptzOff, (off) => {
+  if (!off) return
+  stopPtzMotion()
+  ptzSaveMode.value = false
+  ptzMessage.value = ''
 })
 
 watch(preferredProtocol, (protocol) => {
@@ -167,9 +208,7 @@ function handleConnect() {
 }
 
 function handleDisconnect() {
-  stopActivePtzMotion()
-  ptzControlOpen.value = false
-  inferOpen.value = false
+  stopPtzMotion()
   stopped.value = true
   destroyAll()
   disconnect()
@@ -435,7 +474,7 @@ onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
 })
 onBeforeUnmount(() => {
-  stopActivePtzMotion()
+  stopPtzMotion()
   destroyAll()
   document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
@@ -445,20 +484,15 @@ onBeforeUnmount(() => {
   <div class="live">
 
     <!-- ── Video ── -->
-    <div ref="videoWrapRef" class="video-card">
+    <div ref="videoWrapRef" class="video-card" :class="{ 'fs-open': fullscreen && fsLog }">
       <video ref="videoRef" muted playsinline />
 
-      <span v-if="isPlaying" class="live-badge"><span class="live-dot"></span>LIVE</span>
-
-      <button
-        class="fs-btn"
-        :title="fullscreen ? t('live.fullscreen.exit') : t('live.fullscreen.enter')"
-        @click="toggleFullscreen"
-      >
-        <i :class="fullscreen ? 'ph ph-corners-in' : 'ph ph-corners-out'"></i>
-      </button>
-
-      <InferenceOverlay :open="inferOpen && isPlaying" />
+      <span class="fs-topleft">
+        <span v-if="isPlaying" class="live-badge"><span class="live-dot"></span>LIVE</span>
+        <span v-if="fullscreen && isPlaying" class="fs-status">
+          {{ pipelineStateLabel }} · {{ stats.resolution || '–' }} · {{ stats.fps || 0 }} FPS
+        </span>
+      </span>
 
       <button v-if="stopped" class="video-overlay" @click="handleConnect">
         <span class="play-ring"><i class="ph-fill ph-play"></i></span>
@@ -469,6 +503,80 @@ onBeforeUnmount(() => {
         <span class="spinner"></span>
         <span class="overlay-text">{{ t('live.connectingCancel', { protocol: activeProtocol.toUpperCase() }) }}</span>
       </button>
+
+      <!-- 축소 화면: 연결 해제 + 전체 화면 -->
+      <div v-if="!fullscreen" class="video-actions">
+        <button
+          v-if="isPlaying"
+          class="video-action"
+          :title="t('live.disconnect')"
+          @click="handleDisconnect"
+        ><i class="ph ph-plugs"></i></button>
+        <button
+          class="video-action"
+          :title="t('live.fullscreen.enter')"
+          @click="toggleFullscreen"
+        ><i class="ph ph-corners-out"></i></button>
+      </div>
+
+      <!-- 전체 화면: 세션 · 프로토콜 · 연결 해제 · 로그 패널 · 종료 -->
+      <div v-else class="fs-cluster">
+        <span v-if="showSessionRemaining" class="fs-chip">
+          <i class="ph ph-clock"></i>{{ sessionRemainingText }}
+        </span>
+        <div class="fs-pill" role="group">
+          <button
+            v-for="p in protocolOptions"
+            :key="p.key"
+            class="fs-pill-opt"
+            :class="{ active: preferredProtocol === p.key }"
+            :aria-pressed="preferredProtocol === p.key"
+            @click="setProtocol(p.key)"
+          >{{ p.label }}</button>
+        </div>
+        <button
+          v-if="isPlaying"
+          class="fs-round"
+          :title="t('live.disconnect')"
+          @click="handleDisconnect"
+        ><i class="ph ph-plugs"></i></button>
+        <button
+          class="fs-round"
+          :class="{ on: fsLog }"
+          :title="t('dashboard.panel.log')"
+          :aria-pressed="fsLog"
+          @click="fsLog = !fsLog"
+        ><i class="ph ph-list-dashes"></i></button>
+        <button
+          class="fs-round"
+          :title="t('live.fullscreen.exit')"
+          @click="toggleFullscreen"
+        ><i class="ph ph-corners-in"></i></button>
+      </div>
+
+      <!-- 전체 화면: 접이식 추론 로그 패널 -->
+      <aside v-if="fullscreen && fsLog" class="fs-log">
+        <div class="fs-log-head">
+          <span class="fs-vlm">
+            <span class="fs-vlm-dot" :style="{ background: vlmDot }"></span>{{ vlmLabel }}
+          </span>
+          <button class="fs-log-x" @click="fsLog = false"><i class="ph ph-x"></i></button>
+        </div>
+        <div class="fs-log-list">
+          <div v-if="!fsLogEntries.length" class="fs-log-none">{{ t('dashboard.log.waiting') }}</div>
+          <template v-for="entry in fsLogEntries" :key="entry.id">
+            <div v-if="entry.header" class="fs-log-day">
+              <span class="fs-log-day-rule"></span>
+              <span>{{ entry.header }}</span>
+              <span class="fs-log-day-rule"></span>
+            </div>
+            <div class="fs-log-entry">
+              <span class="fs-log-time">{{ entry.time }}</span>
+              <span>{{ entry.text }}</span>
+            </div>
+          </template>
+        </div>
+      </aside>
     </div>
 
     <!-- ── Status line ── -->
@@ -482,68 +590,77 @@ onBeforeUnmount(() => {
       <span class="metrics">{{ stats.resolution || '–' }} · {{ stats.fps || 0 }} FPS</span>
     </div>
 
-    <!-- ── Toolbar ── -->
-    <div class="tool-row">
-      <button
-        class="tool-btn"
-        :class="{ on: inferOpen && isPlaying }"
-        :disabled="!isPlaying"
-        @click="inferOpen = !inferOpen"
-      >
-        <i :class="sseState.event_triggered && isPlaying ? 'ph-fill ph-lightbulb' : 'ph ph-lightbulb'"></i>
-        {{ t('live.inference') }}
-      </button>
-      <button class="tool-btn" @click="emit('open-prompt')">
-        <i class="ph ph-chat-text"></i>{{ t('dashboard.menu.promptShort') }}
-      </button>
-      <button
-        v-if="ptzEnabled"
-        class="tool-btn"
-        :class="{ on: ptzControlOpen }"
-        :disabled="!canUseToolbarPtz"
-        @click="ptzControlOpen = !ptzControlOpen"
-      >
-        <i class="ph ph-arrows-out-cardinal"></i>PTZ
-      </button>
-      <button class="tool-btn" :disabled="stopped" @click="handleDisconnect">
-        <i class="ph ph-plugs"></i>{{ t('live.disconnect') }}
-      </button>
-    </div>
+    <!-- ── PTZ panel (항상 표시, 미지원·미재생 시 비활성) ── -->
+    <div class="ptz-card" :class="{ off: ptzOff }" :aria-disabled="ptzOff">
 
-    <!-- ── Hardware ── -->
-    <StatCards />
-
-    <!-- ── PTZ pad ── -->
-    <div v-if="ptzControlOpen && canUseToolbarPtz" class="ptz-card">
       <div class="ptz-pad">
-        <template v-for="(cell, i) in ptzPad" :key="i">
-          <span v-if="!cell" class="ptz-cell empty"></span>
-          <span v-else-if="cell.id === 'center'" class="ptz-cell center"><i :class="cell.icon"></i></span>
-          <button
-            v-else
-            class="ptz-cell"
-            :class="{ pressing: ptzPressing === cell.id }"
-            :title="t(`live.ptz.${cell.id}`)"
-            @mousedown="(e) => ptzDown(cell, e)"
-            @mouseup="ptzUp(cell)"
-            @mouseleave="ptzUp(cell)"
-            @touchstart.prevent="(e) => ptzDown(cell, e)"
-            @touchend="ptzUp(cell)"
-          >
-            <i :class="cell.icon"></i>
-          </button>
-        </template>
-      </div>
-      <div class="ptz-side">
-        <span class="ptz-label">PTZ</span>
         <button
-          class="ptz-action primary"
-          :class="{ ok: saveState === 'ok', fail: saveState === 'fail' }"
-          :disabled="saveState === 'saving'"
-          @click="handleSaveHome"
-        >{{ t('live.ptz.saveHome') }}</button>
-        <button class="ptz-action" @click="handleToolbarGotoHome">{{ t('live.ptz.gotoHome') }}</button>
+          v-for="dir in ptzDirs"
+          :key="dir.id"
+          class="ptz-dir"
+          :class="[dir.id, { pressing: ptzPressing === dir.id }]"
+          :title="t(`live.ptz.${dir.id}`)"
+          @mousedown="(e) => ptzDown(dir, e)"
+          @mouseup="ptzUp(dir)"
+          @mouseleave="ptzUp(dir)"
+          @touchstart.prevent="(e) => ptzDown(dir, e)"
+          @touchend="ptzUp(dir)"
+        ><i :class="dir.icon"></i></button>
+        <button
+          class="ptz-stop"
+          :title="t('live.ptz.stop')"
+          @click="ptzStopNow"
+        >STOP</button>
       </div>
+
+      <div class="ptz-mid">
+        <!-- 줌 — 백엔드 미지원으로 비활성 UI만 유지 (인계 문서 「확정 방침」 2) -->
+        <div class="ptz-zoom">
+          <div class="ptz-row-head">
+            <span>{{ t('live.ptz.zoom') }}</span>
+            <span class="ptz-zoom-val">×1.0</span>
+          </div>
+          <div class="ptz-zoom-ctl">
+            <button class="ptz-round" disabled><i class="ph ph-minus"></i></button>
+            <input type="range" min="1" max="8" step="0.5" value="1" disabled />
+            <button class="ptz-round" disabled><i class="ph ph-plus"></i></button>
+          </div>
+        </div>
+        <div class="ptz-speed">
+          <span class="ptz-row-label">{{ t('live.ptz.speed') }}</span>
+          <div class="ptz-speed-seg">
+            <button
+              v-for="(label, i) in [t('live.ptz.speedSlow'), t('live.ptz.speedNormal'), t('live.ptz.speedFast')]"
+              :key="i"
+              class="ptz-speed-opt"
+              :class="{ active: speedLevel === i }"
+              @click="setSpeedLevel(i)"
+            >{{ label }}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ptz-presets">
+        <div class="ptz-presets-head">
+          <span class="ptz-row-label">{{ t('live.ptz.presets') }}</span>
+          <button class="ptz-save-toggle" @click="ptzSaveMode = !ptzSaveMode; ptzMessage = ''">
+            {{ ptzSaveMode ? t('live.ptz.saveCancel') : t('live.ptz.savePosition') }}
+          </button>
+        </div>
+        <div class="ptz-slots">
+          <button
+            v-for="slot in [1, 2, 3, 4]"
+            :key="slot"
+            class="ptz-slot"
+            :class="{ saved: savedSlots.has(slot) }"
+            @click="onPresetClick(slot)"
+          >
+            <i v-if="ptzSaveMode" class="ph ph-bookmark-simple"></i>{{ slot }}
+          </button>
+        </div>
+        <span class="ptz-hint" :class="{ err: !!ptzMessage }">{{ ptzHint }}</span>
+      </div>
+
     </div>
 
   </div>
@@ -553,6 +670,7 @@ onBeforeUnmount(() => {
 .live {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -561,10 +679,11 @@ onBeforeUnmount(() => {
 /* — video — */
 .video-card {
   position: relative;
-  aspect-ratio: 16 / 9;
+  flex: 1;
+  min-height: 240px;
   border-radius: 10px;
   overflow: hidden;
-  background: linear-gradient(160deg, #10121c 0%, #1a1d2e 55%, #0d0f18 100%);
+  background: linear-gradient(160deg, #101413 0%, #17201c 55%, #0d100f 100%);
 }
 .video-card video {
   position: absolute;
@@ -573,10 +692,26 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
 }
-.live-badge {
+/* 전체 화면에서 로그 패널이 열리면 영상 영역이 그만큼 줄어든다 */
+.video-card.fs-open video,
+.video-card.fs-open .video-overlay {
+  width: calc(100% - 360px);
+}
+.fs-topleft {
   position: absolute;
   top: 12px;
   left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 5;
+}
+.fs-status {
+  font-size: 13px;
+  color: rgba(233, 233, 237, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+.live-badge {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -593,10 +728,16 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   background: #e05b6a;
 }
-.fs-btn {
+.video-actions {
   position: absolute;
   top: 12px;
   right: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  z-index: 5;
+}
+.video-action {
   width: 34px; height: 34px;
   display: flex;
   align-items: center;
@@ -606,15 +747,15 @@ onBeforeUnmount(() => {
   background: rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(8px);
   color: #e9e9ed;
-  font-size: 15px;
+  font-size: 15.5px;
   cursor: pointer;
-  z-index: 5;
 }
+.video-action:hover { background: rgba(0, 0, 0, 0.62); }
 .video-overlay {
   position: absolute;
   inset: 0;
   border: none;
-  background: rgba(10, 11, 18, 0.55);
+  background: rgba(10, 12, 11, 0.55);
   color: #e9e9ed;
   display: flex;
   flex-direction: column;
@@ -644,19 +785,19 @@ onBeforeUnmount(() => {
 }
 @keyframes live-spin { to { transform: rotate(360deg); } }
 .overlay-text {
-  font-size: 13px;
-  color: var(--color-neutral-400);
+  font-size: 13.5px;
+  color: var(--color-neutral-300);
 }
 
 /* — status line — */
 .status-line {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
   height: 32px;
-  font-size: 11.5px;
-  color: var(--color-neutral-500);
-  border-bottom: 1px solid var(--color-divider);
+  font-size: 12.5px;
+  color: var(--color-neutral-400);
 }
 .pipe {
   display: flex;
@@ -667,7 +808,7 @@ onBeforeUnmount(() => {
 .pipe-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: var(--color-neutral-600);
+  background: var(--color-neutral-500);
 }
 .pipe-dot.on { background: #5fbf8a; }
 .sep { color: var(--color-neutral-700); }
@@ -676,100 +817,364 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* — toolbar — */
-.tool-row {
-  display: flex;
-  gap: 10px;
+/* 쌓임 배치(1100px 이하): 영상은 채움 대신 16:9 고정 비율로 자연 높이를
+   갖는다. 채움을 유지하면 좌측 열이 화면 높이로 압축되어 넘친 패널이
+   스크롤 없이 잘린다. */
+@media (max-width: 1100px) {
+  .live { flex: none; min-height: auto; }
+  .video-card {
+    flex: none;
+    aspect-ratio: 16 / 9;
+    min-height: 0;
+  }
 }
-.tool-btn {
-  flex: 1;
-  height: 48px;
-  border-radius: 8px;
-  border: 1px solid var(--color-neutral-800);
-  background: transparent;
-  color: var(--color-text);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-family: inherit;
-  font-size: 13px;
-}
-.tool-btn i { font-size: 17px; }
-.tool-btn:hover:not(:disabled) { border-color: var(--color-accent); }
-.tool-btn.on {
-  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-}
-.tool-btn:disabled { opacity: 0.45; cursor: default; }
 
-/* — PTZ card — */
+/* — PTZ panel — */
 .ptz-card {
-  border: 1px solid var(--color-neutral-800);
+  flex: none;
   border-radius: 8px;
-  padding: 14px;
-  display: flex;
-  gap: 16px;
-  align-items: center;
   background: var(--color-neutral-900);
+  padding: 14px 16px;
+  display: flex;
+  gap: 22px;
+  align-items: stretch;
+}
+.ptz-card.off {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
 }
 .ptz-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 44px);
-  grid-template-rows: repeat(3, 44px);
-  gap: 5px;
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex: none;
+  align-self: center;
+  border-radius: 50%;
+  background: var(--color-neutral-800);
 }
-.ptz-cell {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: var(--color-neutral-900);
-  border-radius: 7px;
+.ptz-dir {
+  position: absolute;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
   color: var(--color-text);
-  font-size: 16px;
+  font-size: 19px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.ptz-cell.empty,
-.ptz-cell.center {
-  border-color: transparent;
-  background: transparent;
+.ptz-dir.up    { top: 6px; left: 50%; transform: translateX(-50%); }
+.ptz-dir.down  { bottom: 6px; left: 50%; transform: translateX(-50%); }
+.ptz-dir.left  { left: 6px; top: 50%; transform: translateY(-50%); }
+.ptz-dir.right { right: 6px; top: 50%; transform: translateY(-50%); }
+.ptz-dir.pressing,
+.ptz-dir:hover { color: var(--color-accent); }
+.ptz-stop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  color: var(--color-text);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.ptz-stop:hover { background: color-mix(in srgb, var(--color-accent) 42%, transparent); }
+
+.ptz-mid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+.ptz-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: var(--color-neutral-400);
+}
+.ptz-zoom { display: flex; flex-direction: column; gap: 7px; }
+.ptz-zoom-val {
+  color: var(--color-neutral-500);
+  font-variant-numeric: tabular-nums;
+}
+.ptz-zoom-ctl {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.45;
+}
+.ptz-round {
+  width: 34px; height: 34px;
+  flex: none;
+  border-radius: 17px;
+  border: none;
+  background: var(--color-neutral-800);
+  color: var(--color-text);
+  font-size: 15px;
   cursor: default;
 }
-.ptz-cell.center { color: var(--color-neutral-500); }
-.ptz-cell.pressing {
-  border-color: var(--color-accent);
-  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+.ptz-zoom-ctl input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  height: 18px;
+  background-image: linear-gradient(to right, var(--color-neutral-700), var(--color-neutral-700));
+  background-size: 100% 4px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: transparent;
+  border-radius: 2px;
 }
-.ptz-side {
+.ptz-zoom-ctl input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--color-neutral-500);
+}
+.ptz-speed { display: flex; flex-direction: column; gap: 7px; }
+.ptz-row-label {
+  font-size: 12.5px;
+  color: var(--color-neutral-400);
+}
+.ptz-speed-seg {
+  display: flex;
+  gap: 6px;
+  background: var(--color-neutral-800);
+  border-radius: 9px;
+  padding: 3px;
+}
+.ptz-speed-opt {
+  flex: 1;
+  height: 32px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ptz-speed-opt.active {
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.ptz-presets {
+  width: 200px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ptz-presets-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ptz-save-toggle {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-accent-300);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.ptz-slots {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 8px;
+}
+.ptz-slot {
+  flex: 1;
+  min-height: 38px;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-neutral-800);
+  color: var(--color-text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.ptz-slot.saved {
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+.ptz-slot i {
+  font-size: 14px;
+  color: var(--color-accent-300);
+}
+.ptz-hint {
+  font-size: 12px;
+  color: var(--color-neutral-400);
+  line-height: 1.45;
+}
+.ptz-hint.err { color: #e07a86; }
+
+/* — fullscreen chrome — */
+.fs-cluster {
+  position: absolute;
+  top: 16px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 6;
+}
+.video-card.fs-open .fs-cluster { right: calc(360px + 22px); }
+.fs-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(233, 233, 237, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  padding: 6px 11px;
+  font-variant-numeric: tabular-nums;
+}
+.fs-chip i { font-size: 14.5px; }
+.fs-pill {
+  display: flex;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 20px;
+  padding: 2px;
+}
+.fs-pill-opt {
+  border: none;
+  border-radius: 18px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  background: transparent;
+  color: rgba(233, 233, 237, 0.92);
+  cursor: pointer;
+  font-family: inherit;
+}
+.fs-pill-opt.active {
+  background: var(--color-accent);
+  color: #12131c;
+}
+.fs-round {
+  width: 42px; height: 42px;
+  border-radius: 21px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.45);
+  color: #e9e9ed;
+  font-size: 19.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fs-round.on { background: color-mix(in srgb, var(--color-accent) 42%, transparent); }
+
+.fs-log {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 360px;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  z-index: 7;
+}
+.fs-log-head {
+  flex: none;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.fs-vlm {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  min-width: 0;
+}
+.fs-vlm-dot {
+  width: 6px; height: 6px;
+  flex: none;
+  border-radius: 50%;
+}
+.fs-log-x {
+  width: 34px; height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-neutral-300);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.fs-log-x:hover { background: var(--color-neutral-900); color: var(--color-text); }
+.fs-log-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 220px;
-  flex: 1;
+  padding: 14px 16px;
 }
-.ptz-label {
-  font-size: 11px;
+.fs-log-none {
+  padding: 14px 2px;
+  font-size: 13.5px;
   color: var(--color-neutral-500);
-  letter-spacing: 0.06em;
 }
-.ptz-action {
-  height: 38px;
-  border-radius: 7px;
-  border: 1px solid var(--color-neutral-800);
-  background: none;
-  color: var(--color-text);
+.fs-log-day {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 2px;
   font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
+  color: var(--color-neutral-500);
 }
-.ptz-action.primary {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+.fs-log-day-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--color-divider);
 }
-.ptz-action.primary.ok { border-color: #5fbf8a; color: #5fbf8a; }
-.ptz-action.primary.fail { border-color: var(--danger); color: var(--danger); }
-.ptz-action:hover:not(:disabled) { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.fs-log-entry {
+  flex: none;
+  display: flex;
+  gap: 9px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-400);
+}
+.fs-log-entry:first-of-type { color: var(--color-text); }
+.fs-log-time {
+  flex: none;
+  color: var(--color-neutral-500);
+  font-variant-numeric: tabular-nums;
+}
 </style>

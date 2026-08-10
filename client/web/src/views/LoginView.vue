@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { useLocale } from '../composables/useLocale.js'
 import { getEditableBabycatHost, applyBabycatHost } from '../endpoints.js'
-import ThemeToggle from '../components/ThemeToggle.vue'
 
 const router = useRouter()
 const { login, consumeLogoutNotice } = useAuth()
@@ -51,31 +50,29 @@ async function handleLogin() {
 
 <template>
   <div class="login-page">
-    <ThemeToggle class="theme-toggle-fixed" />
     <form class="login-card" @submit.prevent="handleLogin" novalidate>
       <div class="login-head">
-        <div class="login-mark"><i class="ph ph-cat"></i></div>
         <h1 class="login-title">{{ t('login.title') }}</h1>
         <p class="login-sub">{{ t('login.subtitle') }}</p>
       </div>
 
-      <div v-if="error || noticeKey" class="login-notice">
+      <div v-if="error || noticeKey" class="form-note login-notice">
         <i class="ph ph-warning-circle"></i>
         <span>{{ error || t(noticeKey) }}</span>
       </div>
 
       <div class="login-fields">
-        <label class="login-field">{{ t('login.usernamePlaceholder') }}
+        <label class="form-field on-bg">{{ t('login.usernamePlaceholder') }}
           <input v-model="username" type="text" autocomplete="username" required />
         </label>
-        <label class="login-field">{{ t('login.passwordPlaceholder') }}
+        <label class="form-field on-bg">{{ t('login.passwordPlaceholder') }}
           <input v-model="password" type="password" autocomplete="current-password" required />
         </label>
-        <label class="login-field">{{ t('login.backendHostPlaceholder') }}
+        <label class="form-field on-bg">{{ t('login.backendHostPlaceholder') }}
           <input v-model="babycatHost" type="text" autocomplete="off" spellcheck="false" @change="normalizeHostField" />
         </label>
         <button type="button" class="login-remember" @click="rememberMe = !rememberMe">
-          <span class="login-check" :class="{ on: rememberMe }"><i v-if="rememberMe" class="ph ph-check"></i></span>
+          <span class="login-check" :class="{ on: rememberMe }"><i v-if="rememberMe" class="ph-fill ph-check"></i></span>
           {{ t('login.rememberMe') }}
         </button>
       </div>
@@ -109,45 +106,23 @@ async function handleLogin() {
   flex-direction: column;
   gap: 8px;
 }
-.login-mark {
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  border: 1px solid var(--color-accent);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-accent);
-  font-size: 18px;
-}
 .login-title {
   font-size: 30px;
-  font-weight: var(--font-heading-weight);
+  font-weight: 700;
   letter-spacing: -0.01em;
   margin-top: 10px;
   line-height: 1.2;
 }
 .login-sub {
-  font-size: 13.5px;
-  color: var(--color-neutral-500);
+  font-size: 15px;
+  color: var(--color-neutral-400);
   line-height: 1.5;
   text-wrap: pretty;
 }
 
 .login-notice {
-  display: flex;
-  gap: 9px;
-  padding: 12px 13px;
-  border-radius: 8px;
-  background: var(--color-neutral-900);
-  border-left: 2px solid var(--color-accent);
-  font-size: 12.5px;
+  font-size: 14px;
   line-height: 1.45;
-  color: var(--color-neutral-300);
-  align-items: flex-start;
-}
-.login-notice i {
-  color: var(--color-accent);
-  font-size: 16px;
-  flex: none;
-  margin-top: 1px;
 }
 
 .login-fields {
@@ -155,27 +130,6 @@ async function handleLogin() {
   flex-direction: column;
   gap: 12px;
 }
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--color-neutral-500);
-}
-.login-field input {
-  height: 44px;
-  border-radius: 8px;
-  border: 1px solid var(--color-neutral-800);
-  background: transparent;
-  color: var(--color-text);
-  padding: 0 12px;
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  caret-color: var(--color-accent);
-}
-.login-field input:hover { border-color: var(--color-neutral-700); }
-.login-field input:focus-visible { border-color: var(--color-accent); outline: none; }
 
 .login-remember {
   display: flex;
@@ -185,8 +139,8 @@ async function handleLogin() {
   background: none;
   border: none;
   padding: 0;
-  color: var(--color-neutral-400);
-  font-size: 13px;
+  color: var(--color-neutral-300);
+  font-size: 14.5px;
   font-family: inherit;
   cursor: pointer;
 }
@@ -195,32 +149,28 @@ async function handleLogin() {
   border-radius: 5px;
   border: 1px solid var(--color-neutral-700);
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--color-accent);
 }
-.login-check.on { background: var(--color-accent-900); border-color: var(--color-accent); }
+.login-check.on {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-color: var(--color-accent);
+}
 
 .login-submit {
   height: 48px;
   border-radius: 8px;
-  border: 1px solid var(--color-accent);
-  background: transparent;
-  color: var(--color-accent);
-  font-size: 14px;
-  font-weight: var(--font-heading-weight);
+  border: none;
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  color: var(--color-text);
+  font-size: 15.5px;
+  font-weight: 700;
   font-family: inherit;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   gap: 8px;
+  transition: background 0.15s;
 }
-.login-submit:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
-.login-submit:active { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
-.login-submit:disabled { opacity: 0.55; cursor: default; }
-
-.theme-toggle-fixed {
-  position: fixed;
-  top: 1rem;
-  right: 1rem;
-  z-index: 10;
-}
+.login-submit:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 42%, transparent); }
+.login-submit:disabled { opacity: 0.5; cursor: default; }
 </style>

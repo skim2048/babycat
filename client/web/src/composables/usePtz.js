@@ -1,10 +1,12 @@
 import { ref } from 'vue'
 import { authFetch } from './useFetch.js'
-import { t } from './useLocale.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
-const PTZ_SPEED = 0.5
-const status = ref(t('ptz.idle'))
+// @claude ONVIF velocity is normalized to [-1, 1]; the three levels map the
+// @claude mockup's 저속·보통·고속 onto it. The backend passes values through.
+const SPEED_FACTORS = [0.25, 0.5, 0.9]
+
+const speedLevel = ref(1)
 
 async function post(body) {
   try {
@@ -21,38 +23,28 @@ async function post(body) {
 }
 
 function startMove(pan, tilt) {
-  const panSpeed = pan * PTZ_SPEED
-  const tiltSpeed = tilt * PTZ_SPEED
-  status.value =
-    panSpeed > 0 ? t('ptz.move.right') :
-    panSpeed < 0 ? t('ptz.move.left') :
-    tiltSpeed > 0 ? t('ptz.move.up') : t('ptz.move.down')
-  post({ action: 'move', pan: panSpeed, tilt: tiltSpeed })
+  const factor = SPEED_FACTORS[speedLevel.value] ?? SPEED_FACTORS[1]
+  post({ action: 'move', pan: pan * factor, tilt: tilt * factor })
 }
 
 function stopMove() {
-  status.value = t('ptz.stop')
   post({ action: 'stop' })
 }
 
-function forceStop() {
-  status.value = t('ptz.forceStop')
-  post({ action: 'stop' })
+function setSpeedLevel(level) {
+  if (level >= 0 && level < SPEED_FACTORS.length) speedLevel.value = level
 }
 
-async function saveHome() {
-  status.value = t('ptz.saving')
-  const data = await post({ action: 'save' })
-  status.value = data?.ok ? t('ptz.saved') : t('ptz.saveFailed')
+async function savePreset(slot) {
+  const data = await post({ action: 'save', slot })
   return !!data?.ok
 }
 
-async function gotoHome() {
-  status.value = t('ptz.going')
-  const data = await post({ action: 'goto' })
-  status.value = data?.ok ? t('ptz.arrived') : t('ptz.noSavedHome')
+async function gotoPreset(slot) {
+  const data = await post({ action: 'goto', slot })
+  return !!data?.ok
 }
 
 export function usePtz() {
-  return { status, startMove, stopMove, forceStop, saveHome, gotoHome }
+  return { speedLevel, setSpeedLevel, startMove, stopMove, savePreset, gotoPreset }
 }

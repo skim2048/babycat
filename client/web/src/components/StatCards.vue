@@ -50,7 +50,7 @@ function formatTemp(value) {
   return Number.isFinite(value) && value > 0 ? `${Math.round(value)}°C` : '—'
 }
 
-const cards = computed(() => [
+const cells = computed(() => [
   { name: 'CPU', pct: sse.cpu_percent, temp: formatTemp(sse.cpu_temp), line: points(history.cpu) },
   { name: 'GPU', pct: sse.gpu_load, temp: formatTemp(sse.gpu_temp), line: points(history.gpu) },
   { name: 'RAM', pct: ramPct.value, temp: '—', line: points(history.ram) },
@@ -59,69 +59,54 @@ const cards = computed(() => [
 </script>
 
 <template>
-  <div class="stat-cards">
-    <div v-for="(card, i) in cards" :key="card.name" class="stat-card" :class="{ first: i === 0 }">
-      <div class="stat-head">
-        <span class="stat-name">{{ card.name }}</span>
-        <span class="stat-pct">{{ formatPct(card.pct) }}</span>
-        <span class="stat-temp">{{ card.temp }}</span>
+  <div class="res-panel">
+    <div v-for="cell in cells" :key="cell.name" class="res-cell">
+      <div class="res-head">
+        <span class="res-name">{{ cell.name }}</span>
+        <span class="res-pct">{{ formatPct(cell.pct) }}</span>
+        <span class="res-temp">{{ cell.temp }}</span>
       </div>
-      <span class="stat-gauge"><span :style="{ width: formatPct(card.pct) }"></span></span>
-      <svg viewBox="0 0 100 44" preserveAspectRatio="none" class="stat-spark">
-        <polyline :points="card.line" fill="none" stroke="var(--color-accent)" stroke-width="1" vector-effect="non-scaling-stroke" />
-        <polyline :points="card.line ? `0,44 ${card.line} 100,44` : ''" fill="color-mix(in srgb, var(--color-accent) 14%, transparent)" stroke="none" />
+      <svg viewBox="0 0 100 44" preserveAspectRatio="none" class="res-graph">
+        <polyline :points="cell.line" fill="none" stroke="var(--color-accent)" stroke-width="1" vector-effect="non-scaling-stroke" />
+        <polyline :points="cell.line ? `0,44 ${cell.line} 100,44` : ''" fill="color-mix(in srgb, var(--color-accent) 14%, transparent)" stroke="none" />
       </svg>
     </div>
   </div>
 </template>
 
 <style scoped>
-.stat-cards {
+.res-panel {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  border: 1px solid var(--color-neutral-800);
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
   border-radius: 8px;
   background: var(--color-neutral-900);
   overflow: hidden;
 }
-.stat-card {
-  border-left: 1px solid var(--color-divider);
-  padding: 12px 12px 12px;
+.res-cell {
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: 7px;
+  font-size: 13px;
+  box-shadow: 0 0 0 1px var(--color-divider);
 }
-.stat-card.first { border-left-color: transparent; }
-.stat-head {
+.res-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.stat-name {
+.res-name {
   flex: 1;
-  color: var(--color-neutral-500);
+  color: var(--color-neutral-400);
   letter-spacing: 0.06em;
 }
-.stat-pct { font-variant-numeric: tabular-nums; }
-.stat-temp {
-  color: var(--color-neutral-500);
+.res-pct { font-variant-numeric: tabular-nums; }
+.res-temp {
+  color: var(--color-neutral-400);
   font-variant-numeric: tabular-nums;
 }
-.stat-gauge {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-neutral-800);
-  overflow: hidden;
-  display: block;
-}
-.stat-gauge span {
-  display: block;
-  height: 100%;
-  background: var(--color-accent);
-  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.stat-spark {
+.res-graph {
   width: 100%;
   height: 44px;
   display: block;

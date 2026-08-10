@@ -23,9 +23,11 @@ log = logging.getLogger(__name__)
 _PTZ_PROFILE = "profile_1"
 _PTZ_SPEED   = 0.5
 
+PRESET_SLOTS = (1, 2, 3, 4)
+
 _lock    = threading.Lock()
 _current: dict = {"pan": None, "tilt": None}
-_saved:   dict = {"pan": None, "tilt": None}
+_presets: dict = {}  # slot(int) -> {"pan": float, "tilt": float}
 _moving:  bool = False
 
 _ONVIF_URL:  Optional[str] = None
@@ -74,9 +76,15 @@ def get_current() -> dict:
         return dict(_current)
 
 
-def get_saved() -> dict:
+def get_preset(slot: int) -> Optional[dict]:
     with _lock:
-        return dict(_saved)
+        preset = _presets.get(slot)
+        return dict(preset) if preset else None
+
+
+def get_presets() -> dict:
+    with _lock:
+        return {slot: dict(preset) for slot, preset in _presets.items()}
 
 
 # ── ONVIF SOAP ───────────────────────────────────────────────────────────────
@@ -181,39 +189,47 @@ def get_status() -> Optional[dict]:
     return None
 
 
-# ── Home position save/load ──────────────────────────────────────────────────
+# ── Preset save/load ─────────────────────────────────────────────────────────
 
-def load_home(data: Optional[dict]) -> None:
-    """Apply a ptz_home dict read from the saved profile. An empty value
-    resets the in-memory home — a profile switch that invalidated the stored
-    home (SDD §4.2) must not leave the previous camera's coordinates
-    lingering in memory. @claude"""
-    global _saved
-    if not data:
-        with _lock:
-            _saved = {"pan": None, "tilt": None}
-        return
-    try:
-        with _lock:
-            _saved = {
-                "pan":  round(float(data["pan"]),  3),
-                "tilt": round(float(data["tilt"]), 3),
+def load_presets(data: Optional[dict]) -> None:
+    """Apply a ptz_presets mapping read from the applied slot. An empty value
+    resets the in-memory presets — a profile switch that invalidated the stored
+    positions (SDD §4.2) must not leave the previous camera's coordinates
+    lingering in memory. JSON round-trips slot keys as strings. @claude"""
+    global _presets
+    loaded: dict = {}
+    for key, value in (data or {}).items():
+        try:
+            slot = int(key)
+            if slot not in PRESET_SLOTS:
+                continue
+            loaded[slot] = {
+                "pan":  round(float(value["pan"]),  3),
+                "tilt": round(float(value["tilt"]), 3),
             }
-        log.info("Home position loaded: %s", _saved)
-    except (KeyError, ValueError) as e:
-        log.error("Home position load failed: %s", e)
+        except (KeyError, TypeError, ValueError) as e:
+            log.error("Preset %s load failed: %s", key, e)
+    with _lock:
+        _presets = loaded
+    if loaded:
+        log.info("Presets loaded: %s", sorted(loaded))
 
 
-def save_home() -> Optional[dict]:
-    """Save the current position as home. Caller must persist the return value into the profile. @claude"""
+def save_preset(slot: int) -> Optional[dict]:
+    """Save the current position into the slot. Returns the full presets
+    mapping for the caller to persist, or None when the current position is
+    unknown or the slot is invalid. @claude"""
+    if slot not in PRESET_SLOTS:
+        return None
     with _lock:
         cur = dict(_current)
     if cur["pan"] is None:
         return None
     with _lock:
-        _saved.update(cur)
-    log.info("Home position saved: pan=%s, tilt=%s", cur["pan"], cur["tilt"])
-    return {"pan": cur["pan"], "tilt": cur["tilt"]}
+        _presets[slot] = {"pan": cur["pan"], "tilt": cur["tilt"]}
+        snapshot = {s: dict(p) for s, p in _presets.items()}
+    log.info("Preset %d saved: pan=%s, tilt=%s", slot, cur["pan"], cur["tilt"])
+    return snapshot
 
 
 # ── Polling loop ─────────────────────────────────────────────────────────────

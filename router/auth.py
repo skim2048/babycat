@@ -186,8 +186,9 @@ def authenticate(
     """
     Authenticate a user.
       - On success, returns {"token", "must_change_password", "refresh_token"}.
-        refresh_token is None unless the login asked to stay signed in —
-        FR-002 issues one only for 로그인 유지 requests.
+        Every login gets a refresh token: 로그인 유지(FR-002)는 클라이언트가
+        localStorage에 영속하고, 임시 세션은 탭 수명(sessionStorage)으로만
+        보관하며 만료 경고의 「연장」에 사용한다.
         Success replaces the account's existing session (FR-047): all prior
         tokens are dead by the time the new ones are issued.
       - On lockout, raises HTTPException(429).
@@ -221,7 +222,7 @@ def authenticate(
         return {
             "token": create_token(username, get_epoch(username, db) or 0),
             "must_change_password": not row["password_changed"],
-            "refresh_token": issue_refresh_token(username, db) if remember_me else None,
+            "refresh_token": issue_refresh_token(username, db),
         }
 
 

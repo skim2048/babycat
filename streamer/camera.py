@@ -97,12 +97,13 @@ def _save_applied(data: dict) -> None:
         _write_json(APPLIED_PATH, data)
 
 
-def save_home(home: dict | None) -> None:
-    """Persist the PTZ home into the applied slot — the home belongs to the
-    camera the system is (or was last) connected to, not to registration. @claude"""
+def save_presets(presets: dict | None) -> None:
+    """Persist the PTZ presets into the applied slot — the positions belong to
+    the camera the system is (or was last) connected to, not to registration. @claude"""
     with _config_lock:
         applied = load_applied()
-        applied["ptz_home"] = home
+        applied["ptz_presets"] = presets or {}
+        applied.pop("ptz_home", None)  # @claude Drop the single-home legacy field.
         _write_json(APPLIED_PATH, applied)
 
 
@@ -139,17 +140,17 @@ def streaming_start() -> dict:
 
         applied = load_applied()
         previous = applied.get("profile") or {}
-        ptz_home = applied.get("ptz_home")
+        ptz_presets = applied.get("ptz_presets")
         if previous.get("ip") != config["ip"]:
-            # @claude The home belongs to the camera: a different connection
+            # @claude The presets belong to the camera: a different connection
             # @claude target invalidates the stored coordinates.
-            ptz_home = None
+            ptz_presets = None
 
         if not _activate_runtime(config):
             return {"ok": False, "error": "MediaMTX API connection failed"}
 
-        _save_applied({"streaming_active": True, "profile": config, "ptz_home": ptz_home})
-        ptz.load_home(ptz_home)
+        _save_applied({"streaming_active": True, "profile": config, "ptz_presets": ptz_presets or {}})
+        ptz.load_presets(ptz_presets)
         return {"ok": True}
 
 

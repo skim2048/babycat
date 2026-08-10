@@ -1,4 +1,4 @@
-import { computed, reactive, readonly, watch } from 'vue'
+import { computed, effectScope, reactive, readonly, watch } from 'vue'
 import { useAuth } from './useAuth.js'
 import { authFetch } from './useFetch.js'
 import { hasMessage, t } from './useLocale.js'
@@ -35,11 +35,10 @@ const state = reactive({
   // @claude Streaming (FR-048)
   streaming_active: false,
   profile_pending: false,
-  // @claude PTZ
+  // @claude PTZ — ptz_presets lists the slot numbers holding a saved position.
   ptz_pan: null,
   ptz_tilt: null,
-  ptz_saved_pan: null,
-  ptz_saved_tilt: null,
+  ptz_presets: [],
   // @claude Prompt
   inference_prompt: '',
   trigger_keywords: '',
@@ -90,8 +89,7 @@ function resetState() {
   state.profile_pending = false
   state.ptz_pan = null
   state.ptz_tilt = null
-  state.ptz_saved_pan = null
-  state.ptz_saved_tilt = null
+  state.ptz_presets = []
   state.inference_prompt = ''
   state.trigger_keywords = ''
   state.clip_count = 0
@@ -171,16 +169,21 @@ function connect() {
   if (started) return
   started = true
 
-  const { accessToken } = useAuth()
-  watch(accessToken, (token) => {
-    backoff = 1000
-    if (!token) {
-      closeConnection()
-      resetState()
-      return
-    }
-    openConnection(token)
-  }, { immediate: true })
+  // @claude The watcher lives in a detached scope: registered inside a
+  // @claude component it would die with that component's unmount while the
+  // @claude started flag stays true, silently ending reconnection.
+  effectScope(true).run(() => {
+    const { accessToken } = useAuth()
+    watch(accessToken, (token) => {
+      backoff = 1000
+      if (!token) {
+        closeConnection()
+        resetState()
+        return
+      }
+      openConnection(token)
+    }, { immediate: true })
+  })
 }
 
 export function useSSE() {

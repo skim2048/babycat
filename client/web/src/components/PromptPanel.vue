@@ -1,42 +1,48 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useSSE } from '../composables/useSSE.js'
+import { useAnalysis } from '../composables/useAnalysis.js'
 import { authFetch } from '../composables/useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 import { useLocale } from '../composables/useLocale.js'
 
-defineEmits(['close'])
-
 const { state } = useSSE()
+const { rejected, clearRejected } = useAnalysis()
 const { t } = useLocale()
 
 const prompt = ref('')
 const triggers = ref('')
-const status = ref('')
-const statusWarn = ref(false)
+const savedPrompt = ref('')
+const savedTriggers = ref('')
+const savedNote = ref(false)
+const errorNote = ref('')
 let loaded = false
 
 watch(
   () => [state.inference_prompt, state.trigger_keywords],
   ([promptText, triggerText]) => {
     if (!loaded && (promptText || triggerText)) {
-      if (promptText) prompt.value = promptText
-      if (triggerText) triggers.value = triggerText
+      prompt.value = savedPrompt.value = promptText || ''
+      triggers.value = savedTriggers.value = triggerText || ''
       loaded = true
     }
   },
   { immediate: true },
 )
 
-function setStatus(text, { warn = false, transient = false } = {}) {
-  status.value = text
-  statusWarn.value = warn
-  if (transient) setTimeout(() => { status.value = '' }, 3000)
-}
+const dirty = computed(() =>
+  prompt.value !== savedPrompt.value || triggers.value !== savedTriggers.value,
+)
+
+// @claude 시안: 저장 안내는 필드를 다시 편집하는 순간 사라진다.
+watch([prompt, triggers], () => {
+  savedNote.value = false
+  errorNote.value = ''
+})
 
 async function apply() {
   if (!prompt.value.trim()) return
-  status.value = ''
+  errorNote.value = ''
   try {
     const res = await authFetch(APP_ENDPOINTS.prompt, {
       method: 'POST',
@@ -45,87 +51,70 @@ async function apply() {
     })
     const data = await res.json()
     if (data.ok) {
-      setStatus(t('prompt.status.applied'), { transient: true })
+      savedPrompt.value = prompt.value
+      savedTriggers.value = triggers.value
+      savedNote.value = true
+      clearRejected()
     } else {
-      setStatus(t('prompt.status.error', { message: data.error || t('prompt.status.unknown') }), { warn: true })
+      errorNote.value = t('prompt.status.error', { message: data.error || t('prompt.status.unknown') })
     }
   } catch {
-    setStatus(t('prompt.status.failed'), { warn: true })
+    errorNote.value = t('prompt.status.failed')
   }
 }
 
-// @claude FR-024/FR-025: saving settings never starts analysis; this explicit
-// @claude action fans out to the analyzer and the recorder. FR-050: the router
-// @claude rejects a start while live streaming is inactive.
-const busy = ref(false)
-
-// @claude idle means the pipeline waits for an explicit start (FR-024), so a
-// @claude streaming pipeline that is not idle is an analysis in progress.
-const analysisActive = computed(() => state.streaming_active && state.pipeline_state !== 'idle')
-
-async function startAnalysis() {
-  status.value = ''
-  try {
-    const res = await authFetch(APP_ENDPOINTS.analysisStart, { method: 'POST' })
-    const data = await res.json()
-    if (res.ok && data.ok) {
-      setStatus(t('prompt.status.started'), { transient: true })
-    } else if (res.status === 409) {
-      setStatus(t('prompt.status.needStreaming'), { warn: true })
-    } else {
-      setStatus(t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') }), { warn: true })
-    }
-  } catch {
-    setStatus(t('prompt.status.startFailed'), { warn: true })
-  }
-}
-
-// @claude FR-051: stop analysis and buffering while streaming stays up.
-async function stopAnalysis() {
-  status.value = ''
-  try {
-    const res = await authFetch(APP_ENDPOINTS.analysisStop, { method: 'POST' })
-    const data = await res.json()
-    if (res.ok && data.ok) {
-      setStatus(t('prompt.status.stopped'), { transient: true })
-    } else {
-      setStatus(t('prompt.status.error', { message: data.detail || t('prompt.status.unknown') }), { warn: true })
-    }
-  } catch {
-    setStatus(t('prompt.status.stopFailed'), { warn: true })
-  }
-}
-
-async function toggleAnalysis() {
-  if (busy.value) return
-  busy.value = true
-  try {
-    if (analysisActive.value) await stopAnalysis()
-    else await startAnalysis()
-  } finally {
-    busy.value = false
-  }
+// @claude 시안: 취소는 마지막 저장 상태로 되돌린다.
+function revert() {
+  if (!dirty.value) return
+  prompt.value = savedPrompt.value
+  triggers.value = savedTriggers.value
 }
 </script>
 
 <template>
-  <div class="form-col">
-    <div v-if="status" class="form-note" :class="{ warn: statusWarn }">
-      <i class="ph ph-info"></i><span>{{ status }}</span>
+  <div class="prompt-panel">
+    <div v-if="savedNote" class="form-note">
+      <i class="ph ph-info"></i><span>{{ t('prompt.status.applied') }}</span>
+    </div>
+    <div v-if="rejected" class="form-note warn">
+      <i class="ph ph-info"></i><span>{{ t('prompt.status.needStreaming') }}</span>
+    </div>
+    <div v-if="errorNote" class="form-note warn">
+      <i class="ph ph-info"></i><span>{{ errorNote }}</span>
     </div>
 
-    <label class="form-field">{{ t('prompt.label.query') }}
-      <textarea v-model="prompt" :placeholder="t('prompt.placeholder.query')" rows="4" />
+    <label class="form-field grow">{{ t('prompt.label.query') }}
+      <textarea v-model="prompt" :placeholder="t('prompt.placeholder.query')" />
     </label>
-    <label class="form-field">{{ t('prompt.label.triggers') }}
-      <input v-model="triggers" :placeholder="t('prompt.placeholder.triggers')" />
+    <label class="form-field grow">{{ t('prompt.label.triggers') }}
+      <textarea v-model="triggers" :placeholder="t('prompt.placeholder.triggers')" />
     </label>
 
     <div class="form-actions">
       <button class="form-btn primary" @click="apply">{{ t('prompt.action.apply') }}</button>
-      <button class="form-btn" :disabled="busy" @click="toggleAnalysis">
-        {{ analysisActive ? t('prompt.action.stop') : t('prompt.action.start') }}
-      </button>
+      <button class="form-btn plain" :disabled="!dirty" @click="revert">{{ t('prompt.action.revert') }}</button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.prompt-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.form-field.grow {
+  flex: 1;
+  min-height: 0;
+}
+.form-field.grow textarea {
+  flex: 1;
+  min-height: 0;
+}
+/* 패널은 neutral-900 위이므로 취소 버튼은 페이지 배경 채움을 쓴다 (시안) */
+.form-btn.plain { background: var(--color-bg); }
+.form-btn.plain:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+</style>
