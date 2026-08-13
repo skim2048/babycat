@@ -16,13 +16,15 @@
   <img src="https://img.shields.io/badge/NVIDIA%20Jetson-444444" alt="NVIDIA Jetson">
 </div>
 
+<p align="center">English · <a href="README.ko.md">한국어</a></p>
+
 Babycat is a VLM-based video event-detection backend for the NVIDIA Jetson platform. Given keywords, it watches a live video source, detects the moments that match, and saves each matched span as a video clip.
 
 - Keyword-driven event detection over a live RTSP source, powered by a vision-language model (VLM).
 - Automatic clip recording of the segment around each detected event, with a searchable event history.
 - Runs on the NVIDIA Jetson platform, using its hardware video encoder/decoder and GPU inference.
 
-Babycat is a **backend**: it exposes an HTTP API and does not ship a user interface. A reference client is provided under [`client/`](client/) as a usage example — see [Client](#client) below.
+Babycat is a **backend**: it exposes an HTTP API and does not ship a user interface. Reference clients are provided under [`client/`](client/) as usage examples — see [Client](#client) below.
 
 Long-term trend summarization and audio-based detection are out of scope.
 
@@ -93,11 +95,24 @@ The Request router exposes a single HTTP API on port `8000`. It covers authentic
 
 ## Client
 
-Babycat has no built-in UI. A reference client — a web dashboard — is provided under [`client/web`](client/web) as an example of how to consume the API. It is a reference implementation and is **not part of the product scope**; it can run on the same host or a separate one, and is started independently:
+Babycat has no built-in UI. Two reference clients are provided under [`client/`](client/) as examples of how to consume the API. They are reference implementations and are **not part of the product scope**; each can run on the same host or a separate one, and is started independently. The backend address is entered on each client's login screen.
+
+**Web dashboard** ([`client/web`](client/web)) — a Vue 3 dashboard for desktop browsers. It runs as a container serving the Vite dev server on port `5173`:
 
 ```bash
 cd client/web
 docker compose up -d
+# open http://<host>:5173
+```
+
+**Android app** ([`client/android`](client/android)) — a Vue 3 + Capacitor mobile app. The Vite dev server on port `5174` gives a browser preview; building an APK requires a machine with the Android SDK:
+
+```bash
+cd client/android
+npm install
+npm run dev    # browser preview at http://<host>:5174
+npm run sync   # build the web assets and sync them into android/
+# then open android/ in Android Studio, or: cd android && ./gradlew assembleDebug
 ```
 
 ## License
