@@ -7,6 +7,7 @@
 </p>
 
 <div align="center">
+  <img src="https://img.shields.io/badge/v1.0-2b6e4f" alt="Version">
   <img src="https://img.shields.io/badge/Python-444444" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-444444" alt="FastAPI">
   <img src="https://img.shields.io/badge/GStreamer-444444" alt="GStreamer">
