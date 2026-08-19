@@ -97,6 +97,15 @@ def _save_applied(data: dict) -> None:
         _write_json(APPLIED_PATH, data)
 
 
+def save_patrol(patrol: dict) -> None:
+    """Persist the auto-patrol setting (FR-052) into the applied slot. The
+    setting survives camera switches — patrol without presets simply idles. @claude"""
+    with _config_lock:
+        applied = load_applied()
+        applied["ptz_patrol"] = patrol
+        _write_json(APPLIED_PATH, applied)
+
+
 def save_presets(presets: dict | None) -> None:
     """Persist the PTZ presets into the applied slot — the positions belong to
     the camera the system is (or was last) connected to, not to registration. @claude"""
@@ -149,7 +158,14 @@ def streaming_start() -> dict:
         if not _activate_runtime(config):
             return {"ok": False, "error": "MediaMTX API connection failed"}
 
-        _save_applied({"streaming_active": True, "profile": config, "ptz_presets": ptz_presets or {}})
+        _save_applied({
+            "streaming_active": True,
+            "profile": config,
+            "ptz_presets": ptz_presets or {},
+            # @claude Patrol is a behavior setting, not camera-bound state —
+            # @claude it survives the promote (FR-052).
+            "ptz_patrol": applied.get("ptz_patrol") or ptz.get_patrol(),
+        })
         ptz.load_presets(ptz_presets)
         return {"ok": True}
 

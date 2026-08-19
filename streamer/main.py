@@ -77,13 +77,16 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
         stream=sys.stdout,
     )
-    ptz.load_presets(camera.load_applied().get("ptz_presets"))
+    applied = camera.load_applied()
+    ptz.load_presets(applied.get("ptz_presets"))
+    ptz.load_patrol(applied.get("ptz_patrol"))
 
     threading.Thread(target=_mediamtx_supervisor, daemon=True).start()
     # @claude Apply the saved profile with retries until MediaMTX is up (FR-015);
     # @claude an intra-container wait, resolved here and nowhere else (SDD §3.5).
     threading.Thread(target=camera.startup_apply, daemon=True).start()
     threading.Thread(target=ptz.poll_loop, daemon=True).start()
+    threading.Thread(target=ptz.patrol_loop, daemon=True).start()
     yield
     _stop_mediamtx()
 
@@ -166,6 +169,28 @@ async def control_ptz(request: Request):
             ).start()
         else:
             ok = False
+    elif action == "absolute":
+        # @claude FR-016: move to an arbitrary position in ONVIF normalized
+        # @claude space. Values are clamped to [-1, 1].
+        try:
+            pan = max(-1.0, min(1.0, float(body.get("pan"))))
+            tilt = max(-1.0, min(1.0, float(body.get("tilt"))))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="invalid pan/tilt values")
+        threading.Thread(target=ptz.absolute_move, args=(pan, tilt), daemon=True).start()
+    elif action == "patrol":
+        # @claude FR-052: enable/disable the preset patrol and set its interval.
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise HTTPException(status_code=400, detail="invalid patrol payload")
+        interval = body.get("interval_s")
+        if interval is not None:
+            try:
+                interval = int(interval)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="invalid patrol interval")
+        patrol = ptz.set_patrol(enabled, interval)
+        camera.save_patrol(patrol)
 
     return {"ok": ok}
 
@@ -179,8 +204,12 @@ def status():
     return {
         "ptz_pan": current["pan"],
         "ptz_tilt": current["tilt"],
-        # @claude JSON keys are strings; the web client only needs which slots hold a position.
+        # @claude JSON keys are strings; ptz_presets keeps the slot-number list
+        # @claude for existing consumers, ptz_preset_positions adds the stored
+        # @claude coordinates per slot (slot -> {pan, tilt}).
         "ptz_presets": sorted(ptz.get_presets()),
+        "ptz_preset_positions": ptz.get_presets(),
+        "ptz_patrol": ptz.get_patrol(),
         **camera.status_view(),
         "mediamtx_alive": alive,
     }

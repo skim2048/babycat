@@ -247,3 +247,91 @@ def poll_once() -> None:
     if status:
         with _lock:
             _current.update(status)
+
+
+# ── Auto patrol (FR-052) ─────────────────────────────────────────────────────
+
+PATROL_MIN_INTERVAL_S = 5
+PATROL_DEFAULT_INTERVAL_S = 30
+
+# @claude slot: 순찰이 마지막으로 이동시킨 프리셋 슬롯. 순찰을 꺼도 값을
+# @claude 유지하여, 클라이언트가 카메라가 멈춰 선 위치의 프리셋을 계속
+# @claude 가리킬 수 있게 한다. 프리셋 무효화·재기동 시에만 None이 된다.
+_patrol: dict = {"enabled": False, "interval_s": PATROL_DEFAULT_INTERVAL_S, "slot": None}
+
+
+def get_patrol() -> dict:
+    with _lock:
+        return dict(_patrol)
+
+
+def set_patrol(enabled: bool, interval_s: Optional[int] = None) -> dict:
+    with _lock:
+        was_enabled = _patrol["enabled"]
+        _patrol["enabled"] = bool(enabled)
+        if interval_s is not None:
+            _patrol["interval_s"] = max(PATROL_MIN_INTERVAL_S, int(interval_s))
+    # @claude 순찰을 끄면 카메라를 프리셋 1로 복귀시킨다(위치·표시 모두).
+    # @claude 프리셋 1이 없으면 복귀 없이 슬롯 표시만 비운다.
+    if was_enabled and not enabled:
+        home = get_preset(1)
+        with _lock:
+            _patrol["slot"] = 1 if home else None
+        if home:
+            threading.Thread(
+                target=absolute_move, args=(home["pan"], home["tilt"]), daemon=True
+            ).start()
+    return get_patrol()
+
+
+def load_patrol(data: Optional[dict]) -> None:
+    """Apply a ptz_patrol mapping read from the applied slot. Invalid or
+    missing values fall back to the defaults; the runtime slot always starts
+    empty. @claude"""
+    if not isinstance(data, dict):
+        return
+    with _lock:
+        _patrol["enabled"] = bool(data.get("enabled", False))
+        _patrol["slot"] = None
+        try:
+            _patrol["interval_s"] = max(
+                PATROL_MIN_INTERVAL_S, int(data.get("interval_s", PATROL_DEFAULT_INTERVAL_S))
+            )
+        except (TypeError, ValueError):
+            _patrol["interval_s"] = PATROL_DEFAULT_INTERVAL_S
+
+
+def patrol_loop() -> None:
+    """Background thread: cycle through the saved presets in slot order while
+    patrol is enabled. A tick is skipped while a manual continuous move is in
+    progress, and the cycle idles when PTZ is unconfigured or no preset
+    exists. Toggling patrol off resets the schedule, so re-enabling moves to
+    the next preset immediately. @claude"""
+    idx = 0
+    next_due = None
+    while True:
+        time.sleep(1)
+        with _lock:
+            enabled = _patrol["enabled"]
+            interval = _patrol["interval_s"]
+            slots = sorted(_presets)
+        if not slots:
+            # @claude 프리셋이 무효화되면(카메라 교체 등) 순회 슬롯 표시도 무효다.
+            with _lock:
+                _patrol["slot"] = None
+        if not enabled or not slots or not is_configured():
+            next_due = None
+            continue
+        now = time.monotonic()
+        if next_due is not None and now < next_due:
+            continue
+        if is_moving():
+            continue
+        slot = slots[idx % len(slots)]
+        preset = get_preset(slot)
+        idx += 1
+        next_due = now + interval
+        if preset:
+            with _lock:
+                _patrol["slot"] = slot
+            absolute_move(preset["pan"], preset["tilt"])

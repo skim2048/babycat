@@ -79,7 +79,7 @@ config/
 사용자가 설정하는 값의 저장 형식과 기본값은 다음과 같다. 외부에서 주입받는 값은 §8.3에서 다룬다.
 
 - **등록 프로필** (`config/cam_profile.json`) — `source_type`(v1.0은 `rtsp_camera` 고정), `ip`, `username`, `password`, `rtsp_port`(기본 554), `stream_path`(기본 `stream1`), `onvif_port`(선택). 프로필 등록이 저장하는 유일한 대상이다(`FR-048`). 조회 응답에서는 `password`를 설정 여부로만 반환한다(`FR-013`).
-- **적용 프로필** (`config/cam_applied.json`) — `streaming_active`(기본 false), `profile`(스트리밍 시작 시점의 등록 프로필 사본), `ptz_home`(선택 — 홈은 접속 대상 카메라에 속하므로 이 슬롯에 둔다). 소스 연결과 재기동 복원(`FR-014`)은 항상 이 슬롯을 쓴다.
+- **적용 프로필** (`config/cam_applied.json`) — `streaming_active`(기본 false), `profile`(스트리밍 시작 시점의 등록 프로필 사본), `ptz_presets`(슬롯→팬·틸트 좌표 — 프리셋은 접속 대상 카메라에 속하므로 이 슬롯에 둔다), `ptz_patrol`(자동 순찰의 활성 여부·전환 간격, `FR-052`). 소스 연결과 재기동 복원(`FR-014`)은 항상 이 슬롯을 쓴다.
 - **analyzer 상태 파일** (컨테이너 안 `/data/state/analyzer.json`, 호스트는 §5.3의 구획 `data/state/analyzer/`) — `prompt`(기본 `Describe the scene.`, `FR-026`), `keywords`(기본 빈 목록 — 이때 키워드 매칭을 수행하지 않는다, `FR-027`), `analysis_active`(기본 false — 저장만으로 분석이 시작되지 않는다, `FR-025`).
 - **recorder 상태 파일** (컨테이너 안 `/data/state/recorder.json`, 호스트는 §5.3의 구획 `data/state/recorder/`) — `buffer_active`(기본 false). 분석 시작과 함께 참이 되고, 분석 종료·스트리밍 종료와 함께 거짓이 된다(§2.4 (4)). `last_event_accepted_at`(마지막 이벤트 수락 시각) — 쿨다운(`FR-030`)의 기준 시각으로, 재시작이 쿨다운 창을 되돌리지 않게 한다.
 

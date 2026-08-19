@@ -20,7 +20,7 @@
 |---|---|---|---|---|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|`streamer`|
 |`/camera`|POST|비디오 소스 프로필 등록(`FR-048` — 접속은 스트리밍 시작 시점).|필요|`streamer`|
-|`/ptz`|POST|팬·틸트·줌 이동/정지/홈 저장/홈 복귀.|필요|`streamer`|
+|`/ptz`|POST|팬·틸트·줌 이동/정지/절대 이동/프리셋 저장/프리셋 이동/자동 순찰 설정.|필요|`streamer`|
 
 ### 라이브 스트리밍 제어
 
@@ -88,7 +88,7 @@
 |`streamer`(동반 프로세스)|GET·POST `/profile`|`router`|프로필 조회·등록|
 |`streamer`(동반 프로세스)|POST `/ptz`|`router`|PTZ 명령|
 |`streamer`(동반 프로세스)|POST `/streaming/start`·`/streaming/stop`|`router`|적용 프로필로 소스 연결/해제(스트리밍 시작·종료의 실체)|
-|`streamer`(동반 프로세스)|GET `/status`|`router`|PTZ 위치·스트리밍 상태(모니터링 합성용)|
+|`streamer`(동반 프로세스)|GET `/status`|`router`|PTZ 위치·프리셋 좌표·자동 순찰 설정·스트리밍 상태(모니터링 합성용)|
 |`analyzer`|POST `/prompt`·`/start`·`/stop`·`/vlm/switch`|`router`|분석 설정·시작·종료·모델 전환|
 |`analyzer`|GET `/events`(SSE)·`/stream`(MJPEG)|`router`|분석 상태 스트림·입력 프레임|
 |`recorder`|POST `/notify`|`analyzer`|이벤트 통지(매칭 키워드·장면 설명·발생 시각)|
@@ -512,7 +512,8 @@ sequenceDiagram
 1. ***User***가 팬·틸트·줌 제어를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTP(8000/tcp), POST /ptz, application/json`
-    - 동작의 종류(이동·정지·홈 저장·홈 복귀)와 이동량은 JSON 본문에 담긴다.
+    - 동작의 종류(이동·정지·절대 이동·프리셋 저장·프리셋 이동·자동 순찰 설정)와 이동량·좌표는 JSON 본문에 담긴다.
+    - 자동 순찰 설정(`FR-052`)은 `{"action": "patrol", "enabled": bool, "interval_s": int}` 형태로 전달한다. 적용된 순찰 상태(활성 여부·전환 간격·현재 순회 중인 프리셋 슬롯)는 `/state`(SSE)의 `ptz_patrol` 필드로 내려간다.
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
     - 형태: `HTTP(8080/tcp), POST /ptz, application/json`
 4. ***Video streamer***는 요청을 수신했다는 응답을 ***Request router***를 거쳐 ***Client app***에게 보낸다.
@@ -523,6 +524,7 @@ sequenceDiagram
     - 접속 포트는 프로필에 등록된 `onvif_port`를 따른다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청을 별도의 오류 없이 무시한다(`FR-020`).
     - 주의: 라이브 스트리밍이 진행 중일 때 PTZ 제어가 가능하며, 라이브 스트리밍이 종료되면 PTZ 연결도 종료된다(`FR-016`).
+6. 자동 순찰(`FR-052`)이 활성인 동안 ***Video streamer***는 전환 간격마다 저장된 프리셋 위치로 절대 이동 명령을 자체 발행한다(위 2~5의 경로 중 5만 반복). 현재 팬·틸트 위치와 슬롯별 프리셋 좌표는 `/state`(SSE)의 `ptz_pan`·`ptz_tilt`·`ptz_preset_positions` 필드로 ***Client app***에게 실시간 제공된다.
 
 ### (9) 이벤트 클립과 이력 관리
 
