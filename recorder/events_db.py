@@ -53,7 +53,14 @@ def init_db() -> None:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    # @claude check_same_thread=False: FastAPI runs a sync dependency's setup
+    # @claude (connection creation in get_db) and the sync endpoint body on
+    # @claude threadpool threads that may differ, which violates sqlite3's
+    # @claude default same-thread rule intermittently (the /summary 500s,
+    # @claude analysis-mewly-impl.md §8). Each request still owns its private
+    # @claude connection and uses it sequentially, so cross-thread hand-off is
+    # @claude safe with the serialized sqlite3 build CPython ships.
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=3000")
