@@ -34,7 +34,7 @@
 |경로|메서드|기능|인증|전달 대상|
 |---|---|---|---|---|
 |`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정. 분석을 시작하지 않는다(`FR-025`).|필요|`analyzer`|
-|`/presets`|POST|상태 라벨 어휘·시간 구간 프리셋 설정(`FR-054`·`FR-055`). 본문의 `labels`·`presets` 중 보낸 항목만 교체하며, 항목 하나라도 형식 위반이면 400과 함께 아무것도 바꾸지 않는다.|필요|`analyzer`|
+|`/presets`|POST|상태 라벨 어휘·시간 구간 프리셋 설정(`FR-054`·`FR-055`). 본문의 `labels`·`presets` 중 보낸 항목만 교체하며, 항목 하나라도 형식 위반이면 400과 함께 아무것도 바꾸지 않는다. `presets`의 빈 목록도 유효한 설정이며, 이때 모든 시간대가 기본 설정으로 동작하고 추론 이력의 프리셋 식별자는 `default`로 기록된다.|필요|`analyzer`|
 |`/analysis/start`|POST|비디오 분석 시작/재시작(`FR-024`). 스트리밍 진행 중이 아니면 거부(`FR-050`). `analyzer`·`recorder`에 병렬 전달(SRS §2.3 (5)).|필요|`analyzer`·`recorder`|
 |`/analysis/stop`|POST|비디오 분석 종료(`FR-051`). 스트리밍은 유지.|필요|`analyzer`·`recorder`|
 |`/vlm/switch`|POST|VLM 모델 전환(`FR-032`, `P3`).|필요|`analyzer`|
