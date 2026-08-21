@@ -43,3 +43,38 @@ def notify_event(
                 log.error("event notify rejected: HTTP %d", resp.status)
     except Exception as e:
         log.error("event notify failed: %s", e)
+
+
+def notify_inference(
+    judged_at: float,
+    vlm_text: str,
+    labels: list[str],
+    preset: str,
+    model: str,
+    inference_elapsed_ms: int,
+) -> None:
+    """
+    Persist one inference into the recorder's history (1층). Fire-and-forget
+    like notify_event: a lost row degrades the aggregate slightly and is not
+    retried — the history is a sampled record, not a ledger.
+    """
+    payload = {
+        "judged_at": judged_at,
+        "vlm_text": vlm_text,
+        "labels": labels,
+        "preset": preset,
+        "model": model,
+        "inference_elapsed_ms": inference_elapsed_ms,
+    }
+    req = urllib.request.Request(
+        f"{RECORDER_URL}/inferences",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status >= 300:
+                log.error("inference notify rejected: HTTP %d", resp.status)
+    except Exception as e:
+        log.error("inference notify failed: %s", e)

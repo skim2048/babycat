@@ -15,7 +15,7 @@ import re
 import sqlite3
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -27,7 +27,7 @@ import finalize
 import segments
 import state_store
 from clip_storage import MIN_CLIP_SIZE, clip_count, count_removed_clip, recount_clips
-from events_db import get_db, init_db
+from events_db import get_db, init_db, insert_inference
 from hardware import HardwareMonitor, disk_usage
 from status import status
 
@@ -99,6 +99,21 @@ class EventListOut(BaseModel):
     total: int
 
 
+class InferenceOut(BaseModel):
+    id: int
+    created_at: str
+    vlm_text: str
+    labels: list[str]
+    preset: str
+    model: str
+    elapsed_ms: Optional[int]
+
+
+class InferenceListOut(BaseModel):
+    inferences: list[InferenceOut]
+    total: int
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -132,6 +147,35 @@ async def notify(request: Request):
     payload = await request.json()
     accepted = finalize.accept_event(payload)
     return {"ok": True, "accepted": accepted}
+
+
+@app.post("/inferences", status_code=202)
+async def post_inference(request: Request):
+    """Inference-history notification from the analyzer (2층 이력). Every
+    inference arrives here, matched or not; the raw text is preserved so
+    labels can be re-derived after a vocabulary change."""
+    payload = await request.json()
+    vlm_text = payload.get("vlm_text")
+    if not isinstance(vlm_text, str):
+        raise HTTPException(400, "vlm_text required")
+    judged_at = payload.get("judged_at")
+    created_at = (
+        datetime.fromtimestamp(judged_at, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if isinstance(judged_at, (int, float))
+        else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    labels = payload.get("labels")
+    labels = [l for l in labels if isinstance(l, str)] if isinstance(labels, list) else []
+    elapsed = payload.get("inference_elapsed_ms")
+    insert_inference(
+        created_at,
+        vlm_text,
+        json.dumps(labels, ensure_ascii=False),
+        str(payload.get("preset") or "default"),
+        str(payload.get("model") or ""),
+        elapsed if isinstance(elapsed, int) else None,
+    )
+    return {"ok": True}
 
 
 # ── Clips ────────────────────────────────────────────────────────────────────
@@ -373,6 +417,104 @@ def list_events(
         (*params, limit, offset),
     ).fetchall()
     return EventListOut(events=[EventOut(**dict(r)) for r in rows], total=total)
+
+
+@app.get("/inferences", response_model=InferenceListOut)
+def list_inferences(
+    label: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    limit: int = Query(200, ge=1),
+    offset: int = Query(0, ge=0),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Inference history (2층 이력). `label` filters rows whose label list
+    contains the exact label; date bounds follow the /events convention."""
+    date_from = _normalize_date_query("date_from", date_from)
+    date_to = _normalize_date_query("date_to", date_to)
+    where, params = [], []
+    if label:
+        # @claude labels is a JSON array of strings; the quoted form matches
+        # @claude exact members only (no substring false hits across labels).
+        where.append("labels LIKE ?")
+        params.append(f'%{json.dumps(label, ensure_ascii=False)}%')
+    if date_from:
+        where.append("created_at >= ?")
+        params.append(_local_date_bound_utc(date_from, end=False))
+    if date_to:
+        where.append("created_at <= ?")
+        params.append(_local_date_bound_utc(date_to, end=True))
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+    total = db.execute(f"SELECT COUNT(*) FROM inferences {clause}", params).fetchone()[0]
+    rows = db.execute(
+        f"SELECT id, created_at, vlm_text, labels, preset, model, elapsed_ms "
+        f"FROM inferences {clause} ORDER BY id DESC LIMIT ? OFFSET ?",
+        (*params, limit, offset),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["labels"] = json.loads(d["labels"])
+        except (json.JSONDecodeError, TypeError):
+            d["labels"] = []
+        out.append(InferenceOut(**d))
+    return InferenceListOut(inferences=out, total=total)
+
+
+@app.get("/summary")
+def summary(
+    date_from: str = Query(...),
+    date_to: str = Query(...),
+    bucket: str = Query("hour"),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Label-count aggregation over the inference history (3층). Buckets are
+    system-local (TZ) hours or days; each bucket carries the label counts and
+    the total inference count so the client can normalize by the total —
+    inference cadence varies by device and preset, so raw counts alone would
+    distort occupancy. Empty buckets inside the range are included as zeros."""
+    if bucket not in ("hour", "day"):
+        raise HTTPException(400, "bucket must be 'hour' or 'day'")
+    date_from = _normalize_date_query("date_from", date_from)
+    date_to = _normalize_date_query("date_to", date_to)
+    lo = datetime.strptime(date_from, "%Y-%m-%d").astimezone()
+    hi = datetime.strptime(date_to, "%Y-%m-%d").astimezone() + timedelta(days=1)
+    if lo >= hi:
+        raise HTTPException(400, "date_from must not be after date_to")
+
+    rows = db.execute(
+        "SELECT created_at, labels FROM inferences WHERE created_at >= ? AND created_at <= ?",
+        (_local_date_bound_utc(date_from, end=False), _local_date_bound_utc(date_to, end=True)),
+    ).fetchall()
+
+    step = timedelta(hours=1) if bucket == "hour" else timedelta(days=1)
+    buckets: dict[str, dict] = {}
+    cur = lo
+    while cur < hi:
+        buckets[cur.isoformat()] = {"bucket_start": cur.isoformat(), "counts": {}, "total": 0}
+        cur += step
+
+    for r in rows:
+        at = datetime.strptime(r["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc).astimezone()
+        start = at.replace(minute=0, second=0, microsecond=0)
+        if bucket == "day":
+            start = start.replace(hour=0)
+        b = buckets.get(start.isoformat())
+        if b is None:
+            continue  # @claude DST 등 경계 밖의 잔여 행은 버린다.
+        b["total"] += 1
+        try:
+            labels = json.loads(r["labels"])
+        except (json.JSONDecodeError, TypeError):
+            labels = []
+        for label in labels:
+            if isinstance(label, str):
+                b["counts"][label] = b["counts"].get(label, 0) + 1
+
+    return {"bucket": bucket, "buckets": list(buckets.values())}
 
 
 @app.delete("/events/{event_id}", response_model=DeletedOut)

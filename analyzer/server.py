@@ -10,6 +10,7 @@ Endpoints:
   GET  /events      SSE (inference results + pipeline/VLM state)
   GET  /stream      MJPEG stream (VLM input frames)
   POST /prompt      Change VLM prompt / trigger keywords
+  POST /presets     Change label vocabulary / time-ranged presets
   POST /start       Start or restart analysis (FR-024)
   POST /stop        Stop analysis (FR-049, FR-051)
   POST /vlm/switch  Request VLM model switch
@@ -60,7 +61,9 @@ def snapshot_sse_message() -> bytes:
 
 def persist_settings() -> None:
     settings.save(
-        app_state.get_prompt(), app_state.get_triggers(), app_state.is_analysis_active()
+        app_state.get_prompt(), app_state.get_triggers(),
+        app_state.get_label_groups(), app_state.get_presets(),
+        app_state.is_analysis_active(),
     )
 
 
@@ -88,6 +91,8 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/prompt":
             self._handle_prompt()
+        elif path == "/presets":
+            self._handle_presets()
         elif path == "/start":
             self._handle_start()
         elif path == "/stop":
@@ -180,6 +185,44 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
             log.info("Trigger keywords: %s", keywords)
         persist_settings()
         self._send_json({"ok": True})
+
+    def _handle_presets(self):
+        """
+        Store the label vocabulary and time-ranged presets (2층).
+        Request: {"labels": {"<label>": ["<synonym>", ...], ...},
+                  "presets": [{"id", "start", "end", "prompt"?, "labels"?}, ...]}
+        Both are opaque client-injected data; validation only checks shape
+        and time format, and malformed entries are dropped (settings.py).
+        Omitted keys leave the stored value untouched.
+        """
+        body = self._read_json_body()
+        if "labels" not in body and "presets" not in body:
+            self._send_json({"ok": False, "error": "labels or presets required"}, status=400)
+            return
+        # @claude Validate everything before applying anything — a rejected
+        # @claude request leaves both values untouched (no partial apply),
+        # @claude same rule as /prompt.
+        labels = presets = None
+        if "labels" in body:
+            labels = settings.validate_labels(body["labels"])
+            if labels is None:
+                self._send_json({"ok": False, "error": "malformed labels"}, status=400)
+                return
+        if "presets" in body:
+            presets = settings.validate_presets(body["presets"])
+            if presets is None:
+                self._send_json({"ok": False, "error": "malformed presets"}, status=400)
+                return
+        if labels is not None:
+            app_state.set_label_groups(labels)
+            log.info("Label groups changed: %s", list(labels))
+        if presets is not None:
+            app_state.set_presets(presets)
+            log.info("Presets changed: %s", [p["id"] for p in presets])
+        persist_settings()
+        self._send_json({"ok": True,
+                         "labels": app_state.get_label_groups(),
+                         "presets": app_state.get_presets()})
 
     def _handle_start(self):
         """Start or restart the analysis pipeline (FR-024). Idempotent."""

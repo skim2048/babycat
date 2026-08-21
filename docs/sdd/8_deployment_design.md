@@ -31,6 +31,8 @@
 |`DEFAULT_USER`·`DEFAULT_PASS`|`router`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
 |`VLM_MODELS`|`analyzer`|필수|후보 VLM 모델 목록(SRS §3.2)|
 |`MAX_NEW_TOKENS`|`analyzer`|선택|생성 토큰 상한(§7.2)|
+|`MIN_INFER_INTERVAL`|`analyzer`|선택|추론 시작 간격의 하한(초, SRS `FR-058`). 기본 0(자연 주기)|
+|`INFERENCE_RETENTION_DAYS`|`recorder`|선택|추론 이력 보존 기간(SRS `FR-053`). 기본 90일|
 |`TZ`|전체|선택|컨테이너 로컬 시간대. 날짜 필터의 달력 기준(기본 Asia/Seoul)|
 |`CORS_EXTRA_ORIGINS`|`router`|선택|사설망 허용 규칙 밖에서 추가로 허용할 origin 목록|
 |`TRIGGER_COOLDOWN`|`recorder`|선택|이벤트 묶음 처리 간격(SRS `FR-030`)|

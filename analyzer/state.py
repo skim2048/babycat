@@ -40,6 +40,11 @@ class AppState:
         self._sse_queues: list[queue.Queue] = []
         self.inference_prompt: str = ""
         self.trigger_keywords: list[str] = []
+        # @claude 2층: client-injected label vocabulary ({label: [synonyms]})
+        # @claude and time-ranged presets. Both are opaque data here.
+        self.label_groups: dict = {}
+        self.presets: list = []
+        self.active_preset: str = ""
         self.event_triggered: bool = False
         self.analysis_active: bool = False
         self.pipeline_state: str = "idle"
@@ -100,6 +105,26 @@ class AppState:
     def get_triggers(self) -> list[str]:
         with self._lock:
             return list(self.trigger_keywords)
+
+    def set_label_groups(self, labels: dict):
+        with self._lock:
+            self.label_groups = dict(labels)
+
+    def get_label_groups(self) -> dict:
+        with self._lock:
+            return dict(self.label_groups)
+
+    def set_presets(self, presets: list):
+        with self._lock:
+            self.presets = list(presets)
+
+    def get_presets(self) -> list:
+        with self._lock:
+            return list(self.presets)
+
+    def set_active_preset(self, preset_id: str):
+        with self._lock:
+            self.active_preset = preset_id
 
     def set_analysis_active(self, active: bool):
         with self._lock:
@@ -169,6 +194,9 @@ class AppState:
             "ring_size":     self._ring_size,
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
+            "label_groups": dict(self.label_groups),
+            "presets": list(self.presets),
+            "active_preset": self.active_preset,
             "event_triggered": self.event_triggered,
             "analysis_active": self.analysis_active,
             "vlm_state": self.vlm_state,

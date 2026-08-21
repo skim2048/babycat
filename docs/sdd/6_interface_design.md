@@ -34,6 +34,7 @@
 |경로|메서드|기능|인증|전달 대상|
 |---|---|---|---|---|
 |`/prompt`|POST|VLM 프롬프트·이벤트 키워드 설정. 분석을 시작하지 않는다(`FR-025`).|필요|`analyzer`|
+|`/presets`|POST|상태 라벨 어휘·시간 구간 프리셋 설정(`FR-054`·`FR-055`). 본문의 `labels`·`presets` 중 보낸 항목만 교체하며, 항목 하나라도 형식 위반이면 400과 함께 아무것도 바꾸지 않는다.|필요|`analyzer`|
 |`/analysis/start`|POST|비디오 분석 시작/재시작(`FR-024`). 스트리밍 진행 중이 아니면 거부(`FR-050`). `analyzer`·`recorder`에 병렬 전달(SRS §2.3 (5)).|필요|`analyzer`·`recorder`|
 |`/analysis/stop`|POST|비디오 분석 종료(`FR-051`). 스트리밍은 유지.|필요|`analyzer`·`recorder`|
 |`/vlm/switch`|POST|VLM 모델 전환(`FR-032`, `P3`).|필요|`analyzer`|
@@ -56,8 +57,10 @@
 |`/events`|GET|발생 이력 조회(키워드·날짜, 페이지네이션).|필요|`recorder`|
 |`/events/{id}`|DELETE|발생 이력 개별 삭제(`FR-035`).|필요|`recorder`|
 |`/events`|DELETE|발생 이력 전체 삭제.|필요|`recorder`|
+|`/inferences`|GET|추론 이력 조회(라벨 정확 일치·날짜, 페이지네이션)(`FR-056`).|필요|`recorder`|
+|`/summary`|GET|추론 이력의 라벨별 버킷 집계(`FR-057`). 질의는 `date_from`·`date_to`(필수)·`bucket`(`hour`\|`day`), 버킷마다 `{bucket_start, counts, total}`을 반환하며 `total`이 정규화 분모다.|필요|`recorder`|
 
-클립·이력의 날짜 필터는 시스템 로컬 시간대(`TZ`)의 달력 날짜를 뜻한다. 이력의 발생 시각은 UTC로 저장되며, 조회 시 날짜 경계를 UTC로 변환해 비교한다.
+클립·이력의 날짜 필터는 시스템 로컬 시간대(`TZ`)의 달력 날짜를 뜻한다. 이력의 발생 시각은 UTC로 저장되며, 조회 시 날짜 경계를 UTC로 변환해 비교한다. `/summary`의 버킷 경계도 시스템 로컬 시각으로 정렬한다.
 
 ### 라이브 스트리밍 중계
 
@@ -89,9 +92,10 @@
 |`streamer`(동반 프로세스)|POST `/ptz`|`router`|PTZ 명령|
 |`streamer`(동반 프로세스)|POST `/streaming/start`·`/streaming/stop`|`router`|적용 프로필로 소스 연결/해제(스트리밍 시작·종료의 실체)|
 |`streamer`(동반 프로세스)|GET `/status`|`router`|PTZ 위치·프리셋 좌표·자동 순찰 설정·스트리밍 상태(모니터링 합성용)|
-|`analyzer`|POST `/prompt`·`/start`·`/stop`·`/vlm/switch`|`router`|분석 설정·시작·종료·모델 전환|
+|`analyzer`|POST `/prompt`·`/presets`·`/start`·`/stop`·`/vlm/switch`|`router`|분석 설정(프롬프트·키워드·라벨 어휘·프리셋)·시작·종료·모델 전환|
 |`analyzer`|GET `/events`(SSE)·`/stream`(MJPEG)|`router`|분석 상태 스트림·입력 프레임|
 |`recorder`|POST `/notify`|`analyzer`|이벤트 통지(매칭 키워드·장면 설명·발생 시각)|
+|`recorder`|POST `/inferences`|`analyzer`|추론 이력 통지(`FR-053`) — 매 추론의 원문·라벨·프리셋·시각. `/notify`와 별개 경로로, 이벤트·클립 의미론을 건드리지 않는다|
 |`recorder`|POST `/buffer/start`·`/buffer/stop`|`router`|세그먼트 버퍼 시작·정지(분석 시작·종료의 일부)|
 |`recorder`|GET·DELETE `/clips`(계열)·`/events`(계열)|`router`|§6.1 클립·이력 기능의 실체|
 |`recorder`|GET `/status`|`router`|하드웨어·저장·세그먼트 상태(모니터링 합성용)|
@@ -101,6 +105,8 @@
 MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에서 localhost로 호출하는 프로세스 간 인터페이스이므로 이 표에 넣지 않는다(§4.2).
 
 이벤트 통지(`/notify`)의 본문은 매칭 키워드 목록, 장면 설명 텍스트, 판정 시각, VLM이 본 마지막 프레임의 캡처 시각, 그리고 진단용 추론 시각 정보다. 프레임 캡처 시각은 클립 창의 기준점이므로 계약 필드다(§7.2). ***Event recorder***는 수신 즉시 응답하고 클립 결합은 작업 스레드에서 수행한다(§3.4). 통지가 유실되면 그 이벤트는 기록되지 않으며, 이를 좁히는 재전송은 두지 않는다 — 추론 주기가 수 초이므로 지속되는 상황은 다음 추론에서 다시 판정된다.
+
+추론 이력 통지(`/inferences`)도 같은 태도를 따른다 — 유실된 행은 재전송하지 않는다. 추론 이력은 표본의 축적이지 원장이 아니므로, 행 하나의 유실은 집계를 미세하게 낮출 뿐이며 분모(`FR-057`)가 함께 줄어 점유율을 왜곡하지 않는다.
 
 ## 6.4 스트리밍 인터페이스 (Streaming Interface)
 
@@ -120,7 +126,7 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 
 ### (4) 모니터링 스트림 합성
 
-`FR-042`·`FR-043`의 실시간 제공은 ***Request router***의 합성으로 실현한다. ***Request router***는 `analyzer`의 SSE를 구독하여 추론·파이프라인 상태 변화를 즉시 받고, `recorder`와 `streamer`의 `/status`를 주기(2초)로 수집하여, 세 출처를 하나의 평면 JSON 스냅숏으로 병합해 `/state` SSE로 내보낸다. 어느 출처가 응답하지 않으면 그 필드 그룹을 결측으로 표시하고 나머지는 계속 전달한다 — 관측은 부분 실패에도 살아 있어야 한다(§2.1 목표 3).
+`FR-042`·`FR-043`의 실시간 제공은 ***Request router***의 합성으로 실현한다. ***Request router***는 `analyzer`의 SSE를 구독하여 추론·파이프라인 상태 변화를 즉시 받고, `recorder`와 `streamer`의 `/status`를 주기(2초)로 수집하여, 세 출처를 하나의 평면 JSON 스냅숏으로 병합해 `/state` SSE로 내보낸다. `analyzer` 스냅숏의 설정 필드 — `inference_prompt`, `trigger_keywords`, `label_groups`(라벨 어휘), `presets`(시간 구간 프리셋), `active_preset`(현재 적용 중인 프리셋 식별자) — 는 ***Client app***이 설정 화면을 프리필하는 계약 필드다. 어느 출처가 응답하지 않으면 그 필드 그룹을 결측으로 표시하고 나머지는 계속 전달한다 — 관측은 부분 실패에도 살아 있어야 한다(§2.1 목표 3).
 
 클립의 생성·삭제는 이 스냅숏의 클립 계수 변화로 드러나고, ***Client app***은 계수 변화를 클립 목록 갱신의 신호로 쓴다. 따라서 계수의 변화는 그 변화가 목록 조회로 관찰 가능해진 뒤에만 일어나야 한다 — 신호가 데이터보다 앞서면 갱신이 새 클립을 얻지 못한 채 끝나고, 다음 계수 변화가 있을 때까지 목록에 반영되지 않는다.
 

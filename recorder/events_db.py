@@ -1,13 +1,25 @@
-"""Babycat recorder — event history database (FR-031, SDD §5.2)."""
+"""Babycat recorder — event/inference history database (FR-031, SDD §5.2)."""
 
+import logging
 import os
 import sqlite3
+import time
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DB_PATH", "/data/db/recorder.db")
 
+# @claude 기본 90일 — 클라이언트 화면 요구(당일 + 기준선 14일 + 월 단위 회고)를
+# @claude 근거로 상향(analysis-mewly-impl.md §5). 10초 주기 기준 약 78만 행.
+INFERENCE_RETENTION_DAYS = int(os.environ.get("INFERENCE_RETENTION_DAYS", "90"))
+
 # @claude Column names are kept from the prototype so the external contract
 # @claude (EventOut: id/trigger/clip_name/created_at) survives the split.
+# @claude `inferences` is the 2층 history: every inference, matched or not,
+# @claude with the raw text preserved so labels can be re-derived after a
+# @claude vocabulary change. Its lifetime is independent of clips (FR-033
+# @claude deletion never touches it).
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,6 +28,16 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
+CREATE TABLE IF NOT EXISTS inferences (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT    NOT NULL,
+    vlm_text   TEXT    NOT NULL,
+    labels     TEXT    NOT NULL DEFAULT '[]',
+    preset     TEXT    NOT NULL DEFAULT 'default',
+    model      TEXT    NOT NULL DEFAULT '',
+    elapsed_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_inferences_created_at ON inferences(created_at);
 """
 
 
@@ -61,6 +83,47 @@ def insert_event(trigger: str, clip_name: str | None, created_at: str) -> None:
             (trigger, clip_name, created_at),
         )
         conn.commit()
+    finally:
+        conn.close()
+
+
+_last_prune_at = 0.0
+
+
+def insert_inference(created_at: str, vlm_text: str, labels_json: str,
+                     preset: str, model: str, elapsed_ms: int | None) -> None:
+    """Append one inference row (2층 이력); called from the notify handler."""
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT INTO inferences (created_at, vlm_text, labels, preset, model, elapsed_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (created_at, vlm_text, labels_json, preset, model, elapsed_ms),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    _maybe_prune_inferences()
+
+
+def _maybe_prune_inferences() -> None:
+    """Drop rows older than the retention window, at most once per hour.
+    Retention is time-based only for now (INFERENCE_RETENTION_DAYS). @claude"""
+    global _last_prune_at
+    now = time.time()
+    if now - _last_prune_at < 3600:
+        return
+    _last_prune_at = now
+    cutoff = time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ",
+        time.gmtime(now - INFERENCE_RETENTION_DAYS * 86400),
+    )
+    conn = _connect()
+    try:
+        cur = conn.execute("DELETE FROM inferences WHERE created_at < ?", (cutoff,))
+        conn.commit()
+        if cur.rowcount:
+            log.info("inference history pruned: %d rows (< %s)", cur.rowcount, cutoff)
     finally:
         conn.close()
 

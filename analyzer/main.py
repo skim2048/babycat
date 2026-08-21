@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image
 
 import settings
-from notify import notify_event
+from notify import notify_event, notify_inference
 from vlm_worker import VlmProcess
 from state import state as app_state
 from server import set_start_analysis_callback, set_stop_analysis_callback, start_server
@@ -49,6 +49,13 @@ MODEL_ID = VLM_MODELS[0]
 
 TARGET_FPS = float(os.getenv("TARGET_FPS", "1.0"))
 N_FRAMES   = int(os.getenv("N_FRAMES",   "4"))
+
+# @claude Minimum seconds between inference starts. 0 = natural pacing (the
+# @claude hardware's own inference duration sets the cycle). A floor trades
+# @claude event-detection latency for power/heat and history volume; aggregates
+# @claude stay comparable across devices because /summary carries per-bucket
+# @claude totals as the denominator.
+MIN_INFER_INTERVAL = float(os.getenv("MIN_INFER_INTERVAL", "0"))
 
 RING_SIZE = int(os.getenv("RING_SIZE", "30"))
 
@@ -241,6 +248,7 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
     @claude
     """
     log.info("VLM inference thread started")
+    last_infer_at = 0.0
     while True:
         # @claude Handle pending switch requests at the boundary between inferences.
         target = holder.pop_request()
@@ -256,6 +264,11 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         if not app_state.is_analysis_active():
             continue
 
+        # @claude Enforce the inference-interval floor: frame signals inside the
+        # @claude window are dropped, so the cycle is max(natural, MIN_INFER_INTERVAL).
+        if MIN_INFER_INTERVAL > 0 and time.time() - last_infer_at < MIN_INFER_INTERVAL:
+            continue
+
         samples = ring.latest_samples(N_FRAMES)
         if not samples:
             continue
@@ -265,10 +278,22 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         # @claude Prompt and keywords are both read at inference start, so a
         # @claude settings change mid-inference cannot pair an old prompt's
         # @claude text with new keywords — one consistent snapshot per cycle.
+        # @claude The active preset is resolved here too, so a preset boundary
+        # @claude only takes effect between inferences, never mid-generation.
         prompt = app_state.get_prompt()
         triggers = app_state.get_triggers()
+        label_groups = app_state.get_label_groups()
+        preset = settings.resolve_preset(app_state.get_presets())
+        preset_id = "default"
+        if preset is not None:
+            preset_id = preset["id"]
+            prompt = preset.get("prompt", prompt)
+            if preset.get("labels") is not None:
+                label_groups = preset["labels"]
+        app_state.set_active_preset(preset_id)
 
         inference_started_at = time.time()
+        last_infer_at = inference_started_at
         try:
             # @claude vlm_proc.infer() respawns a crashed child on its own; a
             # @claude failure here (incl. switch+rollback both failed) just skips.
@@ -288,6 +313,14 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         raw_lower = raw.lower()
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
         event_triggered = len(matched) > 0
+
+        # @claude 2층 label match: a label hits when any of its synonyms appears
+        # @claude in the text. Labels and synonyms are opaque client strings —
+        # @claude same substring mechanism as the trigger keywords above.
+        matched_labels = [
+            label for label, syns in label_groups.items()
+            if any(s in raw_lower for s in syns)
+        ]
 
         if event_triggered:
             event_time = time.time()
@@ -312,6 +345,16 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
                 args=(matched, raw, event_time, last_frame_time, inference_started_at, inference_elapsed_ms),
                 daemon=True,
             ).start()
+
+        # @claude 1층: every inference — matched or not — goes into the history
+        # @claude (FR 예정). Separate from the event path above, which keeps its
+        # @claude clip-recording semantics untouched.
+        threading.Thread(
+            target=notify_inference,
+            args=(time.time(), raw, matched_labels, preset_id,
+                  holder.name, inference_elapsed_ms),
+            daemon=True,
+        ).start()
 
 
 # ── GStreamer pipeline ───────────────────────────────────────────────────────
@@ -524,12 +567,15 @@ def main() -> None:
     log.info("  TARGET_FPS   : %s", TARGET_FPS)
     log.info("  N_FRAMES     : %s", N_FRAMES)
     log.info("  RING_SIZE    : %s", RING_SIZE)
+    log.info("  MIN_INFER_INTERVAL : %ss", MIN_INFER_INTERVAL)
 
     # @claude Restore the persisted settings (FR-014): prompt, keywords, and
     # @claude whether analysis was running before the restart.
     persisted = settings.load()
     app_state.set_prompt(persisted["prompt"])
     app_state.set_triggers(persisted["keywords"])
+    app_state.set_label_groups(persisted["labels"])
+    app_state.set_presets(persisted["presets"])
     app_state.set_analysis_active(persisted["analysis_active"])
     _pipeline_lifecycle.mark_waiting_for_vlm()
     set_start_analysis_callback(start_analysis)
@@ -586,6 +632,7 @@ def main() -> None:
     app_state.set_refs(ring, RING_SIZE, {
         "target_fps": TARGET_FPS,
         "n_frames":   N_FRAMES,
+        "min_infer_interval": MIN_INFER_INTERVAL,
     })
 
     worker = threading.Thread(

@@ -69,6 +69,8 @@ services:
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
       - VLM_MODELS=${VLM_MODELS:?required}
       - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
+      # 추론 시작 간격의 하한(초)입니다. 0이면 하드웨어의 자연 주기를 따릅니다.
+      - MIN_INFER_INTERVAL=${MIN_INFER_INTERVAL:-0}
     group_add:
       - video
     devices:
@@ -107,6 +109,8 @@ services:
       - TRIGGER_CLIP_DUR=${TRIGGER_CLIP_DUR:-5}
       - TRIGGER_PRE_EVENT_SEC=${TRIGGER_PRE_EVENT_SEC:-2}
       - TRIGGER_POST_EVENT_SEC=${TRIGGER_POST_EVENT_SEC:-${TRIGGER_CLIP_DUR:-5}}  # 미설정 시 TRIGGER_CLIP_DUR을 따릅니다.
+      # 추론 이력의 보존 기간(일)입니다. 초과분은 매시 정리합니다.
+      - INFERENCE_RETENTION_DAYS=${INFERENCE_RETENTION_DAYS:-90}
       - CLIP_MIN_FREE_MB=${CLIP_MIN_FREE_MB:-512}
       - CLIP_TARGET_FREE_MB=${CLIP_TARGET_FREE_MB:-1024}
       - RECORDER_ENCODE_BITRATE=${RECORDER_ENCODE_BITRATE:-4000000}

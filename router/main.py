@@ -356,6 +356,12 @@ def set_prompt(payload: dict, _=Depends(require_auth)):
     return forward_json(ANALYZER_URL, "POST", "/prompt", payload)
 
 
+@app.post("/presets")
+def set_presets(payload: dict, _=Depends(require_auth)):
+    """Relay the label vocabulary / time-ranged presets to the analyzer (2층)."""
+    return forward_json(ANALYZER_URL, "POST", "/presets", payload)
+
+
 @app.post("/vlm/switch")
 def switch_vlm(payload: dict, _=Depends(require_auth)):
     return forward_json(ANALYZER_URL, "POST", "/vlm/switch", payload)
@@ -502,6 +508,18 @@ def delete_all_clips(_=Depends(require_auth)):
 @app.get("/events")
 async def list_events(request: Request, _=Depends(require_auth)):
     return await relay_raw(request, RECORDER_URL, "/events")
+
+
+@app.get("/inferences")
+async def list_inferences(request: Request, _=Depends(require_auth)):
+    """Relay the inference history (2층 이력) from the recorder."""
+    return await relay_raw(request, RECORDER_URL, "/inferences")
+
+
+@app.get("/summary")
+async def get_summary(request: Request, _=Depends(require_auth)):
+    """Relay the inference-history aggregation (3층) from the recorder."""
+    return await relay_raw(request, RECORDER_URL, "/summary")
 
 
 @app.delete("/events/{event_id}")
