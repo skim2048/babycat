@@ -1,0 +1,19 @@
+# Babycat gateway — TLS 종단 (단일 진입점 8000의 HTTPS 전환).
+# 사설(내부) CA로 LAN IP·localhost SAN 인증서를 발급한다. CA 루트는
+# data/caddy/pki/authorities/local/root.crt 에 생성되며, 클라이언트
+# (브라우저 신뢰 저장소, mewly 앱의 res/raw)에 1회 설치한다.
+# 접속 호스트가 늘면 아래 site 주소 목록에 추가한다.
+{
+	local_certs
+	skip_install_trust
+	# IP 직접 접속은 SNI가 없으므로 기본 인증서 이름을 지정한다
+	default_sni 192.168.1.207
+}
+
+https://192.168.1.207:8000, https://172.27.1.207:8000, https://localhost:8000, https://127.0.0.1:8000 {
+	tls internal
+	# SSE(/state)·MJPEG(/stream) 등 스트리밍 응답을 버퍼링 없이 통과시킨다
+	reverse_proxy router:8000 {
+		flush_interval -1
+	}
+}

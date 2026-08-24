@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS whep_sessions (
     created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_whep_sessions_username ON whep_sessions(username);
+
+-- @claude Pet profile, one row per account. Stored as a JSON document: the
+-- @claude profile is read and written whole by its owner, never queried by
+-- @claude field, so columns would add migrations without buying anything.
+CREATE TABLE IF NOT EXISTS profiles (
+    username   TEXT PRIMARY KEY,
+    data       TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 

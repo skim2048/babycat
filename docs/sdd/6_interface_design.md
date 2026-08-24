@@ -14,6 +14,15 @@
 |`/api/change-password`|POST|비밀번호 변경(기존 토큰 전체 폐기).|필요|`router` 자체|
 |`/health`|GET|서버 상태 확인.|불필요|`router` 자체|
 
+### 반려동물 프로필
+
+|경로|메서드|기능|인증|전달 대상|
+|---|---|---|---|---|
+|`/pet/profile`|GET|반려동물 프로필 조회(`FR-059`). 저장된 프로필이 없으면 빈 프로필을 반환한다.|필요|`router` 자체|
+|`/pet/profile`|PUT|반려동물 프로필 저장(전체 교체). 항목별 크기 상한을 검증한다.|필요|`router` 자체|
+
+경로를 `/profile`로 하지 않는 것은, 그 이름이 내부 전달 경로에서 비디오 소스 프로필(`/camera`의 `streamer` 측 경로)을 이미 뜻하기 때문이다.
+
 ### 비디오 소스 프로필·PTZ
 
 |경로|메서드|기능|인증|전달 대상|
@@ -78,7 +87,7 @@
 - **리프레시 토큰** — 임의 난수 토큰. 로그인 유지를 요청한 로그인에서만 발급한다(`FR-002`). 원문은 클라이언트만 보관하고 서버는 해시만 저장하며, 만료는 발급 후 30일이다. 갱신마다 회전한다(`FR-045`).
 - **1계정 1로그인** — 로그인 성공은 같은 계정의 기존 세션을 대체한다(`FR-047`). ***Request router***는 새 토큰 발급에 앞서 계정의 리프레시 토큰 전부를 폐기하고 세대를 증가시키므로, 기존 세션의 토큰은 종류를 불문하고 모두 무효가 된다. 진행 중이던 스트림 연결(라이브 재생·모니터링)도 함께 끊는다 — 중계 스트림(SSE·MJPEG)은 전달 루프의 세대 대조로 끊고, ***Request router***를 경유하지 않는 WebRTC 미디어는 수립 시 등록해 둔 WHEP 세션에 종료 요청을 보내 끊으며 — 등록부는 계정 데이터베이스에 영속되어(§5.2) ***Request router***의 재시작이 종료 능력을 잃게 하지 않는다 — HLS·클립 재생은 요청 단위 인증이므로 다음 요청부터 거부된다. 대체된 세션의 ***Client app***은 폐기된 토큰의 거부 응답(§6.5)으로 이를 인지하여, 사용자에게 알리고 로그아웃한다. 세션을 바꾸는 연산 — 로그인에 의한 대체, 토큰 회전, 로그아웃, 비밀번호 변경 — 은 직렬화한다. 대체와 회전이 겹칠 때 회전이 발급한 토큰이 폐기를 비켜가 새 세션 이후까지 유효하게 남는 일을 배제하기 위함이다.
 - **폐기** — 새 로그인·로그아웃·비밀번호 변경 시 ***Request router***가 계정의 세대를 증가시킨다. 매 인증마다 토큰의 세대를 계정 데이터베이스의 현재 세대와 대조하므로, 이전 세대의 액세스 토큰은 즉시 거부된다(`FR-003`·`FR-005`·`FR-047`). 발급·검증·폐기가 한 프로세스에 있어 이 대조는 자기 데이터베이스 읽기 한 번이다.
-- **토큰 전달** — 원칙은 `Authorization: Bearer` 헤더이고, 헤더를 설정할 수 없는 클라이언트 기능(HLS·SSE·MJPEG·클립 재생)을 위해 `?token=` 쿼리 파라미터를 허용한다.
+- **토큰 전달** — 원칙은 `Authorization: Bearer` 헤더이고, 헤더를 설정할 수 없는 클라이언트 기능(HLS·SSE·MJPEG·클립 재생)을 위해 `?token=` 쿼리 파라미터를 허용한다. 쿼리 토큰은 URL에 실리므로, 전송 구간은 TLS(SRS `NFR-016`)가 보호하고 접근 로그 노출은 §8.4의 마스킹이 막는다.
 - **스트림 접근 토큰은 존재하지 않는다** — 단일 진입점 결정(§2.4 (2))으로 모든 재생 요청이 위 검증을 거치므로, 별도 토큰과 그 폐기 지연 문제가 성립하지 않는다.
 - **초기 계정** — 최초 기동 시 초기 관리자 계정을 1회 생성하고, 초기 비밀번호가 변경되지 않은 동안 로그인 응답에 변경 필요를 명시한다(`FR-006`). 로그인 연속 10회 실패 시 30분 차단한다(`FR-007`).
 
@@ -173,9 +182,8 @@ sequenceDiagram
 
 1. ***User***가 자격증명을 입력하여 로그인을 요청한다. 로그인 유지 여부도 함께 입력한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /api/login, application/json`
+    - 형태: `HTTPS(8000/tcp), POST /api/login, application/json`
     - 자격증명과 로그인 유지 여부는 JSON 본문에 담긴다.
-    - 프로토타이핑은 HTTP를 사용하였으나, 프로덕션용은 반드시 HTTPS로 구현하여야 한다(SRS §2.7).
 3. ***Request router***는 전달받은 자격증명을 검증한다.
     - 검증은 내부에 저장된 계정 정보를 이용해 외부 통신 없이 수행한다.
     - 입력된 비밀번호를 내부에 저장된 해시와 대조한다.
@@ -190,9 +198,9 @@ sequenceDiagram
 
 계정 관리의 나머지 동작은 ***Request router*** 안에서 끝나는 같은 왕복 구조이므로 형태만 적는다. 의미는 §6.2가 정의한다.
 
-- 토큰 갱신: `HTTP(8000/tcp), POST /api/refresh, application/json` → `200 OK, application/json`. 리프레시 토큰을 제출하면 회전된 토큰 쌍을 반환한다.
-- 로그아웃: `HTTP(8000/tcp), POST /api/logout, application/json` → `200 OK, application/json`. 리프레시 토큰이 없는 세션은 액세스 토큰을 `Authorization` 헤더로 대신 제출한다.
-- 비밀번호 변경: `HTTP(8000/tcp), POST /api/change-password, application/json` → `200 OK, application/json`. 성공하면 계정의 기존 토큰 전체가 폐기된다.
+- 토큰 갱신: `HTTPS(8000/tcp), POST /api/refresh, application/json` → `200 OK, application/json`. 리프레시 토큰을 제출하면 회전된 토큰 쌍을 반환한다.
+- 로그아웃: `HTTPS(8000/tcp), POST /api/logout, application/json` → `200 OK, application/json`. 리프레시 토큰이 없는 세션은 액세스 토큰을 `Authorization` 헤더로 대신 제출한다.
+- 비밀번호 변경: `HTTPS(8000/tcp), POST /api/change-password, application/json` → `200 OK, application/json`. 성공하면 계정의 기존 토큰 전체가 폐기된다.
 
 ### (2) 라이브 스트리밍 - 비디오 소스 프로필 등록
 
@@ -213,7 +221,7 @@ sequenceDiagram
 
 1. ***User***가 ***Video source*** 프로필을 입력하여 등록을 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /camera, application/json`
+    - 형태: `HTTPS(8000/tcp), POST /camera, application/json`
     - 프로필은 JSON 본문에 담긴다.
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8080/tcp), POST /profile, application/json`
@@ -246,7 +254,7 @@ sequenceDiagram
 
 1. ***User***가 라이브 스트리밍 시작을 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /streaming/start`
+    - 형태: `HTTPS(8000/tcp), POST /streaming/start`
     - 이 요청은 본문이 없다.
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8080/tcp), POST /streaming/start, application/json`
@@ -289,7 +297,7 @@ sequenceDiagram
 
 1. ***User***가 라이브 스트리밍 종료를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /streaming/stop`
+    - 형태: `HTTPS(8000/tcp), POST /streaming/stop`
 3. ***Request router***는 ***Video streamer***에 소스 해제를 전달한다.
     - 형태: `HTTP(8080/tcp), POST /streaming/stop, application/json`
     - 3~5는 병렬 전달이다.
@@ -320,7 +328,7 @@ sequenceDiagram
 
 1. ***User***가 프롬프트와 이벤트 키워드를 입력하여 설정을 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /prompt, application/json`
+    - 형태: `HTTPS(8000/tcp), POST /prompt, application/json`
     - 프롬프트와 이벤트 키워드는 JSON 본문에 담긴다.
 3. ***Request router***는 전달받은 요청을 ***Video analyzer***에게 중개한다.
     - 형태: `HTTP(8080/tcp), POST /prompt, application/json`
@@ -363,7 +371,7 @@ sequenceDiagram
 
 1. ***User***가 분석 시작을 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /analysis/start`
+    - 형태: `HTTPS(8000/tcp), POST /analysis/start`
     - 이 요청은 본문이 없다.
     - 라이브 스트리밍 진행 여부에 따라 3~9(진행 중 O) 또는 10(진행 중 X)으로 갈린다.
 3. ***Request router***는 ***Video analyzer***에 시작을 전달한다.
@@ -407,7 +415,7 @@ sequenceDiagram
 
 1. ***User***가 분석 종료를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /analysis/stop`
+    - 형태: `HTTPS(8000/tcp), POST /analysis/stop`
 3. ***Request router***는 ***Video analyzer***에 분석 정지를 전달한다.
     - 형태: `HTTP(8080/tcp), POST /stop, application/json`
     - 3~4는 병렬 전달이다.
@@ -460,7 +468,7 @@ sequenceDiagram
 
 1. ***User***가 라이브 비디오 재생을 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), GET /live/hls/index.m3u8`
+    - 형태: `HTTPS(8000/tcp), GET /live/hls/index.m3u8`
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8888/tcp), GET /live/index.m3u8`
 4. ***Video streamer***는 HLS 비디오를 ***Request router***에게 전달한다.
@@ -488,7 +496,7 @@ sequenceDiagram
 
 1. ***User***가 라이브 비디오 재생을 요청한다.
 2. ***Client app***은 시그널링 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /live/whep, application/sdp`
+    - 형태: `HTTPS(8000/tcp), POST /live/whep, application/sdp`
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 중개한다.
     - 형태: `HTTP(8889/tcp), POST /live/whep, application/sdp`
 4. ***Video streamer***는 시그널링 결과를 ***Request router***를 거쳐 ***Client app***에게 응답한다.
@@ -517,7 +525,7 @@ sequenceDiagram
 
 1. ***User***가 팬·틸트·줌 제어를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태: `HTTP(8000/tcp), POST /ptz, application/json`
+    - 형태: `HTTPS(8000/tcp), POST /ptz, application/json`
     - 동작의 종류(이동·정지·절대 이동·프리셋 저장·프리셋 이동·자동 순찰 설정)와 이동량·좌표는 JSON 본문에 담긴다.
     - 자동 순찰 설정(`FR-052`)은 `{"action": "patrol", "enabled": bool, "interval_s": int}` 형태로 전달한다. 적용된 순찰 상태(활성 여부·전환 간격·현재 순회 중인 프리셋 슬롯)는 `/state`(SSE)의 `ptz_patrol` 필드로 내려간다.
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
@@ -552,8 +560,8 @@ sequenceDiagram
 
 1. ***User***가 조건(키워드·날짜)으로 조회를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태(이력): `HTTP(8000/tcp), GET /events`
-    - 형태(클립 목록): `HTTP(8000/tcp), GET /clips`
+    - 형태(이력): `HTTPS(8000/tcp), GET /events`
+    - 형태(클립 목록): `HTTPS(8000/tcp), GET /clips`
     - 조회 조건은 쿼리 문자열에 담긴다.
 3. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
     - 형태(이력): `HTTP(8080/tcp), GET /events`
@@ -583,8 +591,8 @@ sequenceDiagram
 
 1. ***User***가 특정 클립의 재생이나 삭제를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
-    - 형태(재생): `HTTP(8000/tcp), GET /clips/{name}`
-    - 형태(삭제): `HTTP(8000/tcp), DELETE /clips, application/json`
+    - 형태(재생): `HTTPS(8000/tcp), GET /clips/{name}`
+    - 형태(삭제): `HTTPS(8000/tcp), DELETE /clips, application/json`
     - 삭제할 클립의 이름들은 JSON 본문에 담긴다.
 3. ***Request router***는 이 요청을 ***Event recorder***에게 중개한다.
     - 형태(재생): `HTTP(8080/tcp), GET /clips/{name}`
@@ -600,7 +608,7 @@ sequenceDiagram
 합성 구조는 §6.4 (4)가 정의하며, 여기서는 오가는 메시지만 적는다.
 
 1. ***Client app***이 상태 스트림 구독을 요청하면, ***Request router***는 병합 스냅숏을 지속하여 전달한다.
-    - 형태: `HTTP(8000/tcp), GET /state`
+    - 형태: `HTTPS(8000/tcp), GET /state`
     - 형태(응답): `200 OK, text/event-stream`
 2. ***Request router***는 ***Video analyzer***의 상태 스트림을 상시 구독한다.
     - 형태: `HTTP(8080/tcp), GET /events`
@@ -610,6 +618,6 @@ sequenceDiagram
     - 형태(→***Event recorder***): `HTTP(8080/tcp), GET /status`
     - 형태(응답): `200 OK, application/json`
 4. ***User***가 VLM 입력 프레임 보기를 요청하면, ***Client app***은 ***Request router***를 거쳐 ***Video analyzer***의 프레임 스트림을 받는다.
-    - 형태(***Client app***→): `HTTP(8000/tcp), GET /stream`
+    - 형태(***Client app***→): `HTTPS(8000/tcp), GET /stream`
     - 형태(중개): `HTTP(8080/tcp), GET /stream`
     - 형태(응답): `200 OK, multipart/x-mixed-replace`

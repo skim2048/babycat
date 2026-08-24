@@ -4,7 +4,7 @@
 
 |ID|인터페이스|당사자|프로토콜|
 |---|---|---|---|
-|`IF-001`|HTTP API|***Client app*** ↔ ***Request router***|HTTP/JSON|
+|`IF-001`|HTTP API|***Client app*** ↔ ***Request router***|HTTPS/JSON|
 |`IF-002`|비디오 스트림 수신|***Video source*** → ***Video streamer***|RTSP (H.264)|
 |`IF-003`|라이브 스트리밍|***Video streamer*** → ***Client app***|HLS/WebRTC|
 |`IF-004`|PTZ 제어|***Video streamer*** → ***Video source***|ONVIF|
@@ -21,6 +21,8 @@
 |`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(토큰 회전).|불필요|
 |`/api/logout`|POST|로그아웃. 발급된 토큰 폐기.|불필요|
 |`/api/change-password`|POST|비밀번호 변경.|필요|
+|`/pet/profile`|GET|반려동물 프로필 조회.|필요|
+|`/pet/profile`|PUT|반려동물 프로필 저장(전체 교체).|필요|
 |`/health`|GET|서버 상태 확인.|불필요|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|
 |`/camera`|POST|비디오 소스 프로필 등록(수정).|필요|
@@ -84,6 +86,7 @@
 |GStreamer|1.x (베이스 이미지 및 호스트 NVIDIA 플러그인)|JetPack / 베이스 이미지|비디오 파이프라인(디코딩, 프레임 추출, 클립 인코딩).|
 |SQLite|Python 내장 `sqlite3`|Python 표준 라이브러리|사용자, 토큰, 이벤트 영속화.|
 |FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|***Request router***·***Video streamer***(동반 프로세스)·***Event recorder***의 HTTP 서버 프레임워크.|
+|Caddy|2.x (`caddy:2`)|Docker Hub (`caddy`)|TLS 종단 게이트웨이. 사설(내부) CA 운용과 인증서 발급.|
 
 ## 4.5 통신 인터페이스 (Communication Interface)
 
@@ -91,8 +94,8 @@
 
 |포트|프로토콜|컴포넌트|용도|
 |---|---|---|---|
-|8000/tcp|HTTP|***Request router***|단일 외부 진입점. 제어(`IF-001`) 및 HLS·WebRTC 시그널링 중계(`IF-003`).|
-|8189/udp|UDP|***Video streamer***|WebRTC 미디어/ICE(`IF-003`).|
+|8000/tcp|HTTPS|`gateway` → ***Request router***|단일 외부 진입점. TLS 종단 게이트웨이가 제어(`IF-001`) 및 HLS·WebRTC 시그널링 중계(`IF-003`)를 ***Request router***로 전달.|
+|8189/udp|UDP|***Video streamer***|WebRTC 미디어/ICE(`IF-003`). 프로토콜 자체의 DTLS-SRTP로 암호화.|
 
 - 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다.
-- 전송 계층 암호화(HTTPS/TLS) 적용 여부는 작성을 보류한다(`NFR-016`).
+- 8000/tcp의 TLS 인증서는 사설(내부) CA가 발급한다(`NFR-016`). 따라서 클라이언트 기기는 CA 루트 인증서를 신뢰 저장소에 1회 등록해야 한다.

@@ -9,6 +9,7 @@ flowchart LR
     VideoSource["Video source"]
 
     subgraph Babycat
+        Gateway["gateway"]
         Router["router"]
         Streamer["streamer"]
         Analyzer["analyzer"]
@@ -17,11 +18,12 @@ flowchart LR
 
     User --> ClientApp
 
-    ClientApp -->|"제어·조회 (HTTP/JSON): 8000"| Router
-    ClientApp -->|"모니터링 스트림 (HTTP/SSE·MJPEG): 8000"| Router
-    ClientApp -->|"HLS 중계 (HTTP/m3u8·fMP4): 8000"| Router
-    ClientApp -->|"WHEP 시그널링 (HTTP/SDP): 8000"| Router
-    ClientApp -->|"클립 재생 (HTTP/mp4): 8000"| Router
+    ClientApp -->|"제어·조회 (HTTPS/JSON): 8000"| Gateway
+    ClientApp -->|"모니터링 스트림 (HTTPS/SSE·MJPEG): 8000"| Gateway
+    ClientApp -->|"HLS 중계 (HTTPS/m3u8·fMP4): 8000"| Gateway
+    ClientApp -->|"WHEP 시그널링 (HTTPS/SDP): 8000"| Gateway
+    ClientApp -->|"클립 재생 (HTTPS/mp4): 8000"| Gateway
+    Gateway -->|"TLS 종단 후 중계 (HTTP): 8000"| Router
     ClientApp <-.->|"WebRTC Media/ICE (SRTP/H.264): 8189/udp"| Streamer
 
     Router -->|"프로필·PTZ·스트리밍 시작/종료·상태 (HTTP/JSON): 8080"| Streamer
@@ -39,9 +41,9 @@ flowchart LR
     Analyzer -->|"이벤트 통지 (HTTP/JSON): 8080"| Recorder
 ```
 
-`Babycat`은 SRS §2.2의 네 구성요소를 각각 하나의 컨테이너로 실현한다(§2.4 (1)). 시스템 외부에는 ***User***가 조작하는 ***Client app***과 라이브 비디오를 제공하는 ***Video source***가 있다.
+`Babycat`은 SRS §2.2의 네 구성요소를 각각 하나의 컨테이너로 실현하고(§2.4 (1)), 그 앞에 TLS 종단 게이트웨이 컨테이너(`gateway`)를 둔다(§2.4 (8)). 시스템 외부에는 ***User***가 조작하는 ***Client app***과 라이브 비디오를 제공하는 ***Video source***가 있다.
 
-제어 요청은 ***Client app***에서 출발하여 ***Request router***를 거쳐 각 컴포넌트에 이른다. 인증은 ***Request router*** 한곳에서 완결된다 — 계정 데이터베이스를 스스로 소유하므로 검증에 다른 컴포넌트를 부르지 않으며, 내부로 전달된 요청은 재검증하지 않는다. 라이브 재생 역시 이 경로를 따른다 — HLS 비디오와 WebRTC 시그널링은 ***Request router***가 ***Video streamer***로 중계하고, WebRTC 미디어만 저지연을 위해 ***Video streamer***에서 ***Client app***으로 직접 흐른다(§2.4 (2)).
+제어 요청은 ***Client app***에서 출발하여 게이트웨이의 TLS 종단을 지나 ***Request router***를 거쳐 각 컴포넌트에 이른다. 인증은 ***Request router*** 한곳에서 완결된다 — 계정 데이터베이스를 스스로 소유하므로 검증에 다른 컴포넌트를 부르지 않으며, 내부로 전달된 요청은 재검증하지 않는다. 라이브 재생 역시 이 경로를 따른다 — HLS 비디오와 WebRTC 시그널링은 ***Request router***가 ***Video streamer***로 중계하고, WebRTC 미디어만 저지연을 위해 ***Video streamer***에서 ***Client app***으로 직접 흐른다(§2.4 (2)).
 
 ***Video streamer***는 ***Video source***를 상대하는 유일한 컴포넌트다. 프로필을 소유하여 그 정보로 RTSP 스트림을 수신·재배포하고, 같은 프로필의 ONVIF 정보로 PTZ를 제어한다. ***Video analyzer***(프레임 추출·VLM 추론)와 ***Event recorder***(사전 구간 버퍼)는 각자 독립된 RTSP 연결로 재배포 스트림을 소비한다(§2.4 (7)). ***Video analyzer***가 이벤트를 판정하면 ***Event recorder***에게 통지하고, ***Event recorder***가 클립과 발생 이력을 저장한다.
 
@@ -51,14 +53,15 @@ flowchart LR
 
 |컴포넌트|컨테이너|기반|역할|
 |---|---|---|---|
-|***Request router***|`router`|FastAPI|단일 외부 진입점. 계정 인증·관리, 라우팅, HLS·WHEP 중계, 모니터링 합성|
+|— (배포 계층, §2.4 (8))|`gateway`|Caddy|TLS 종단. 외부 8000/tcp를 수신하여 `router`로 중계|
+|***Request router***|`router`|FastAPI|단일 제어 진입점. 계정 인증·관리, 반려동물 프로필, 라우팅, HLS·WHEP 중계, 모니터링 합성|
 |***Video streamer***|`streamer`|MediaMTX + 동반 프로세스(FastAPI)|프로필 관리, PTZ 제어, RTSP 수신·재배포, HLS/WebRTC 송출|
 |***Video analyzer***|`analyzer`|표준 라이브러리 HTTP 서버 + GStreamer + NanoLLM|프레임 추출, VLM 추론, 키워드 매칭, 이벤트 판정|
 |***Event recorder***|`recorder`|FastAPI + GStreamer + ffmpeg|사전 구간 버퍼, 클립·사이드카·발생 이력 저장, 클립·이력 API, 하드웨어 상태 측정|
 
 하드웨어 가속기에 의존하는 컨테이너는 `analyzer`(NVDEC·GPU)와 `recorder`(NVDEC·NVENC) 둘이며, `router`와 `streamer`의 동반 프로세스는 일반 PC에서 개발할 수 있다(SRS §3.4).
 
-영속 데이터는 컴포넌트가 단독 소유한다 — `router`는 계정 데이터베이스를, `streamer`는 프로필 파일을, `recorder`는 이벤트 데이터베이스와 클립 파일을 소유한다. 각 소유 데이터의 소비자가 소유자 자신이라는 점이 이 분해의 특징이다. 배치는 §5.3에서 정한다.
+영속 데이터는 컴포넌트가 단독 소유한다 — `router`는 계정·반려동물 프로필 데이터베이스(`router.db`)를, `streamer`는 프로필 파일을, `recorder`는 이벤트 데이터베이스와 클립 파일을 소유한다. 각 소유 데이터의 소비자가 소유자 자신이라는 점이 이 분해의 특징이다. 배치는 §5.3에서 정한다.
 
 ## 3.3 컴포넌트 간 의존 관계 (Component Dependencies)
 
@@ -66,7 +69,8 @@ flowchart LR
 
 |의존하는 쪽|의존받는 쪽|수단|성격|
 |---|---|---|---|
-|***Client app***|***Request router***|HTTP|동기|
+|***Client app***|`gateway`|HTTPS|동기·스트림|
+|`gateway`|***Request router***|HTTP(TLS 종단 후 중계)|동기·스트림|
 |***Client app***|***Video streamer***|WebRTC 미디어(UDP)|스트림|
 |***Request router***|***Video streamer***|HTTP(프로필·PTZ·활성화, HLS·WHEP 중계)|동기|
 |***Request router***|***Video analyzer***|HTTP, SSE|동기·스트림|

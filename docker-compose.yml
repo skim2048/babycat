@@ -1,10 +1,26 @@
 name: babycat
 
-# @claude Four services, one per SRS component (SDD §2.4 (1)).
-# @claude Externally published ports: router 8000/tcp, streamer 8189/udp only
-# @claude (single-entry decision, SDD §2.4 (2); SRS §4.5).
+# @claude Four component services (one per SRS component, SDD §2.4 (1)) plus
+# @claude the gateway (TLS termination in front of the router).
+# @claude Externally published ports: gateway 8000/tcp (HTTPS), streamer
+# @claude 8189/udp only (single-entry decision, SDD §2.4 (2); SRS §4.5).
 
 services:
+
+  # TLS 종단 — 단일 진입점 8000을 HTTPS로 제공한다. 인증서는 사설(내부) CA로
+  # 발급하며 CA 루트(data/caddy/.../root.crt)를 클라이언트에 1회 설치한다.
+  gateway:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "8000:8000"  # 단일 외부 진입점(IF-001) — router로 중계
+    environment:
+      - TZ=${TZ:-Asia/Seoul}
+    volumes:
+      - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+    depends_on:
+      - router
 
   streamer:
     build:
@@ -28,8 +44,7 @@ services:
       dockerfile: docker/router/Dockerfile
     image: babycat-router
     restart: unless-stopped
-    ports:
-      - "8000:8000"  # 단일 외부 진입점(IF-001)
+    # 외부 포트 없음 — 진입은 gateway(TLS 종단)를 거친다
     environment:
       - TZ=${TZ:-Asia/Seoul}
       - DB_PATH=/data/db/router.db

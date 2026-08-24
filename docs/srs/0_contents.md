@@ -64,6 +64,8 @@
 - 7.6 이벤트 발생 이력 관리 (Event History Management)
 - 7.7 비디오 클립 관리 (Video Clip Management)
 - 7.8 시스템 실시간 모니터링 (Real-time System Monitoring)
+- 7.9 추론 이력 및 집계 (Inference History and Aggregation)
+- 7.10 반려동물 프로필 관리 (Pet Profile Management)
 
 #### 8. 변경 관리 프로세스 (Change Management Process)
 

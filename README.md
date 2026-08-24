@@ -41,7 +41,7 @@ Babycat runs as four containers, one per component, orchestrated by Docker Compo
 
 Externally published ports:
 
-- `8000/tcp` — Request router. The single control entry point (HTTP API), plus HLS and WebRTC-signaling relays.
+- `8000/tcp` — TLS-terminating gateway (Caddy). The single control entry point (HTTPS API); it forwards every request, including the HLS and WebRTC-signaling relays, to the Request router.
 - `8189/udp` — Video streamer. WebRTC media/ICE. This is the only path that bypasses the router, for low latency.
 
 ## Requirements
@@ -91,7 +91,9 @@ Configuration is injected through `.env`; every variable is documented in [`.env
 
 ## API
 
-The Request router exposes a single HTTP API on port `8000`. It covers authentication, video-source profile and PTZ, the streaming and analysis lifecycle, clips and event history, and a merged monitoring stream (SSE). See the router service ([`router/`](router/)) for the full route map.
+The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ, the pet profile, the streaming and analysis lifecycle, clips and event history, and a merged monitoring stream (SSE). See the router service ([`router/`](router/)) for the full route map.
+
+Certificates are issued by the gateway's private (internal) CA, so each connecting device must register the CA root certificate (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. When the access host (LAN IP) changes or grows, add it to the site-address list in [`docker/gateway/Caddyfile`](docker/gateway/Caddyfile).
 
 ## Client
 

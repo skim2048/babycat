@@ -26,7 +26,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import monitor
 from auth import (
@@ -327,6 +327,56 @@ def api_change_password(
     if not ok:
         raise HTTPException(status_code=400, detail="current password is incorrect")
     _terminate_whep_sessions(user["sub"])
+    return {"ok": True}
+
+
+# ── Pet profile (router-owned) ────────────────────────────────────────────────
+# @claude The pet profile lives here with the accounts: the client used to keep
+# @claude it in localStorage only, which a reinstall or another device loses.
+# @claude Named /pet/profile because plain /profile already means the video
+# @claude source profile on the streamer side (relayed via /camera).
+
+
+class PetProfileIn(BaseModel):
+    name: str = Field("", max_length=100)
+    breed: str = Field("", max_length=100)
+    birth: str = Field("", max_length=10)  # ISO date (YYYY-MM-DD) or empty
+    # @claude Client-side downscaled JPEG data URL (512px square). The cap
+    # @claude bounds the row size; a compliant client stays well under it.
+    photo: str = Field("", max_length=300_000)
+    notes: str = Field("", max_length=2_000)
+
+
+@app.get("/pet/profile")
+def get_pet_profile(
+    user: dict = Depends(require_auth),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    row = db.execute(
+        "SELECT data FROM profiles WHERE username = ?", (user["sub"],)
+    ).fetchone()
+    stored = {}
+    if row:
+        try:
+            stored = json.loads(row["data"])
+        except ValueError:
+            pass  # @claude Corrupted row: served empty, replaced on next save.
+    return {**PetProfileIn().model_dump(), **stored}
+
+
+@app.put("/pet/profile")
+def put_pet_profile(
+    body: PetProfileIn,
+    user: dict = Depends(require_auth),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    db.execute(
+        """INSERT INTO profiles (username, data, updated_at)
+           VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+           ON CONFLICT(username) DO UPDATE
+           SET data = excluded.data, updated_at = excluded.updated_at""",
+        (user["sub"], json.dumps(body.model_dump(), ensure_ascii=False)),
+    )
     return {"ok": True}
 
 

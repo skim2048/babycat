@@ -2,11 +2,12 @@
 
 ## 8.1 컨테이너 구성 (Container Composition)
 
-네 서비스 모두 재시작 정책은 `unless-stopped`다(`NFR-018`).
+네 컴포넌트 서비스와 게이트웨이(§2.4 (8)) 모두 재시작 정책은 `unless-stopped`다(`NFR-018`).
 
 |서비스|베이스|하드웨어 접근|볼륨|포트 공개|
 |---|---|---|---|---|
-|`router`|python slim + FastAPI|없음|`data/db/router`|8000/tcp|
+|`gateway`|caddy 공식 이미지(`caddy:2`)|없음|`docker/gateway/Caddyfile`(ro)·`data/caddy`|8000/tcp (HTTPS)|
+|`router`|python slim + FastAPI|없음|`data/db/router`|없음|
 |`streamer`|python slim + MediaMTX 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8189/udp|
 |`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state/analyzer`|없음|
 |`recorder`|ubuntu 계열 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db/recorder`·`data/state/recorder`, tmpfs(`/run/babycat-segments`)|없음|
@@ -15,7 +16,7 @@
 
 ## 8.2 이미지 빌드 (Image Build)
 
-- 현장 빌드를 전제한다(SRS §3.3). `router`와 `streamer`는 같은 python slim 베이스를 공유하여 레이어 중복을 줄인다. `streamer` 이미지는 공식 MediaMTX 이미지에서 정적 바이너리를 다단계 복사(`COPY --from`)로 가져와 담으며, 버전 인상은 참조 태그의 변경이다.
+- 현장 빌드를 전제한다(SRS §3.3). 예외인 `gateway`는 빌드 없이 공식 이미지를 그대로 쓰며, 설정은 Caddyfile 마운트로 주입한다. `router`와 `streamer`는 같은 python slim 베이스를 공유하여 레이어 중복을 줄인다. `streamer` 이미지는 공식 MediaMTX 이미지에서 정적 바이너리를 다단계 복사(`COPY --from`)로 가져와 담으며, 버전 인상은 참조 태그의 변경이다.
 - `analyzer`의 베이스(NanoLLM)는 크기가 지배적이므로, 소스 변경이 베이스 레이어를 무효화하지 않도록 의존 설치와 소스 복사를 레이어로 분리한다. 개발 중에는 소스를 볼륨으로 마운트하여 재빌드 없이 반영한다.
 - VLM 모델의 사전 컴파일(SRS §3.2)은 이미지 빌드가 아니라 최초 기동의 런타임에 일어나며, 결과는 `data/models`에 캐시되어 재기동·재빌드와 무관하게 재사용된다. 이 분리 덕에 이미지 재빌드가 수십 분의 재컴파일을 유발하지 않는다.
 
@@ -39,6 +40,8 @@
 |`TRIGGER_CLIP_DUR`·`TRIGGER_PRE_EVENT_SEC`·`TRIGGER_POST_EVENT_SEC`|`recorder`|선택|클립 창(§7.2). 사후 구간은 미설정 시 기본 길이를 따름|
 |`CLIP_MIN_FREE_MB`·`CLIP_TARGET_FREE_MB`|`recorder`|선택|자동 정리 발동·회복 여유 수위(SRS `FR-033`)|
 |`RECORDER_ENCODE_BITRATE`·`RECORDER_ENCODE_FPS`|`recorder`|선택|세그먼트 재인코딩 비트레이트와 소스 프레임레이트 가정(§4.4)|
+
+TLS(§2.4 (8))는 환경 변수를 쓰지 않는다. 인증서는 `gateway`의 Caddy 내장 사설 CA가 Caddyfile의 site 주소 목록(LAN IP·localhost)을 SAN으로 하여 자동 발급하므로, 접속 호스트가 늘면 `docker/gateway/Caddyfile`의 목록에 추가한다. CA 루트는 `data/caddy/caddy/pki/authorities/local/root.crt`에 생성되며, 클라이언트에는 1회 배포한다 — 브라우저는 신뢰 저장소에 등록하고, Android 앱은 리소스로 동봉한다. CA를 재발급하면(`data/caddy` 삭제 후 재기동) 이 배포를 반복해야 한다.
 
 ## 8.4 로그와 진단 (Logging and Diagnostics)
 
