@@ -93,7 +93,7 @@ Configuration is injected through `.env`; every variable is documented in [`.env
 
 The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ, the pet profile, the streaming and analysis lifecycle, clips and event history, and a merged monitoring stream (SSE). See the router service ([`router/`](router/)) for the full route map.
 
-Certificates are issued by the gateway's private (internal) CA, so each connecting device must register the CA root certificate (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. When the access host (LAN IP) changes or grows, add it to the site-address list in [`docker/gateway/Caddyfile`](docker/gateway/Caddyfile).
+Certificates are issued by the gateway's private (internal) CA, so each connecting device must register the CA root certificate (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. When the access host (LAN IP) changes or grows, edit the host list in [`docker/gateway/issue-cert.sh`](docker/gateway/issue-cert.sh) and re-run it.
 
 ## Client
 

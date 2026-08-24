@@ -93,7 +93,7 @@ docker compose up -d
 
 Request router가 `8000` 포트에서 단일 HTTPS API를 노출한다(TLS는 게이트웨이가 종단한다). 인증, 영상 소스 프로필과 PTZ, 반려동물 프로필, 스트리밍·분석 수명주기, 클립과 이벤트 이력, 병합 모니터링 스트림(SSE)을 다룬다. 전체 경로 지도는 router 서비스([`router/`](router/))를 참고한다.
 
-인증서는 게이트웨이의 사설(내부) CA가 발급하므로, 접속하는 기기는 CA 루트 인증서(`data/caddy/caddy/pki/authorities/local/root.crt`)를 신뢰 저장소에 1회 등록해야 한다. 접속 호스트(LAN IP)가 바뀌거나 늘면 [`docker/gateway/Caddyfile`](docker/gateway/Caddyfile)의 site 주소 목록에 추가한다.
+인증서는 게이트웨이의 사설(내부) CA가 발급하므로, 접속하는 기기는 CA 루트 인증서(`data/caddy/caddy/pki/authorities/local/root.crt`)를 신뢰 저장소에 1회 등록해야 한다. 접속 호스트(LAN IP)가 바뀌거나 늘면 [`docker/gateway/issue-cert.sh`](docker/gateway/issue-cert.sh)의 호스트 목록을 고쳐 재실행한다.
 
 ## 클라이언트
 
