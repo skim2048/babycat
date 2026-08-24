@@ -40,13 +40,16 @@ CREATE TABLE IF NOT EXISTS whep_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_whep_sessions_username ON whep_sessions(username);
 
--- @claude Pet profile, one row per account. Stored as a JSON document: the
--- @claude profile is read and written whole by its owner, never queried by
--- @claude field, so columns would add migrations without buying anything.
-CREATE TABLE IF NOT EXISTS profiles (
-    username   TEXT PRIMARY KEY,
+-- @claude Client-defined data, one JSON document per (account, key). Stored
+-- @claude opaquely (FR-059): the router persists what the client asks it to
+-- @claude keep — reinstalling the client must not lose it — and never
+-- @claude interprets the content. Domain knowledge stays in the client.
+CREATE TABLE IF NOT EXISTS client_storage (
+    username   TEXT NOT NULL,
+    key        TEXT NOT NULL,
     data       TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    PRIMARY KEY (username, key)
 );
 """
 

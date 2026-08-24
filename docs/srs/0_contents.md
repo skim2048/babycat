@@ -65,7 +65,7 @@
 - 7.7 비디오 클립 관리 (Video Clip Management)
 - 7.8 시스템 실시간 모니터링 (Real-time System Monitoring)
 - 7.9 추론 이력 및 집계 (Inference History and Aggregation)
-- 7.10 반려동물 프로필 관리 (Pet Profile Management)
+- 7.10 클라이언트 데이터 보존 (Client Data Persistence)
 
 #### 8. 변경 관리 프로세스 (Change Management Process)
 

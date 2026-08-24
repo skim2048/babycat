@@ -6,13 +6,13 @@
 
 |데이터|소유자|저장 형태|
 |---|---|---|
-|사용자 계정·리프레시 토큰·반려동물 프로필|***Request router***|SQLite (`router.db`)|
+|사용자 계정·리프레시 토큰·클라이언트 데이터 문서|***Request router***|SQLite (`router.db`)|
 |비디오 소스 프로필(홈 위치 포함)|***Video streamer***|JSON 파일|
 |이벤트 발생 이력·추론 이력|***Event recorder***|SQLite (`recorder.db`)|
 |비디오 클립·사이드카 메타데이터|***Event recorder***|파일시스템(mp4 + json 쌍)|
 |런타임 상태(프롬프트·키워드·라벨 어휘·프리셋·분석 활성 여부)|***Video analyzer***·***Event recorder*** 각자|JSON 파일|
 
-모든 소유자는 자기 데이터의 유일한 소비자이기도 하다. 프로필은 ***Video streamer***가 저장하고 자신이 소스 접속·PTZ에 사용하며, 계정 데이터는 ***Request router***가 저장하고 자신이 인증에 사용한다. 예외는 반려동물 프로필로, ***Request router***는 보관만 하고 내용은 ***Client app***이 표시에 사용한다(`FR-059`).
+모든 소유자는 자기 데이터의 유일한 소비자이기도 하다. 프로필은 ***Video streamer***가 저장하고 자신이 소스 접속·PTZ에 사용하며, 계정 데이터는 ***Request router***가 저장하고 자신이 인증에 사용한다. 예외는 클라이언트 데이터 문서로, ***Request router***는 내용을 해석하지 않고 보관만 하며 소비자는 ***Client app***이다(`FR-059`).
 
 관계는 두 가지다. 발생 이력 레코드는 클립 식별자로 클립 파일을 가리키고, 클립 파일과 사이드카는 같은 기본 이름의 쌍이다. 클립 파일 자체는 데이터베이스에 넣지 않고 식별 정보만 기록한다(SRS §6.4).
 
@@ -38,7 +38,7 @@
 |`users`|`id` INTEGER PK, `username` TEXT UNIQUE, `password_hash` TEXT, `salt` TEXT, `password_changed` INTEGER, `token_epoch` INTEGER, `failed_count` INTEGER, `locked_until` REAL, `created_at` TEXT|해시는 솔트와 결합한 PBKDF2 산출물(`NFR-012`). `token_epoch`는 즉시 폐기용 세대(§4.1). 실패 계수·차단 만료는 재시작 회피를 막기 위해 DB에 둔다(`FR-007`)|
 |`refresh_tokens`|`id` INTEGER PK, `token_hash` TEXT UNIQUE, `username` TEXT, `expires_at` INTEGER, `revoked` INTEGER, `created_at` INTEGER|원문은 저장하지 않는다(`FR-002`). 회전·폐기는 `revoked` 표시로 무효화한다(`FR-045`)|
 |`whep_sessions`|`session_path` TEXT PK, `username` TEXT, `created_at` INTEGER|세션 대체(`FR-047`)가 끊어야 할 WebRTC 세션의 등록부. WebRTC 미디어는 수립 후 재인증이 없으므로, ***Request router***의 재시작이 종료 능력을 잃게 하지 않도록 DB에 둔다(§6.2)|
-|`profiles`|`username` TEXT PK, `data` TEXT, `updated_at` TEXT|반려동물 프로필(`FR-059`). 계정당 1행의 JSON 문서로 통저장한다 — 소유자가 필드 단위로 질의하지 않으므로 컬럼 분해는 이주 비용만 더한다|
+|`client_storage`|`username` TEXT, `key` TEXT, `data` TEXT, `updated_at` TEXT, PK(`username`,`key`)|클라이언트 데이터 문서(`FR-059`). 계정·키 쌍당 1행의 JSON 문서로 통저장하며 내용을 해석하지 않는다 — 필드 단위 질의가 없으므로 컬럼 분해는 이주 비용만 더한다|
 
 ### `recorder.db` (***Event recorder***)
 
@@ -95,4 +95,4 @@ config/
 - **리프레시 토큰** — 발급 시 해시로 저장되고, 갱신 시 회전으로 폐기·재발급되며(`FR-045`), 만료 레코드는 접근 시 지연 삭제된다.
 - **발생 이력** — 자동 삭제(`FR-033`) 외에는 사용자 삭제(`FR-035`·`FR-036`)로만 소멸한다. 보존 상한은 SRS가 보류한 항목이므로 별도 상한을 두지 않고, 저장 공간 임계가 실질 상한으로 작동한다.
 - **추론 이력** — 이벤트 판정 여부와 무관하게 매 추론마다 생성되며(`FR-053`), 보존 기간(`INFERENCE_RETENTION_DAYS`, 기본 90일)을 초과한 레코드를 ***Event recorder***가 주기적으로 삭제한다. 클립·발생 이력과 수명이 독립이므로 클립 자동 삭제(`FR-033`)의 영향을 받지 않는다.
-- **반려동물 프로필** — 첫 저장 시 생성되고 이후 저장은 전체 교체다(`FR-059`). 계정 삭제 기능이 없으므로 소멸 경로가 없다.
+- **클라이언트 데이터 문서** — 키의 첫 저장 시 생성되고 이후 저장은 전체 교체다(`FR-059`). 계정 삭제 기능이 없으므로 소멸 경로가 없다.

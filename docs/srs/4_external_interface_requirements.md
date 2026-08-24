@@ -21,8 +21,8 @@
 |`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(토큰 회전).|불필요|
 |`/api/logout`|POST|로그아웃. 발급된 토큰 폐기.|불필요|
 |`/api/change-password`|POST|비밀번호 변경.|필요|
-|`/pet/profile`|GET|반려동물 프로필 조회.|필요|
-|`/pet/profile`|PUT|반려동물 프로필 저장(전체 교체).|필요|
+|`/client/storage/{key}`|GET|클라이언트 데이터 문서 조회.|필요|
+|`/client/storage/{key}`|PUT|클라이언트 데이터 문서 저장(전체 교체).|필요|
 |`/health`|GET|서버 상태 확인.|불필요|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|
 |`/camera`|POST|비디오 소스 프로필 등록(수정).|필요|

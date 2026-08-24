@@ -41,7 +41,9 @@
 |`CLIP_MIN_FREE_MB`·`CLIP_TARGET_FREE_MB`|`recorder`|선택|자동 정리 발동·회복 여유 수위(SRS `FR-033`)|
 |`RECORDER_ENCODE_BITRATE`·`RECORDER_ENCODE_FPS`|`recorder`|선택|세그먼트 재인코딩 비트레이트와 소스 프레임레이트 가정(§4.4)|
 
-TLS(§2.4 (8))는 환경 변수를 쓰지 않는다. 서빙 인증서는 모든 접속 호스트(LAN IP·localhost)를 SAN에 담은 단일 인증서(`data/caddy/site/`)이며, `docker/gateway/issue-cert.sh`가 사설 CA 루트로 서명하여 발급한다 — 접속 호스트가 바뀌면 스크립트의 호스트 목록을 고쳐 재실행하고 `gateway`를 재시작한다. CA 루트는 `data/caddy/caddy/pki/authorities/local/root.crt`에 있으며, 클라이언트에는 1회 배포한다 — 브라우저는 신뢰 저장소에 등록하고, Android 앱은 리소스로 동봉한다. CA를 재발급하면 이 배포를 반복해야 한다.
+TLS(§2.4 (8))는 환경 변수를 쓰지 않는다. 서빙 인증서는 모든 접속 호스트(LAN IP·localhost)를 SAN에 담은 단일 인증서(`data/caddy/site/`)이며, `docker/gateway/issue-cert.sh`가 사설 CA 루트로 서명하여 발급한다(호스트 목록은 `HOSTS` 환경 변수로 주입). 접속 호스트가 바뀌면 재실행하고 `gateway`를 재시작한다.
+
+CA는 설치 소유자(보호자) 단위로 하나를 운용한다 — 기기가 여럿이어도 클라이언트는 CA 하나만 신뢰하면 되도록. 첫 기기에서는 스크립트가 CA를 생성하고, 추가 기기에는 첫 기기의 `data/caddy/caddy/pki`를 복사한 뒤 발급만 수행한다. CA 루트(`.../local/root.crt`)의 클라이언트 배포는 1회다 — 브라우저는 신뢰 저장소에 등록하고, Android 앱은 리소스로 동봉하며, 앱은 사용자 설치 CA도 신뢰하므로(network security config) 다른 CA의 인스턴스는 그 루트를 기기에 설치하면 접속된다. CA를 재발급하면 이 배포를 반복해야 한다.
 
 ## 8.4 로그와 진단 (Logging and Diagnostics)
 

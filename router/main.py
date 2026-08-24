@@ -26,7 +26,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 import monitor
 from auth import (
@@ -330,52 +330,58 @@ def api_change_password(
     return {"ok": True}
 
 
-# ── Pet profile (router-owned) ────────────────────────────────────────────────
-# @claude The pet profile lives here with the accounts: the client used to keep
-# @claude it in localStorage only, which a reinstall or another device loses.
-# @claude Named /pet/profile because plain /profile already means the video
-# @claude source profile on the streamer side (relayed via /camera).
+# ── Client storage (router-owned) ─────────────────────────────────────────────
+# @claude Per-account, per-key persistence for client-defined data (FR-059):
+# @claude clients used to keep such data in localStorage only, which a
+# @claude reinstall or another device loses. The router stores the documents
+# @claude opaquely and never interprets them — domain knowledge (e.g. what a
+# @claude "pet profile" is) stays in the client.
+
+_CLIENT_STORAGE_KEY_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+_CLIENT_STORAGE_MAX_BYTES = 512 * 1024
 
 
-class PetProfileIn(BaseModel):
-    name: str = Field("", max_length=100)
-    breed: str = Field("", max_length=100)
-    birth: str = Field("", max_length=10)  # ISO date (YYYY-MM-DD) or empty
-    # @claude Client-side downscaled JPEG data URL (512px square). The cap
-    # @claude bounds the row size; a compliant client stays well under it.
-    photo: str = Field("", max_length=300_000)
-    notes: str = Field("", max_length=2_000)
+def _validate_storage_key(key: str) -> None:
+    if not _CLIENT_STORAGE_KEY_RE.fullmatch(key):
+        raise HTTPException(status_code=400, detail="invalid storage key")
 
 
-@app.get("/pet/profile")
-def get_pet_profile(
+@app.get("/client/storage/{key}")
+def get_client_storage(
+    key: str,
     user: dict = Depends(require_auth),
     db: sqlite3.Connection = Depends(get_db),
 ):
+    _validate_storage_key(key)
     row = db.execute(
-        "SELECT data FROM profiles WHERE username = ?", (user["sub"],)
+        "SELECT data FROM client_storage WHERE username = ? AND key = ?",
+        (user["sub"], key),
     ).fetchone()
-    stored = {}
-    if row:
-        try:
-            stored = json.loads(row["data"])
-        except ValueError:
-            pass  # @claude Corrupted row: served empty, replaced on next save.
-    return {**PetProfileIn().model_dump(), **stored}
+    if not row:
+        return {}  # @claude Absent key: an empty document, not an error.
+    try:
+        return json.loads(row["data"])
+    except ValueError:
+        return {}  # @claude Corrupted row: served empty, replaced on next save.
 
 
-@app.put("/pet/profile")
-def put_pet_profile(
-    body: PetProfileIn,
+@app.put("/client/storage/{key}")
+def put_client_storage(
+    key: str,
+    document: dict,
     user: dict = Depends(require_auth),
     db: sqlite3.Connection = Depends(get_db),
 ):
+    _validate_storage_key(key)
+    data = json.dumps(document, ensure_ascii=False)
+    if len(data.encode()) > _CLIENT_STORAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="document too large")
     db.execute(
-        """INSERT INTO profiles (username, data, updated_at)
-           VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-           ON CONFLICT(username) DO UPDATE
+        """INSERT INTO client_storage (username, key, data, updated_at)
+           VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+           ON CONFLICT(username, key) DO UPDATE
            SET data = excluded.data, updated_at = excluded.updated_at""",
-        (user["sub"], json.dumps(body.model_dump(), ensure_ascii=False)),
+        (user["sub"], key, data),
     )
     return {"ok": True}
 

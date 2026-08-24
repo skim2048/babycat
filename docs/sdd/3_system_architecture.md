@@ -54,14 +54,14 @@ flowchart LR
 |컴포넌트|컨테이너|기반|역할|
 |---|---|---|---|
 |— (배포 계층, §2.4 (8))|`gateway`|Caddy|TLS 종단. 외부 8000/tcp를 수신하여 `router`로 중계|
-|***Request router***|`router`|FastAPI|단일 제어 진입점. 계정 인증·관리, 반려동물 프로필, 라우팅, HLS·WHEP 중계, 모니터링 합성|
+|***Request router***|`router`|FastAPI|단일 제어 진입점. 계정 인증·관리, 클라이언트 데이터 보관, 라우팅, HLS·WHEP 중계, 모니터링 합성|
 |***Video streamer***|`streamer`|MediaMTX + 동반 프로세스(FastAPI)|프로필 관리, PTZ 제어, RTSP 수신·재배포, HLS/WebRTC 송출|
 |***Video analyzer***|`analyzer`|표준 라이브러리 HTTP 서버 + GStreamer + NanoLLM|프레임 추출, VLM 추론, 키워드 매칭, 이벤트 판정|
 |***Event recorder***|`recorder`|FastAPI + GStreamer + ffmpeg|사전 구간 버퍼, 클립·사이드카·발생 이력 저장, 클립·이력 API, 하드웨어 상태 측정|
 
 하드웨어 가속기에 의존하는 컨테이너는 `analyzer`(NVDEC·GPU)와 `recorder`(NVDEC·NVENC) 둘이며, `router`와 `streamer`의 동반 프로세스는 일반 PC에서 개발할 수 있다(SRS §3.4).
 
-영속 데이터는 컴포넌트가 단독 소유한다 — `router`는 계정·반려동물 프로필 데이터베이스(`router.db`)를, `streamer`는 프로필 파일을, `recorder`는 이벤트 데이터베이스와 클립 파일을 소유한다. 각 소유 데이터의 소비자가 소유자 자신이라는 점이 이 분해의 특징이다. 배치는 §5.3에서 정한다.
+영속 데이터는 컴포넌트가 단독 소유한다 — `router`는 계정·클라이언트 데이터의 데이터베이스(`router.db`)를, `streamer`는 프로필 파일을, `recorder`는 이벤트 데이터베이스와 클립 파일을 소유한다. 각 소유 데이터의 소비자가 소유자 자신이라는 점이 이 분해의 특징이다. 배치는 §5.3에서 정한다.
 
 ## 3.3 컴포넌트 간 의존 관계 (Component Dependencies)
 
