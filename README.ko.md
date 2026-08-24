@@ -93,15 +93,9 @@ docker compose up -d
 
 Request router가 `8000` 포트에서 단일 HTTPS API를 노출한다(TLS는 게이트웨이가 종단한다). 인증, 영상 소스 프로필과 PTZ, 클라이언트 데이터 보존, 스트리밍·분석 수명주기, 클립과 이벤트 이력, 병합 모니터링 스트림(SSE)을 다룬다. 전체 경로 지도는 router 서비스([`router/`](router/))를 참고한다.
 
-인증서는 사설(보호자) CA가 발급한다. 이미지를 빌드한 뒤(`docker compose build`) 저장소 루트에서 아래를 1회 실행해 인증서를 준비한다 — CA가 없으면 스크립트가 생성한다.
+TLS 인증서는 게이트웨이가 기동할 때 스스로 발급한다 — `.env`의 `HOST_IP`(와 필요 시 `TLS_EXTRA_HOSTS`)를 인증서의 주소로 삼으며, 서명할 사설 CA가 없으면 그것도 함께 만든다. 주소가 바뀌거나 만료가 다가오면 다음 기동에서 재발급하므로 별도 조치가 필요 없다.
 
-```bash
-HOSTS="$(hostname -I) localhost" docker run --rm -e HOSTS \
-  -v ./data/caddy:/data/caddy \
-  -v ./docker/gateway/issue-cert.sh:/issue-cert.sh:ro babycat-router sh /issue-cert.sh
-```
-
-접속하는 기기는 CA 루트(`data/caddy/caddy/pki/authorities/local/root.crt`)를 신뢰 저장소에 1회 등록한다. 기기를 여러 대 운용할 때는 CA를 공유한다 — 추가 기기에 첫 기기의 `data/caddy/caddy/pki` 디렉터리를 복사한 뒤 위 발급을 실행하면, 클라이언트는 CA 하나로 모든 기기에 접속한다. 접속 호스트(LAN IP)가 바뀌면 발급을 재실행하고 `docker compose restart gateway`를 수행한다.
+접속하는 기기는 CA 루트(`data/caddy/caddy/pki/authorities/local/root.crt`)를 신뢰 저장소에 1회 등록한다. 기기를 여러 대 운용한다면 그 등록을 한 번으로 끝내기 위해 CA를 공유한다 — 첫 기기의 `data/caddy/caddy/pki` 디렉터리를 추가 기기의 같은 경로에 복사해 두면, 그 기기는 기동 시 복사된 CA로 자기 인증서를 발급한다.
 
 ## 클라이언트
 

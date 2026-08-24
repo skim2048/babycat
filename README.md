@@ -93,15 +93,9 @@ Configuration is injected through `.env`; every variable is documented in [`.env
 
 The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ, client data persistence, the streaming and analysis lifecycle, clips and event history, and a merged monitoring stream (SSE). See the router service ([`router/`](router/)) for the full route map.
 
-Certificates are issued by a private (owner) CA. After building the images (`docker compose build`), run the following once from the repository root to prepare the certificate — the script creates the CA when none exists.
+The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env`, and creates the private CA that signs it if none exists yet. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
-```bash
-HOSTS="$(hostname -I) localhost" docker run --rm -e HOSTS \
-  -v ./data/caddy:/data/caddy \
-  -v ./docker/gateway/issue-cert.sh:/issue-cert.sh:ro babycat-router sh /issue-cert.sh
-```
-
-Each connecting device registers the CA root (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. When operating several devices, share the CA: copy the first device's `data/caddy/caddy/pki` directory to each additional device before issuing, and clients reach every device with a single CA. When the access host (LAN IP) changes, re-run the issuance and `docker compose restart gateway`.
+Each connecting device registers the CA root (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. To keep that a single registration across several devices, share the CA: copy the first device's `data/caddy/caddy/pki` directory to the same path on each additional device, and that device signs its own certificate with it at startup.
 
 ## Client
 

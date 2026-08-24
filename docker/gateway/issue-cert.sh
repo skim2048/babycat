@@ -1,28 +1,26 @@
 #!/bin/sh
-# 게이트웨이 서빙용 인증서 발급.
+# 게이트웨이 서빙 인증서 발급. 평시에는 게이트웨이가 기동 시 스스로 호출하므로
+# (entrypoint.sh) 운영자가 직접 실행할 일이 없다.
 #
 # 운용 모델: CA는 보호자(설치 소유자) 단위로 하나이고, 펫하우스(babycat 기기)가
-# 늘 때마다 이 스크립트로 그 기기의 인증서만 발급한다. 클라이언트(폰·브라우저)는
-# 보호자 CA 하나만 신뢰하면 되므로 기기가 늘어도 재설정이 없다.
-# - 첫 기기: CA가 없으면 스크립트가 생성한다.
-# - 추가 기기: 첫 기기의 data/caddy/caddy/pki를 복사해 온 뒤 실행한다.
+# 늘 때마다 그 기기의 인증서만 발급한다. 클라이언트(폰·브라우저)는 보호자 CA
+# 하나만 신뢰하면 되므로 기기가 늘어도 재설정이 없다.
+# - 첫 기기: CA가 없으면 이 스크립트가 생성한다.
+# - 추가 기기: 첫 기기의 data/caddy/caddy/pki를 복사해 두면 그 CA로 서명한다.
 #
 # 인증서는 모든 접속 호스트를 SAN에 담은 단일 파일이다 — IP로 접속하는
 # 브라우저는 SNI를 보내지 않아 이름별 인증서 선택이 동작하지 않기 때문이다.
 #
-# 사용법(저장소 루트에서, HOSTS는 접속에 쓸 IP·호스트명 목록):
-#   HOSTS="$(hostname -I) localhost" docker run --rm -e HOSTS \
-#     -v ./data/caddy:/data/caddy \
-#     -v ./docker/gateway/issue-cert.sh:/issue-cert.sh:ro babycat-router sh /issue-cert.sh
-#   docker compose up -d
+# 환경 변수: HOSTS(필수, 공백 구분), CADDY_DATA(caddy 데이터 루트, 기본 /data/caddy)
 set -eu
 
-HOSTS="${HOSTS:?접속 호스트 목록을 -e HOSTS로 지정해야 한다 (예: HOSTS=\"\$(hostname -I) localhost\")}"
+HOSTS="${HOSTS:?접속 호스트 목록이 필요하다 (예: HOSTS=\"192.168.1.10 localhost\")}"
+CADDY_DATA="${CADDY_DATA:-/data/caddy}"
 DAYS=820     # 서빙 인증서 — macOS·iOS의 상한(825일) 이내
 CA_DAYS=3650 # 보호자 CA 루트
 
-PKI=/data/caddy/caddy/pki/authorities/local
-OUT=/data/caddy/site
+PKI="$CADDY_DATA/caddy/pki/authorities/local"
+OUT="$CADDY_DATA/site"
 mkdir -p "$PKI" "$OUT"
 
 # 보호자 CA 부트스트랩 — 첫 기기에서 1회
@@ -60,4 +58,4 @@ EOF
 
 chmod 600 "$OUT/key.pem"
 openssl x509 -in "$OUT/cert.pem" -noout -ext subjectAltName -enddate
-echo "클라이언트에 설치할 CA 루트: data/caddy/caddy/pki/authorities/local/root.crt"
+echo "클라이언트에 설치할 CA 루트: $PKI/root.crt"

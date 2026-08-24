@@ -7,15 +7,21 @@ name: babycat
 
 services:
 
-  # TLS 종단 — 단일 진입점 8000을 HTTPS로 제공한다. 인증서는 사설(내부) CA로
-  # 발급하며 CA 루트(data/caddy/.../root.crt)를 클라이언트에 1회 설치한다.
+  # TLS 종단 — 단일 진입점 8000을 HTTPS로 제공한다. 서빙 인증서는 기동 시
+  # HOST_IP를 SAN으로 하여 스스로 발급하고(사설 CA도 없으면 생성), CA
+  # 루트(data/caddy/caddy/pki/authorities/local/root.crt)만 클라이언트에 1회 설치한다.
   gateway:
-    image: caddy:2
+    build:
+      context: .
+      dockerfile: docker/gateway/Dockerfile
+    image: babycat-gateway
     restart: unless-stopped
     ports:
       - "8000:8000"  # 단일 외부 진입점(IF-001) — router로 중계
     environment:
       - TZ=${TZ:-Asia/Seoul}
+      - HOST_IP=${HOST_IP:?required}  # 인증서 SAN(접속 주소)의 출처
+      - TLS_EXTRA_HOSTS=${TLS_EXTRA_HOSTS:-}  # SAN에 더할 주소·호스트명
     volumes:
       - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
