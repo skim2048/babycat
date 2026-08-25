@@ -9,11 +9,14 @@ a temp file + os.replace so a crash mid-write cannot leave a torn file.
 """
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
 
-STATE_PATH = os.getenv("STATE_PATH", "/data/state/recorder.json")
+from settings import STATE_PATH
+
+log = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 
@@ -22,7 +25,12 @@ def load() -> dict:
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        # @claude A torn file means the restore (FR-014) falls back to defaults;
+        # @claude that must be visible, not silent.
+        log.warning("state file %s unreadable, using defaults: %s", STATE_PATH, e)
         return {}
 
 

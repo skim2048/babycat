@@ -1,18 +1,16 @@
 """Babycat recorder — event/inference history database (FR-031, SDD §5.2)."""
 
 import logging
-import os
 import sqlite3
 import time
 from pathlib import Path
 
-log = logging.getLogger(__name__)
+from settings import DB_PATH, INFERENCE_RETENTION_DAYS
 
-DB_PATH = os.environ.get("DB_PATH", "/data/db/recorder.db")
+log = logging.getLogger(__name__)
 
 # @claude 기본 90일 — 클라이언트 화면 요구(당일 + 기준선 14일 + 월 단위 회고)를
 # @claude 근거로 상향(analysis-mewly-impl.md §5). 10초 주기 기준 약 78만 행.
-INFERENCE_RETENTION_DAYS = int(os.environ.get("INFERENCE_RETENTION_DAYS", "90"))
 
 # @claude Column names are kept from the prototype so the external contract
 # @claude (EventOut: id/trigger/clip_name/created_at) survives the split.
@@ -63,6 +61,9 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # @claude The finalize worker thread and request handlers open their own
+    # @claude connections; a write from one waits for the other instead of
+    # @claude failing with "database is locked" (SDD §5.2).
     conn.execute("PRAGMA busy_timeout=3000")
     return conn
 

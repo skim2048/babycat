@@ -11,7 +11,6 @@ and reconnects on its own with exponential backoff (FR-046).
 """
 
 import logging
-import os
 import threading
 import time
 
@@ -27,20 +26,23 @@ from rollover import (
     purge_old_segments,
     segment_path_for_time,
 )
+from settings import (
+    ENCODE_BITRATE,
+    ENCODE_FPS,  # @claude iframeinterval is in frames; a slower camera only lengthens segments.
+    MEDIAMTX_URL,
+    SEGMENT_DIR,
+    SEGMENT_RETENTION,
+    SEGMENT_TIME,
+)
 from status import status
 
 log = logging.getLogger(__name__)
 
-MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://streamer:8554/live")
-SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/run/babycat-segments/live")
-SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
-SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
-ENCODE_BITRATE = int(os.getenv("RECORDER_ENCODE_BITRATE", "4000000"))
-# @claude iframeinterval is in frames; assumes the source frame rate. A slower
-# @claude camera only lengthens segments — selection tolerates that.
-ENCODE_FPS = int(os.getenv("RECORDER_ENCODE_FPS", "30"))
-
 _BACKOFF_MAX = 10.0
+# @claude Stall detection (SDD §7.5): the pipeline is restarted when no new
+# @claude segment has appeared for this long after the start-up grace period.
+_STALL_GRACE = 10.0
+_STALL_TIMEOUT = SEGMENT_TIME * 5
 
 
 def build_pipeline_str() -> str:
@@ -125,6 +127,7 @@ class SegmentRecorder:
         """Poll the bus until stop/error. Returns the next backoff to use."""
         bus = pipeline.get_bus()
         healthy_since: float | None = None
+        started = time.time()
         while not stop.is_set():
             msg = bus.timed_pop_filtered(
                 1_000_000_000, Gst.MessageType.ERROR | Gst.MessageType.EOS
@@ -143,6 +146,12 @@ class SegmentRecorder:
                     detail = str(err)
                 log.warning("segment recorder pipeline ended (%s) %s", msg.type, detail)
                 status.set_segment_recorder("error", error=detail[:240])
+                return backoff
+            # @claude A pipeline that reports no error but produces no segments
+            # @claude (source stalled) is restarted like an error.
+            if time.time() - started > _STALL_GRACE and (age is None or age > _STALL_TIMEOUT):
+                log.warning("segment recorder stalled (last segment age %s) — restarting", age)
+                status.set_segment_recorder("error", error="segment_stall")
                 return backoff
             # @claude Fresh segments flowing for a while — reset the backoff.
             if age is not None and age < SEGMENT_TIME * 3:

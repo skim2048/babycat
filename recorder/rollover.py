@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-import os
+import logging
 import time
 from pathlib import Path
 
+# @claude Retention horizon: also the upper bound on how far an open-ended
+# @claude last segment may be assumed to extend.
+from settings import SEGMENT_RETENTION
+
+log = logging.getLogger(__name__)
 
 SEGMENT_SUFFIX = ".ts"
 SEGMENT_TIME_FORMAT = "%Y%m%d_%H%M%S"
-# @claude Retention horizon, shared with segments.py: also the upper bound on
-# @claude how far an open-ended last segment may be assumed to extend.
-SEGMENT_RETENTION = int(os.getenv("TRIGGER_SEGMENT_RETENTION", "15"))
 
 
 def ensure_segment_dir(path: str | Path) -> Path:
@@ -102,8 +104,9 @@ def purge_old_segments(base_dir: str | Path, *, retain_since: float) -> int:
         try:
             path.unlink()
             removed += 1
-        except OSError:
-            pass
+        except OSError as e:
+            # @claude Left in tmpfs, an unremovable segment eats the 64 MB budget.
+            log.warning("segment %s not removed: %s", path.name, e)
     return removed
 
 

@@ -43,27 +43,21 @@ import state_store
 
 log = logging.getLogger(__name__)
 
-MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://streamer:8554/live")
-CLIP_DIR = os.getenv("CLIP_DIR", "/data/clips")
-SEGMENT_DIR = os.getenv("TRIGGER_SEGMENT_DIR", "/run/babycat-segments/live")
-SEGMENT_TIME = int(os.getenv("TRIGGER_SEGMENT_TIME", "1"))
-
-TRIGGER_COOLDOWN = float(os.getenv("TRIGGER_COOLDOWN", "30"))
-TRIGGER_CLIP_DUR = int(os.getenv("TRIGGER_CLIP_DUR", "5"))
-TRIGGER_PRE_EVENT_SEC = float(os.getenv("TRIGGER_PRE_EVENT_SEC", "2"))
-TRIGGER_POST_EVENT_SEC = float(os.getenv("TRIGGER_POST_EVENT_SEC", str(TRIGGER_CLIP_DUR)))
-
-CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "512"))
-CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "1024"))
-
-# @claude 1회 정리당 삭제 상한(내부 안전판). 운영자가 조정할 값이 아니므로
-# @claude 환경 변수로 노출하지 않고 고정한다.
-CLIP_PRUNE_MAX_FILES = 50
+from settings import (
+    CLIP_DIR,
+    CLIP_MIN_FREE_MB,
+    CLIP_TARGET_FREE_MB,
+    MEDIAMTX_URL,
+    SEGMENT_DIR,
+    TRIGGER_CLIP_DUR,
+    TRIGGER_COOLDOWN,
+    TRIGGER_POST_EVENT_SEC,
+    TRIGGER_PRE_EVENT_SEC,
+)
 
 CLIP_STORAGE_POLICY = ClipStoragePolicy(
     min_free_bytes=max(0, CLIP_MIN_FREE_MB) * 1024 * 1024,
     target_free_bytes=max(CLIP_MIN_FREE_MB, CLIP_TARGET_FREE_MB) * 1024 * 1024,
-    prune_max_files=CLIP_PRUNE_MAX_FILES,
 )
 
 # @claude The cooldown anchor survives a restart (FR-030, SDD §5.4): a restart
@@ -97,20 +91,27 @@ def _process_event(payload: dict) -> None:
     inference_started_at = payload.get("inference_started_at")
     inference_elapsed_ms = payload.get("inference_elapsed_ms")
 
-    clip_name = _finalize_rollover_clip(
-        matched, vlm_text, event_time,
-        last_frame_time=last_frame_time,
-        inference_started_at=inference_started_at,
-        inference_elapsed_ms=inference_elapsed_ms,
-    )
-    if clip_name is None:
-        log.warning("rollover finalize failed — falling back to direct RTSP recording")
-        clip_name = _record_direct_clip(
+    clip_name = None
+    try:
+        clip_name = _finalize_rollover_clip(
             matched, vlm_text, event_time,
             last_frame_time=last_frame_time,
             inference_started_at=inference_started_at,
             inference_elapsed_ms=inference_elapsed_ms,
         )
+        if clip_name is None:
+            log.warning("rollover finalize failed — falling back to direct RTSP recording")
+            clip_name = _record_direct_clip(
+                matched, vlm_text, event_time,
+                last_frame_time=last_frame_time,
+                inference_started_at=inference_started_at,
+                inference_elapsed_ms=inference_elapsed_ms,
+            )
+    except Exception:
+        # @claude Any capture-path failure — including ones outside the two
+        # @claude helpers, such as the clip directory not being creatable —
+        # @claude still ends in a history row (FR-031).
+        log.exception("clip capture failed for the event at %.3f", event_time)
 
     # @claude FR-031: the occurrence is recorded even when clip capture failed;
     # @claude a NULL clip_name marks a clipless event. created_at is the
@@ -241,8 +242,8 @@ def _finalize_rollover_clip(
     finally:
         try:
             manifest_path.unlink()
-        except OSError:
-            pass
+        except OSError as e:
+            log.warning("concat manifest %s not removed: %s", manifest_path, e)
 
     if not part_path.exists():
         status.set_clip_storage("error", "ffmpeg_failed",
@@ -281,9 +282,9 @@ def _finalize_rollover_clip(
         },
     )
     # @claude Counted only after the sidecar exists: the count change is the
-    # @claude client's list-refresh signal, and the listing hides clips without
-    # @claude metadata — a count that moves first announces a clip the refresh
-    # @claude cannot see (SDD §6.4 (4)).
+    # @claude client's list-refresh signal, and a refresh that lands between
+    # @claude the mp4 and the sidecar would list the clip without its keywords
+    # @claude and text (SDD §6.4 (4)).
     count_added_clip(clip_size_bytes)
     status.set_clip_storage(
         "ok",
@@ -384,9 +385,8 @@ def _record_direct_clip(
 
 
 def _write_sidecar(meta_path: Path, meta: dict) -> None:
-    # @claude Temp file + os.replace: the listing treats the sidecar as the
-    # @claude clip's validity marker, so a torn sidecar must never exist
-    # @claude (SDD §5.4).
+    # @claude Temp file + os.replace: a torn sidecar would list the clip with
+    # @claude broken metadata, so the file appears only once complete (SDD §5.4).
     try:
         tmp = Path(f"{meta_path}.tmp")
         with open(tmp, "w", encoding="utf-8") as f:

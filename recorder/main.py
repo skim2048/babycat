@@ -10,7 +10,6 @@ database and the clip files exclusively.
 
 import json
 import logging
-import os
 import re
 import sqlite3
 import sys
@@ -20,7 +19,8 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import finalize
@@ -29,11 +29,10 @@ import state_store
 from clip_storage import MIN_CLIP_SIZE, clip_count, count_removed_clip, recount_clips
 from events_db import get_db, init_db, insert_inference
 from hardware import HardwareMonitor, disk_usage
+from settings import CLIP_DIR, STATE_PATH
 from status import status
 
 log = logging.getLogger(__name__)
-
-CLIP_DIR = os.getenv("CLIP_DIR", "/data/clips")
 
 _hw = HardwareMonitor()
 
@@ -47,10 +46,13 @@ async def lifespan(app: FastAPI):
     )
     init_db()
     Path(CLIP_DIR).mkdir(parents=True, exist_ok=True)
-    # @claude Crash leftovers: a .part clip whose writer died mid-write is
-    # @claude unpublishable — sweep before seeding the counter (SDD §5.4).
-    for stale in Path(CLIP_DIR).rglob("*.part"):
-        stale.unlink(missing_ok=True)
+    # @claude Crash leftovers (SDD §5.4): a .part clip or a .json.tmp sidecar
+    # @claude whose writer died mid-write, and a torn state-file temp — sweep
+    # @claude before seeding the counter.
+    for pattern in ("*.part", "*.json.tmp"):
+        for stale in Path(CLIP_DIR).rglob(pattern):
+            stale.unlink(missing_ok=True)
+    Path(f"{STATE_PATH}.tmp").unlink(missing_ok=True)
     # @claude One full walk at startup seeds the in-memory clip counter; every
     # @claude later mutation adjusts it (no per-poll tree walk in /status).
     log.info("clip counter seeded: %d clips", recount_clips(CLIP_DIR))
@@ -63,6 +65,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Babycat recorder", version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_as_400(_request: Request, exc: RequestValidationError):
+    """A malformed request is 400 (SDD §6.5), not FastAPI's default 422."""
+    return JSONResponse(status_code=400, content={"detail": "invalid request body"})
 
 
 class ClipOut(BaseModel):
@@ -114,11 +122,6 @@ class InferenceListOut(BaseModel):
     total: int
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
 # ── Analysis-start fan-out and event notification ────────────────────────────
 
 
@@ -144,7 +147,12 @@ def buffer_stop():
 async def notify(request: Request):
     """Event notification from the analyzer (SDD §6.3). Responds immediately;
     clip assembly and history recording continue on a worker thread."""
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(400, "invalid request body")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "invalid request body")
     accepted = finalize.accept_event(payload)
     return {"ok": True, "accepted": accepted}
 

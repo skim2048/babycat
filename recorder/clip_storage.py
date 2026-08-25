@@ -1,13 +1,17 @@
 """Helpers for clip-storage capacity checks, old-clip pruning, and the
 in-memory clip counter."""
 
+import logging
+import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
 
-# @claude Files below this size are partially-written outputs; the clip
-# @claude listing and the counter exclude them by the same rule.
+log = logging.getLogger(__name__)
+
+# @claude Files below 10 KB cannot hold a playable clip and are treated as
+# @claude damaged; the clip listing and the counter exclude them by the same
+# @claude rule (SDD §5.3).
 MIN_CLIP_SIZE = 10240
 
 # @claude In-memory clip counter: /status serves this instead of walking the
@@ -52,7 +56,6 @@ def count_removed_clip(size_bytes: int) -> None:
 class ClipStoragePolicy:
     min_free_bytes: int
     target_free_bytes: int
-    prune_max_files: int
 
 
 @dataclass(frozen=True)
@@ -121,9 +124,9 @@ def ensure_clip_capacity(base: str | Path, policy: ClipStoragePolicy) -> ClipSto
     deleted_bytes = 0
     target_free = max(policy.min_free_bytes, policy.target_free_bytes)
 
+    # @claude Oldest first, until the target is reached or no clip is left
+    # @claude (FR-033): the loop is bounded by the clip count.
     for clip_path in list_clip_files(root):
-        if deleted_files >= policy.prune_max_files:
-            break
         deleted_bytes += delete_clip_pair(clip_path)
         deleted_files += 1
         current_free = free_bytes(root)
@@ -154,5 +157,5 @@ def cleanup_partial_outputs(*paths: str | Path) -> None:
         try:
             if path.exists():
                 path.unlink()
-        except OSError:
-            pass
+        except OSError as e:
+            log.warning("partial output %s not removed: %s", path, e)

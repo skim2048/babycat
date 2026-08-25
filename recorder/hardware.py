@@ -1,7 +1,10 @@
 """
-Jetson Orin NX hardware monitor.
+Jetson hardware monitor.
 
-Reads CPU/RAM/GPU utilization and temperatures from /proc and /sys.
+Reads CPU/RAM/GPU utilization and temperatures from /proc and /sys. The
+GPU load node is the Orin (T234) path; thermal zones are located by their
+`type` name (SDD §4.4). Measurements are taken on each /status request —
+there is no background loop.
 
 @claude
 """
@@ -13,10 +16,25 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-GPU_LOAD_PATH    = "/sys/devices/platform/bus@0/17000000.gpu/load"
-CPU_THERMAL_PATH = "/sys/devices/virtual/thermal/thermal_zone0/temp"
-GPU_THERMAL_PATH = "/sys/devices/virtual/thermal/thermal_zone1/temp"
+GPU_LOAD_PATH = "/sys/devices/platform/bus@0/17000000.gpu/load"
+_THERMAL_ROOT = Path("/sys/devices/virtual/thermal")
 MB = 1024 * 1024
+
+
+def _thermal_zone_temp_path(zone_type: str) -> str | None:
+    """Find the thermal zone whose `type` matches (e.g. cpu-thermal). @claude"""
+    for zone in sorted(_THERMAL_ROOT.glob("thermal_zone*")):
+        try:
+            if (zone / "type").read_text().strip() == zone_type:
+                return str(zone / "temp")
+        except OSError:
+            continue
+    log.warning("thermal zone %s not found", zone_type)
+    return None
+
+
+CPU_THERMAL_PATH = _thermal_zone_temp_path("cpu-thermal")
+GPU_THERMAL_PATH = _thermal_zone_temp_path("gpu-thermal")
 
 
 def _read_sysfs(path: str) -> Optional[str]:
@@ -131,10 +149,10 @@ class HardwareMonitor:
         return _scaled_sysfs_float(GPU_LOAD_PATH, 10.0)
 
     def cpu_temp(self) -> float | None:
-        return _scaled_sysfs_float(CPU_THERMAL_PATH, 1000.0)
+        return _scaled_sysfs_float(CPU_THERMAL_PATH, 1000.0) if CPU_THERMAL_PATH else None
 
     def gpu_temp(self) -> float | None:
-        return _scaled_sysfs_float(GPU_THERMAL_PATH, 1000.0)
+        return _scaled_sysfs_float(GPU_THERMAL_PATH, 1000.0) if GPU_THERMAL_PATH else None
 
     def snapshot(self) -> dict:
         ram_used, ram_total = self.ram_usage()
