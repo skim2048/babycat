@@ -16,8 +16,6 @@
   <img src="https://img.shields.io/badge/NVIDIA%20Jetson-444444" alt="NVIDIA Jetson">
 </div>
 
-<p align="center">English · <a href="README.ko.md">한국어</a></p>
-
 Babycat is a VLM-based video event-detection backend for the NVIDIA Jetson platform. Given keywords, it watches a live video source, detects the moments that match, and saves each matched span as a video clip.
 
 - Keyword-driven event detection over a live RTSP source, powered by a vision-language model (VLM).
