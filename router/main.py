@@ -16,16 +16,20 @@ import logging
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import monitor
@@ -54,8 +58,16 @@ STREAMER_HLS_URL = os.environ.get("STREAMER_HLS_URL", "http://streamer:8888")
 STREAMER_WEBRTC_URL = os.environ.get("STREAMER_WEBRTC_URL", "http://streamer:8889")
 
 
+log = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+        stream=sys.stdout,
+    )
     init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -69,8 +81,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Babycat router", version="1.0.0", lifespan=lifespan)
 
-# @claude CORS — allow local development and private-network origins.
-# @claude For production / external domains, add CORS_EXTRA_ORIGINS=https://a.com,https://b.com.
+
+@app.exception_handler(RequestValidationError)
+async def _validation_as_400(_request: Request, exc: RequestValidationError):
+    """A malformed request is 400 (SDD §6.5), not FastAPI's default 422."""
+    return JSONResponse(status_code=400, content={"detail": "invalid request body"})
+
+# @claude CORS — allow localhost, private-network origins, and the Capacitor
+# @claude Android WebView origin (capacitor://localhost) (SDD §8.3). Other
+# @claude origins are added through CORS_EXTRA_ORIGINS.
 _extra = [o.strip() for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",") if o.strip()]
 _origin_regex = (
     r"^(https?://(localhost|127\.0\.0\.1|"
@@ -216,8 +235,11 @@ def _terminate_whep_sessions(username: str) -> None:
                 f"{STREAMER_WEBRTC_URL}{session_path}", method="DELETE"
             )
             urllib.request.urlopen(req, timeout=5).close()
-        except Exception:
-            pass  # @claude Already gone (client DELETE or ICE timeout).
+        except urllib.error.HTTPError as e:
+            if e.code != 404:  # @claude 404: already closed by the client or by ICE timeout.
+                log.warning("WHEP session %s close failed: HTTP %d", session_path, e.code)
+        except Exception as e:
+            log.warning("WHEP session %s close failed: %s", session_path, e)
 
 
 # ── Accounts and tokens (owned, SDD §6.2) ────────────────────────────────────
@@ -424,23 +446,24 @@ def switch_vlm(payload: dict, _=Depends(require_auth)):
 
 
 def _fan_out(targets: tuple) -> tuple[dict, list]:
-    """POST to each internal target; collect status codes and failures.
-    A leg fails on transport error, an error status, or a body that reports
-    ok=false — the streamer reports an unapplied source detach that way, and
-    hiding it would defeat the re-request repair (SDD §6.1)."""
-    results = {}
-    failures = []
-    for name, base, path in targets:
+    """POST to each internal target in parallel; collect status codes and
+    failures. A leg fails on a transport error or an error status — every
+    internal component reports failure with 4xx/5xx (SDD §6.5)."""
+    def one(target):
+        name, base, path = target
         try:
             response = forward_json(base, "POST", path, {})
-            results[name] = response.status_code
-            body = json.loads(response.body) if response.body else None
-            ok = body.get("ok", True) if isinstance(body, dict) else True
-            if response.status_code >= 400 or not ok:
-                failures.append(name)
-        except Exception:
-            results[name] = 502
-            failures.append(name)
+            return name, response.status_code, response.status_code < 400
+        except Exception as e:
+            log.warning("fan-out to %s%s failed: %s", base, path, e)
+            return name, 502, False
+
+    # @claude Parallel delivery (SDD §6.6): one slow leg must not delay the
+    # @claude others, and the client sees one aggregated result.
+    with ThreadPoolExecutor(max_workers=len(targets)) as pool:
+        outcomes = list(pool.map(one, targets))
+    results = {name: status for name, status, _ in outcomes}
+    failures = [name for name, _, ok in outcomes if not ok]
     return results, failures
 
 
@@ -451,7 +474,8 @@ def _streaming_active() -> bool | None:
     try:
         with urllib.request.urlopen(f"{STREAMER_URL}/status", timeout=5) as resp:
             return bool(json.loads(resp.read().decode()).get("streaming_active"))
-    except Exception:
+    except Exception as e:
+        log.warning("streamer status unavailable: %s", e)
         return None
 
 
@@ -600,9 +624,10 @@ async def hls_relay(path: str, request: Request, _=Depends(require_auth)):
 
 @app.post("/live/whep")
 async def whep_open(request: Request, user: dict = Depends(require_auth)):
-    """WHEP session setup. The upstream Location header is path-form and the
-    router serves the same path shape, so it passes through unchanged. The
-    session path is registered so replacement can close it (FR-047)."""
+    """WHEP session setup. MediaMTX's Location header is path-form
+    (/live/whep/<id>) and the router serves the same path, so it passes
+    through unchanged (SDD §6.4 (2)). The session path is registered so
+    replacement can close it (FR-047)."""
     response = await relay_raw(request, STREAMER_WEBRTC_URL, "/live/whep")
     if response.status_code == 201:
         location = response.headers.get("location")

@@ -25,7 +25,9 @@ from fastapi import Depends, HTTPException, Request
 
 from database import get_db
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "change-me-in-production")
+# @claude No default: a missing secret must fail the boot, not sign tokens with
+# @claude a value published in the repository (NFR-013).
+JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_EXPIRY = int(os.environ.get("JWT_EXPIRY", "600"))  # @claude 10m default (FR-001).
 REFRESH_EXPIRY = int(os.environ.get("REFRESH_EXPIRY", str(60 * 60 * 24 * 30)))  # @claude 30d default (FR-002).
 
@@ -35,6 +37,9 @@ DEFAULT_PASS = os.environ.get("DEFAULT_PASS", "admin")
 # @claude 10 failures -> 30-minute lockout (FR-007). Persisted in the users table.
 _LOCKOUT_THRESHOLD = 10
 _LOCKOUT_SECONDS = 1800
+# @claude WHEP session rows are deleted on client DELETE or replacement; rows
+# @claude MediaMTX closed on its own (ICE timeout) are aged out after this.
+_WHEP_SESSION_MAX_AGE = 24 * 3600
 
 # @claude Serializes session-mutating operations: login replacement, refresh
 # @claude rotation, logout, password change (SDD §6.2). Without it, a rotation
@@ -160,21 +165,26 @@ def _check_lockout(row) -> int:
     return int(remaining) + 1 if remaining > 0 else 0
 
 
-def _record_failure(username: str, db: sqlite3.Connection) -> None:
+def _record_failure(username: str, db: sqlite3.Connection) -> int:
+    """Count one failure. Returns the lockout length in seconds when this
+    failure reached the threshold (FR-007: the 10th failure is already
+    refused with 429), else 0."""
     row = db.execute(
         "SELECT failed_count FROM users WHERE username = ?", (username,)
     ).fetchone()
     if not row:
-        return  # @claude Unknown account: nothing to lock.
+        return 0  # @claude Unknown account: nothing to lock.
     count = row["failed_count"] + 1
     if count >= _LOCKOUT_THRESHOLD:
         db.execute(
             "UPDATE users SET failed_count = 0, locked_until = ? WHERE username = ?",
             (time.time() + _LOCKOUT_SECONDS, username),
         )
-    else:
-        db.execute("UPDATE users SET failed_count = ? WHERE username = ?", (count, username))
+        db.commit()
+        return _LOCKOUT_SECONDS
+    db.execute("UPDATE users SET failed_count = ? WHERE username = ?", (count, username))
     db.commit()
+    return 0
 
 
 # ── Authentication flow ──────────────────────────────────────────────────────
@@ -186,14 +196,15 @@ def authenticate(
     """
     Authenticate a user.
       - On success, returns {"token", "must_change_password", "refresh_token"}.
-        Every login gets a refresh token: 로그인 유지(FR-002)는 클라이언트가
-        localStorage에 영속하고, 임시 세션은 탭 수명(sessionStorage)으로만
-        보관하며 만료 경고의 「연장」에 사용한다.
-        Success replaces the account's existing session (FR-047): all prior
-        tokens are dead by the time the new ones are issued.
-      - On lockout, raises HTTPException(429).
+        The refresh token is issued only when the login asked to be kept
+        (remember_me, FR-002); otherwise it is None and the session ends with
+        the access token. Success replaces the account's existing session
+        (FR-047): all prior tokens are dead by the time the new ones are issued.
+      - On lockout (including the failure that triggers it), raises
+        HTTPException(429).
       - On mismatch, returns None.
     """
+    purge_expired(db)
     row = db.execute(
         "SELECT password_hash, salt, password_changed, token_epoch, failed_count, locked_until "
         "FROM users WHERE username = ?",
@@ -208,7 +219,13 @@ def authenticate(
                 headers={"Retry-After": str(remaining)},
             )
     if not row or not _verify_password(password, row["salt"], row["password_hash"]):
-        _record_failure(username, db)
+        locked_for = _record_failure(username, db)
+        if locked_for:
+            raise HTTPException(
+                status_code=429,
+                detail=f"too many attempts, retry after {locked_for}s",
+                headers={"Retry-After": str(locked_for)},
+            )
         return None
 
     db.execute("UPDATE users SET failed_count = 0, locked_until = 0 WHERE username = ?", (username,))
@@ -222,7 +239,7 @@ def authenticate(
         return {
             "token": create_token(username, get_epoch(username, db) or 0),
             "must_change_password": not row["password_changed"],
-            "refresh_token": issue_refresh_token(username, db),
+            "refresh_token": issue_refresh_token(username, db) if remember_me else None,
         }
 
 
@@ -244,8 +261,19 @@ def issue_refresh_token(username: str, db: sqlite3.Connection) -> str:
     return token
 
 
+def purge_expired(db: sqlite3.Connection) -> None:
+    """Lazy deletion on access (SDD §5.5): expired or revoked refresh tokens,
+    and WHEP session records older than a day — a session MediaMTX closed on
+    ICE timeout is never reported back, so its row is aged out here. @claude"""
+    now = int(time.time())
+    db.execute("DELETE FROM refresh_tokens WHERE expires_at < ? OR revoked = 1", (now,))
+    db.execute("DELETE FROM whep_sessions WHERE created_at < ?", (now - _WHEP_SESSION_MAX_AGE,))
+    db.commit()
+
+
 def rotate_refresh_token(token: str, db: sqlite3.Connection) -> tuple[str, str] | None:
     """Atomically revoke a valid refresh token and issue a replacement (FR-045)."""
+    purge_expired(db)
     row = db.execute(
         "SELECT username, expires_at, revoked FROM refresh_tokens WHERE token_hash = ?",
         (_hash_refresh(token),),

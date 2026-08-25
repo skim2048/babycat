@@ -39,37 +39,57 @@ def _bump(source: str, value: dict | None) -> None:
         _seq += 1
 
 
+# @claude Source availability is logged on transition only: a source that is
+# @claude down for minutes would otherwise emit one warning per retry.
+_available: dict[str, bool | None] = {"analyzer": None, "recorder": None, "streamer": None}
+
+
+def _note_availability(source: str, ok: bool, error: Exception | None = None) -> None:
+    if _available[source] is ok:
+        return
+    _available[source] = ok
+    if ok:
+        log.info("monitor source %s available", source)
+    else:
+        log.warning("monitor source %s unavailable: %s", source, error)
+
+
 def _analyzer_sse_reader() -> None:
     """Keep one SSE subscription to the analyzer; reconnect on failure."""
     while True:
         try:
             req = urllib.request.Request(f"{ANALYZER_URL}/events", method="GET")
             with urllib.request.urlopen(req, timeout=None) as resp:
+                _note_availability("analyzer", True)
                 for raw_line in resp:
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if line.startswith("data: "):
                         try:
                             _bump("analyzer", json.loads(line[len("data: "):]))
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            log.warning("analyzer SSE line dropped (invalid JSON): %s", e)
                             continue
         except Exception as e:
-            log.debug("analyzer SSE unavailable: %s", e)
+            _note_availability("analyzer", False, e)
             _bump("analyzer", None)
             time.sleep(POLL_INTERVAL)
 
 
-def _poll_json(url: str) -> dict | None:
+def _poll_json(source: str, url: str) -> dict | None:
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        _note_availability(source, False, e)
         return None
+    _note_availability(source, True)
+    return data
 
 
 def _status_poller() -> None:
     while True:
-        _bump("recorder", _poll_json(f"{RECORDER_URL}/status"))
-        _bump("streamer", _poll_json(f"{STREAMER_URL}/status"))
+        _bump("recorder", _poll_json("recorder", f"{RECORDER_URL}/status"))
+        _bump("streamer", _poll_json("streamer", f"{STREAMER_URL}/status"))
         time.sleep(POLL_INTERVAL)
 
 

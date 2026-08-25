@@ -1,4 +1,4 @@
-"""Babycat router — account database (users, refresh tokens). @claude"""
+"""Babycat router — account database (users, refresh tokens, WHEP session registry). @claude"""
 
 import os
 import sqlite3
@@ -66,9 +66,10 @@ def init_db() -> None:
 
 
 def get_db():
-    # FastAPI runs sync generator dependencies in a threadpool, and the setup
-    # and teardown may land on different workers. Each request still owns its
-    # connection exclusively, so cross-thread sequential use is safe.
+    # @claude FastAPI runs sync generator dependencies in a threadpool, and the
+    # @claude setup and teardown may land on different workers (SDD §5.2). Each
+    # @claude request still owns its connection exclusively, so cross-thread
+    # @claude sequential use is safe.
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

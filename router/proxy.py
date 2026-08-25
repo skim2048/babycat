@@ -10,10 +10,12 @@ request, and the compose network is inside the trust boundary (SDD §6.3).
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.concurrency import iterate_in_threadpool, run_in_threadpool
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # @claude Hop-by-hop headers must not be copied through a relay.
 _SKIP_HEADERS = {
@@ -27,6 +29,16 @@ def _target_url(base: str, path: str, query: str | None) -> str:
     if query:
         url = f"{url}?{query}"
     return url
+
+
+def _strip_token(query: str | None) -> str | None:
+    """Drop the ?token= credential before relaying (SDD §4.1): the fallback
+    exists for the router's own authentication, and an upstream access log
+    must not end up holding live tokens. @claude"""
+    if not query:
+        return None
+    kept = [(k, v) for k, v in urllib.parse.parse_qsl(query, keep_blank_values=True) if k != "token"]
+    return urllib.parse.urlencode(kept) or None
 
 
 def forward_json(
@@ -54,7 +66,13 @@ def forward_json(
         raise HTTPException(status_code=502, detail=f"upstream error: {e}")
     if status >= 500:
         raise HTTPException(status_code=502, detail="upstream error")
-    return JSONResponse(status_code=status, content=json.loads(text) if text else None)
+    try:
+        content = json.loads(text) if text else None
+    except ValueError:
+        # @claude A non-JSON body (e.g. a framework's plain-text 4xx) is still
+        # @claude passed through with its meaning intact (SDD §6.5).
+        content = {"detail": text}
+    return JSONResponse(status_code=status, content=content)
 
 
 def relay_stream(
@@ -108,7 +126,7 @@ def relay_stream(
     )
 
 
-def _blocking_fetch(url: str, method: str, body: bytes, headers: dict, timeout: int):
+def _blocking_open(url: str, method: str, body: bytes, headers: dict, timeout: int):
     req = urllib.request.Request(url, data=body if body else None, method=method)
     for name, value in headers.items():
         req.add_header(name, value)
@@ -126,21 +144,32 @@ def _blocking_fetch(url: str, method: str, body: bytes, headers: dict, timeout: 
         if name.lower() in _SKIP_HEADERS:
             continue
         out_headers[name] = value
-    content = upstream.read()
-    upstream.close()
-    return status, out_headers, content
+    return status, out_headers, upstream
 
 
-async def relay_raw(request: Request, base: str, path: str, timeout: int = 15) -> Response:
+def _iter_body(upstream):
+    try:
+        while True:
+            chunk = upstream.read(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        upstream.close()
+
+
+async def relay_raw(request: Request, base: str, path: str, timeout: int = 15) -> StreamingResponse:
     """
     Byte-level relay preserving method, body, Range, content type, and the
     upstream status and headers. Used for clip playback (Range) and for
-    the HLS/WHEP paths (SDD §6.4 (2)); a path-form Location header passes
-    through unchanged, which keeps WHEP session resources on router paths.
+    the HLS/WHEP paths (SDD §6.4 (2)). MediaMTX's WHEP Location header is
+    path-form (/live/whep/<id>) and the router serves the same path, so it
+    passes through unchanged.
 
-    The blocking transfer runs in the threadpool so the event loop stays
-    responsive. Bodies are buffered whole — clips are seconds long and HLS
-    segments are small, so this stays within reason on a LAN.
+    The body is forwarded as it arrives (SDD §6.4 (2)): the upstream is
+    opened in the threadpool and its chunks are read there too, so neither
+    a multi-second clip nor a slow segment blocks the event loop or is held
+    in memory whole.
     """
     body = await request.body()
     headers = {}
@@ -148,10 +177,13 @@ async def relay_raw(request: Request, base: str, path: str, timeout: int = 15) -
         value = request.headers.get(name)
         if value:
             headers[name] = value
-    from fastapi.concurrency import run_in_threadpool
-    status, out_headers, content = await run_in_threadpool(
-        _blocking_fetch,
-        _target_url(base, path, request.url.query or None),
+    status, out_headers, upstream = await run_in_threadpool(
+        _blocking_open,
+        _target_url(base, path, _strip_token(request.url.query)),
         request.method, body, headers, timeout,
     )
-    return Response(content=content, status_code=status, headers=out_headers)
+    media_type = out_headers.pop("Content-Type", None)
+    return StreamingResponse(
+        iterate_in_threadpool(_iter_body(upstream)),
+        status_code=status, headers=out_headers, media_type=media_type,
+    )
