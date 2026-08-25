@@ -9,9 +9,6 @@ from settings import DB_PATH, INFERENCE_RETENTION_DAYS
 
 log = logging.getLogger(__name__)
 
-# @claude 기본 90일 — 클라이언트 화면 요구(당일 + 기준선 14일 + 월 단위 회고)를
-# @claude 근거로 상향(analysis-mewly-impl.md §5). 10초 주기 기준 약 78만 행.
-
 # @claude Column names are kept from the prototype so the external contract
 # @claude (EventOut: id/trigger/clip_name/created_at) survives the split.
 # @claude `inferences` is the 2층 history: every inference, matched or not,

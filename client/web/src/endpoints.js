@@ -1,7 +1,8 @@
 // Route map for the dashboard.
-// The router (port 8000) is the single entry point for everything —
-// control, the SSE relay, and the HLS/WHEP streaming relays.
-// Only WebRTC media (UDP 8189) bypasses it.
+// The TLS gateway (port 8000, HTTPS) is the single entry point for everything —
+// control, the SSE relay, and the HLS/WHEP streaming relays — and forwards to the
+// router. Only WebRTC media (UDP 8189) bypasses it. The browser must trust the
+// device's CA root (README, Limitations).
 
 const BABYCAT_HOST_STORAGE_KEY = 'babycat_host'
 
@@ -34,7 +35,7 @@ function getBabycatHost() {
 }
 
 function getApiUrl(path) {
-  return `http://${getBabycatHost()}:8000${path}`
+  return `https://${getBabycatHost()}:8000${path}`
 }
 
 export const API_ENDPOINTS = {
@@ -120,11 +121,11 @@ export function persistBabycatHost() {
 // @claude HLS and WHEP go through the router relay (single entry). Only the
 // @claude WebRTC media itself flows directly from the streamer (UDP 8189).
 export function getHlsUrl(host = getBabycatHost()) {
-  return `http://${host}:8000/live/hls/index.m3u8`
+  return `https://${host}:8000/live/hls/index.m3u8`
 }
 
 export function getWhepUrl(host = getBabycatHost()) {
-  return `http://${host}:8000/live/whep`
+  return `https://${host}:8000/live/whep`
 }
 
 export function getEventsUrl(token) {

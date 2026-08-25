@@ -209,8 +209,10 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         Omitted keys leave the stored value untouched.
         """
         body = self._read_json_body()
+        if body is None:
+            return
         if "labels" not in body and "presets" not in body:
-            self._send_json({"ok": False, "error": "labels or presets required"}, status=400)
+            self._send_json({"detail": "labels or presets required"}, status=400)
             return
         # @claude Validate everything before applying anything — a rejected
         # @claude request leaves both values untouched (no partial apply),
@@ -219,12 +221,12 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         if "labels" in body:
             labels = settings.validate_labels(body["labels"])
             if labels is None:
-                self._send_json({"ok": False, "error": "malformed labels"}, status=400)
+                self._send_json({"detail": "malformed labels"}, status=400)
                 return
         if "presets" in body:
             presets = settings.validate_presets(body["presets"])
             if presets is None:
-                self._send_json({"ok": False, "error": "malformed presets"}, status=400)
+                self._send_json({"detail": "malformed presets"}, status=400)
                 return
         if labels is not None:
             app_state.set_label_groups(labels)

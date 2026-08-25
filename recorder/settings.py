@@ -24,7 +24,10 @@ TRIGGER_POST_EVENT_SEC = float(os.getenv("TRIGGER_POST_EVENT_SEC", str(TRIGGER_C
 CLIP_MIN_FREE_MB = int(os.getenv("CLIP_MIN_FREE_MB", "512"))
 CLIP_TARGET_FREE_MB = int(os.getenv("CLIP_TARGET_FREE_MB", "1024"))
 
-# @claude Inference history retention (FR-053); rows older than this are deleted on insert.
+# @claude Inference history retention (FR-053); rows older than this are deleted
+# @claude on insert. Default 90 days: the client's views need the day, a 14-day
+# @claude baseline, and a monthly review (mewly analysis-mewly-impl.md §5) —
+# @claude about 780k rows at a 10-second cadence.
 INFERENCE_RETENTION_DAYS = int(os.getenv("INFERENCE_RETENTION_DAYS", "90"))
 
 ENCODE_BITRATE = int(os.getenv("RECORDER_ENCODE_BITRATE", "4000000"))
