@@ -2,7 +2,8 @@
 ONVIF PTZ control module.
 
 ContinuousMove / Stop / AbsoluteMove / GetStatus polling, authenticated
-with SOAP + WS-Security (UsernameToken).
+with SOAP + WS-Security (UsernameToken). Pan and tilt only: the camera in
+use has no zoom, and zoom is outside the product scope (SRS §2.4).
 
 @claude
 """
@@ -20,15 +21,21 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-_PTZ_PROFILE = "profile_1"
-_PTZ_SPEED   = 0.5
+# @claude Fallback ProfileToken when GetProfiles fails; the token is resolved
+# @claude from the camera on first use (_profile_token).
+_PTZ_PROFILE_FALLBACK = "profile_1"
 
 PRESET_SLOTS = (1, 2, 3, 4)
+
+# @claude A manual continuous move is assumed over after this long without a
+# @claude stop: a client that never sends "stop" must not block patrol forever.
+MOVE_HOLD_S = 10.0
 
 _lock    = threading.Lock()
 _current: dict = {"pan": None, "tilt": None}
 _presets: dict = {}  # slot(int) -> {"pan": float, "tilt": float}
-_moving:  bool = False
+_moving_until: float = 0.0
+_profile_token: Optional[str] = None
 
 _ONVIF_URL:  Optional[str] = None
 _ONVIF_USER: Optional[str] = None
@@ -36,21 +43,23 @@ _ONVIF_PASS: Optional[str] = None
 
 
 def configure(url: str, user: str, password: str) -> None:
-    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS
+    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS, _profile_token
     with _lock:
         _ONVIF_URL  = url
         _ONVIF_USER = user
         _ONVIF_PASS = password
+        _profile_token = None
     log.info("PTZ configured: %s", url)
 
 
 def clear_config() -> None:
-    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS, _moving
+    global _ONVIF_URL, _ONVIF_USER, _ONVIF_PASS, _moving_until, _profile_token
     with _lock:
         _ONVIF_URL = None
         _ONVIF_USER = None
         _ONVIF_PASS = None
-        _moving = False
+        _moving_until = 0.0
+        _profile_token = None
         _current.update({"pan": None, "tilt": None})
     log.info("PTZ disabled")
 
@@ -62,13 +71,13 @@ def is_configured() -> bool:
 
 def is_moving() -> bool:
     with _lock:
-        return _moving
+        return time.monotonic() < _moving_until
 
 
 def set_moving(value: bool) -> None:
-    global _moving
+    global _moving_until
     with _lock:
-        _moving = value
+        _moving_until = time.monotonic() + MOVE_HOLD_S if value else 0.0
 
 
 def get_current() -> dict:
@@ -141,12 +150,32 @@ def _issue_request(body: str, operation: str) -> Optional[str]:
         return None
 
 
+def _resolve_profile_token() -> str:
+    """Ask the camera for its media profiles and use the first token; fall
+    back to the conventional name when the call fails. Cached until the PTZ
+    target changes. @claude"""
+    global _profile_token
+    with _lock:
+        if _profile_token:
+            return _profile_token
+    text = _issue_request(
+        '<GetProfiles xmlns="http://www.onvif.org/ver10/media/wsdl"/>', "GetProfiles"
+    )
+    m = re.search(r'Profiles[^>]*\stoken="([^"]+)"', text or "")
+    token = m.group(1) if m else _PTZ_PROFILE_FALLBACK
+    if not m:
+        log.warning("GetProfiles gave no token — using %s", token)
+    with _lock:
+        _profile_token = token
+    return token
+
+
 # ── PTZ commands ─────────────────────────────────────────────────────────────
 
 def move(pan: float, tilt: float) -> None:
     body = (
         f'<ContinuousMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
-        f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
+        f"<ProfileToken>{_resolve_profile_token()}</ProfileToken>"
         f'<Velocity><PanTilt xmlns="http://www.onvif.org/ver10/schema" x="{pan:.2f}" y="{tilt:.2f}"/></Velocity>'
         f"</ContinuousMove>"
     )
@@ -156,7 +185,7 @@ def move(pan: float, tilt: float) -> None:
 def stop() -> None:
     body = (
         f'<Stop xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
-        f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
+        f"<ProfileToken>{_resolve_profile_token()}</ProfileToken>"
         "<PanTilt>true</PanTilt><Zoom>false</Zoom>"
         "</Stop>"
     )
@@ -166,7 +195,7 @@ def stop() -> None:
 def absolute_move(pan: float, tilt: float) -> None:
     body = (
         f'<AbsoluteMove xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
-        f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
+        f"<ProfileToken>{_resolve_profile_token()}</ProfileToken>"
         f'<Position><PanTilt xmlns="http://www.onvif.org/ver10/schema" x="{pan:.3f}" y="{tilt:.3f}"/></Position>'
         f"</AbsoluteMove>"
     )
@@ -176,7 +205,7 @@ def absolute_move(pan: float, tilt: float) -> None:
 def get_status() -> Optional[dict]:
     body = (
         f'<GetStatus xmlns="http://www.onvif.org/ver20/ptz/wsdl">'
-        f"<ProfileToken>{_PTZ_PROFILE}</ProfileToken>"
+        f"<ProfileToken>{_resolve_profile_token()}</ProfileToken>"
         "</GetStatus>"
     )
     text = _issue_request(body, "GetStatus")

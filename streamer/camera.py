@@ -8,8 +8,8 @@ the streamer alone (SDD §5.1):
     touches. Registration never configures MediaMTX or PTZ (FR-048).
   - applied profile (APPLIED_PATH) — a copy of the registered profile
     promoted at streaming start, persisted with the streaming_active
-    flag and the PTZ home. Connection, failure recovery, and restart
-    restore always use this slot (FR-014).
+    flag, the PTZ presets, and the patrol setting. Connection, failure
+    recovery, and restart restore always use this slot (FR-014).
 
 The RTSP source is configured at runtime through the MediaMTX control
 API on localhost — owner and consumer of the profile live in the same
@@ -32,10 +32,13 @@ import ptz
 
 log = logging.getLogger(__name__)
 
-CONFIG_PATH = os.getenv("CONFIG_PATH", "/config/cam_profile.json")
-APPLIED_PATH = os.getenv("APPLIED_PATH", "/config/cam_applied.json")
-MEDIAMTX_API = os.getenv("MEDIAMTX_API", "http://127.0.0.1:9997")
+# @claude Fixed by the compose volume (SDD §8.1) and config/mediamtx.yml
+# @claude (apiAddress); not operator-tunable.
+CONFIG_PATH = "/config/cam_profile.json"
+APPLIED_PATH = "/config/cam_applied.json"
+MEDIAMTX_API = "http://127.0.0.1:9997"
 MEDIAMTX_PATH_NAME = "live"
+MEDIAMTX_API_ERROR = "MediaMTX API connection failed"
 # @claude MediaMTX's passive default: the path waits for a publisher instead of
 # @claude pulling from the camera. Patching the source back to this value is how
 # @claude streaming stop detaches the camera (FR-049).
@@ -65,12 +68,30 @@ DEFAULT_SOURCE_TYPE = "rtsp_camera"
 _REQUIRED_RTSP_FIELDS = ("ip", "username", "password")
 
 
-def load() -> Optional[dict]:
+def sweep_temp_files() -> None:
+    """Remove temp files left by a crash mid-write (SDD §5.4). @claude"""
+    for path in (CONFIG_PATH, APPLIED_PATH):
+        try:
+            os.unlink(f"{path}.tmp")
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            log.warning("temp file %s.tmp not removed: %s", path, e)
+
+
+def _load_json(path: str):
     try:
-        with open(CONFIG_PATH) as f:
+        with open(path) as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         return None
+    except json.JSONDecodeError as e:
+        log.warning("profile file %s unreadable, treated as absent: %s", path, e)
+        return None
+
+
+def load() -> Optional[dict]:
+    return _load_json(CONFIG_PATH)
 
 
 def save(config: dict) -> None:
@@ -78,18 +99,11 @@ def save(config: dict) -> None:
     with _config_lock:
         existing = load() or {}
         existing.update(config)
-        existing.pop("name", None)  # @claude Drop a legacy field.
-        existing.pop("stream_protocol", None)  # Drop legacy runtime transport preference.
-        existing.pop("ptz_home", None)  # @claude The home moved to the applied slot.
         _write_json(CONFIG_PATH, existing)
 
 
 def load_applied() -> dict:
-    try:
-        with open(APPLIED_PATH) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    return _load_json(APPLIED_PATH) or {}
 
 
 def _save_applied(data: dict) -> None:
@@ -112,7 +126,6 @@ def save_presets(presets: dict | None) -> None:
     with _config_lock:
         applied = load_applied()
         applied["ptz_presets"] = presets or {}
-        applied.pop("ptz_home", None)  # @claude Drop the single-home legacy field.
         _write_json(APPLIED_PATH, applied)
 
 
@@ -156,7 +169,7 @@ def streaming_start() -> dict:
             ptz_presets = None
 
         if not _activate_runtime(config):
-            return {"ok": False, "error": "MediaMTX API connection failed"}
+            return {"ok": False, "error": MEDIAMTX_API_ERROR}
 
         _save_applied({
             "streaming_active": True,
@@ -172,8 +185,8 @@ def streaming_start() -> dict:
 
 def streaming_stop() -> dict:
     """Detach the source (FR-049). The applied slot keeps the last-connected
-    profile and home; only the active flag drops. Runs under the runtime lock
-    so it cannot interleave with a start or a restore attempt. @claude"""
+    profile and presets; only the active flag drops. Runs under the runtime
+    lock so it cannot interleave with a start or a restore attempt. @claude"""
     with _runtime_lock:
         with _config_lock:
             applied = load_applied()
@@ -181,11 +194,11 @@ def streaming_stop() -> dict:
             _write_json(APPLIED_PATH, applied)
         # @claude Stop severs the camera relationship entirely (SDD §4.2):
         # @claude PTZ commands and polling end with the stream — symmetric
-        # @claude with a restart in the stopped state. The home stays in the
-        # @claude applied slot for the next start.
+        # @claude with a restart in the stopped state. The presets stay in
+        # @claude the applied slot for the next start.
         ptz.clear_config()
         if not _patch_source(MEDIAMTX_SOURCE_DETACHED):
-            return {"ok": False, "error": "MediaMTX API connection failed"}
+            return {"ok": False, "error": MEDIAMTX_API_ERROR}
         return {"ok": True}
 
 
@@ -244,7 +257,6 @@ def status_view() -> dict:
         # @claude from what the connection uses.
         pending = True if error else normalized != (applied.get("profile") or {})
     return {
-        "profile_configured": registered is not None,
         "streaming_active": bool(applied.get("streaming_active")),
         "profile_pending": pending,
     }
@@ -334,7 +346,7 @@ def _profile_view_rtsp_camera(config: dict, source_type: str) -> dict:
     return {
         "configured": True,
         "source_type": source_type,
-        **{k: v for k, v in config.items() if k not in {"password", "stream_protocol"}},
+        **{k: v for k, v in config.items() if k != "password"},
         "password_set": bool(config.get("password")),
     }
 
@@ -390,7 +402,7 @@ def _source_runtime_activator(source_type: str):
 def _patch_source(source: str) -> bool:
     body: dict = {"source": source}
     if source != MEDIAMTX_SOURCE_DETACHED:
-        body["sourceProtocol"] = "tcp"
+        body["rtspTransport"] = "tcp"
     url = f"{MEDIAMTX_API}/v3/config/paths/patch/{MEDIAMTX_PATH_NAME}"
     req = urllib.request.Request(
         url,

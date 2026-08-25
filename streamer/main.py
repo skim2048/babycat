@@ -2,11 +2,13 @@
 Babycat streamer — companion process (SDD §4.2).
 
 Parent of the container's two-process structure: supervises the MediaMTX
-child (spawn, restart on abnormal exit, signal forwarding) the same way
-the analyzer supervises its VLM child and the recorder its ffmpeg
-children, and owns everything about the video source that MediaMTX
-cannot do itself — the profile, its application to the control API on
-localhost, and ONVIF PTZ.
+child (spawn, restart on abnormal exit, orderly shutdown) the same way the
+analyzer supervises its VLM child, and owns everything about the video
+source that MediaMTX cannot do itself — the profile, its application to
+the control API on localhost, and ONVIF PTZ.
+
+Threads: MediaMTX supervisor, start-up profile restore, PTZ position
+polling, PTZ auto patrol (SDD §3.4).
 
 Internal only: no HTTP port is published; the router is the sole caller
 (SDD §6.3). MediaMTX's own ports stay container-internal except the
@@ -16,7 +18,6 @@ WebRTC media port published by compose.
 """
 
 import logging
-import os
 import signal
 import subprocess
 import sys
@@ -25,14 +26,21 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 import camera
 import ptz
 
 log = logging.getLogger(__name__)
 
-MEDIAMTX_BIN = os.getenv("MEDIAMTX_BIN", "/usr/local/bin/mediamtx")
-MEDIAMTX_CONF = os.getenv("MEDIAMTX_CONF", "/config/mediamtx.yml")
+# @claude Fixed by the image layout (docker/streamer/Dockerfile) and the
+# @claude compose volume (SDD §8.1); not operator-tunable.
+MEDIAMTX_BIN = "/usr/local/bin/mediamtx"
+MEDIAMTX_CONF = "/config/mediamtx.yml"
+# @claude A child that stayed up this long ran normally; the next crash starts
+# @claude the restart backoff from the base again.
+_STABLE_RUN_S = 60.0
 
 _mtx_proc: subprocess.Popen | None = None
 _mtx_lock = threading.Lock()
@@ -47,9 +55,12 @@ def _mediamtx_supervisor() -> None:
         with _mtx_lock:
             _mtx_proc = subprocess.Popen([MEDIAMTX_BIN, MEDIAMTX_CONF])
         log.info("MediaMTX started (pid=%d)", _mtx_proc.pid)
+        started = time.monotonic()
         code = _mtx_proc.wait()
         if _shutting_down.is_set():
             break
+        if time.monotonic() - started > _STABLE_RUN_S:
+            backoff = 1.0
         log.warning("MediaMTX exited (code=%s) — restarting in %.0fs", code, backoff)
         time.sleep(backoff)
         backoff = min(backoff * 2, 10.0)
@@ -59,6 +70,7 @@ def _mediamtx_supervisor() -> None:
 
 
 def _stop_mediamtx() -> None:
+    """Orderly shutdown of the child: SIGTERM, then SIGKILL after 10 s. @claude"""
     _shutting_down.set()
     with _mtx_lock:
         proc = _mtx_proc
@@ -77,6 +89,7 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
         stream=sys.stdout,
     )
+    camera.sweep_temp_files()
     applied = camera.load_applied()
     ptz.load_presets(applied.get("ptz_presets"))
     ptz.load_patrol(applied.get("ptz_patrol"))
@@ -94,11 +107,28 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Babycat streamer companion", version="1.0.0", lifespan=lifespan)
 
 
-@app.get("/health")
-def health():
-    with _mtx_lock:
-        alive = _mtx_proc is not None and _mtx_proc.poll() is None
-    return {"status": "ok", "mediamtx_alive": alive}
+@app.exception_handler(RequestValidationError)
+async def _validation_as_400(_request: Request, exc: RequestValidationError):
+    """A malformed request is 400 (SDD §6.5), not FastAPI's default 422."""
+    return JSONResponse(status_code=400, content={"detail": "invalid request body"})
+
+
+async def _json_body(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid request body")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="invalid request body")
+    return body
+
+
+def _result(outcome: dict, failure_status: int) -> dict:
+    """Translate camera's {"ok", "error"} outcome into the HTTP contract
+    (SDD §6.5): failures are 4xx/5xx with a detail, never a 200. @claude"""
+    if outcome.get("ok"):
+        return {"ok": True}
+    raise HTTPException(status_code=failure_status, detail=outcome.get("error", "failed"))
 
 
 @app.get("/profile")
@@ -111,29 +141,35 @@ def get_profile():
 async def register_profile(request: Request):
     """Persist a profile into the registered slot (FR-009, FR-010). Does not
     connect the source (FR-048) and does not start analysis (FR-025)."""
-    body = await request.json()
-    return camera.register(body)
+    return _result(camera.register(await _json_body(request)), 400)
 
 
 @app.post("/streaming/start")
 def streaming_start():
     """Promote the registered profile and connect the source (SRS §2.3 (3),
-    FR-048). Idempotent; doubles as a restart."""
-    return camera.streaming_start()
+    FR-048). Idempotent; doubles as a restart. A missing or invalid
+    registered profile is the caller's error (409); an unreachable MediaMTX
+    control API is an upstream failure (502)."""
+    outcome = camera.streaming_start()
+    if outcome.get("ok"):
+        return {"ok": True}
+    status = 502 if outcome.get("error") == camera.MEDIAMTX_API_ERROR else 409
+    raise HTTPException(status_code=status, detail=outcome.get("error", "failed"))
 
 
 @app.post("/streaming/stop")
 def streaming_stop():
     """Detach the source (SRS §2.3 (3), FR-049). The router cascades the
     analysis and buffer stops separately."""
-    return camera.streaming_stop()
+    return _result(camera.streaming_stop(), 502)
 
 
 @app.post("/ptz")
 async def control_ptz(request: Request):
-    body = await request.json()
+    """PTZ control (FR-016~FR-019, FR-052). The camera in use has no zoom;
+    zoom is outside the product scope (SRS §2.4)."""
+    body = await _json_body(request)
     action = body.get("action")
-    ok = True
 
     if action == "move":
         try:
@@ -152,23 +188,22 @@ async def control_ptz(request: Request):
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="invalid preset slot")
         presets = ptz.save_preset(slot)
-        if presets is not None:
-            camera.save_presets(presets)
-        ok = presets is not None
+        if presets is None:
+            raise HTTPException(status_code=409, detail="current position unknown or invalid slot")
+        camera.save_presets(presets)
     elif action == "goto":
         try:
             slot = int(body.get("slot"))
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="invalid preset slot")
         preset = ptz.get_preset(slot)
-        if preset is not None:
-            threading.Thread(
-                target=ptz.absolute_move,
-                args=(preset["pan"], preset["tilt"]),
-                daemon=True,
-            ).start()
-        else:
-            ok = False
+        if preset is None:
+            raise HTTPException(status_code=404, detail="preset not saved")
+        threading.Thread(
+            target=ptz.absolute_move,
+            args=(preset["pan"], preset["tilt"]),
+            daemon=True,
+        ).start()
     elif action == "absolute":
         # @claude FR-016: move to an arbitrary position in ONVIF normalized
         # @claude space. Values are clamped to [-1, 1].
@@ -191,25 +226,19 @@ async def control_ptz(request: Request):
                 raise HTTPException(status_code=400, detail="invalid patrol interval")
         patrol = ptz.set_patrol(enabled, interval)
         camera.save_patrol(patrol)
+    else:
+        raise HTTPException(status_code=400, detail="unknown action")
 
-    return {"ok": ok}
+    return {"ok": True}
 
 
 @app.get("/status")
 def status():
     """PTZ position snapshot for the router's monitoring merge (SDD §6.4 (4))."""
     current = ptz.get_current()
-    with _mtx_lock:
-        alive = _mtx_proc is not None and _mtx_proc.poll() is None
     return {
         "ptz_pan": current["pan"],
         "ptz_tilt": current["tilt"],
-        # @claude JSON keys are strings; ptz_presets keeps the slot-number list
-        # @claude for existing consumers, ptz_preset_positions adds the stored
-        # @claude coordinates per slot (slot -> {pan, tilt}).
-        "ptz_presets": sorted(ptz.get_presets()),
-        "ptz_preset_positions": ptz.get_presets(),
-        "ptz_patrol": ptz.get_patrol(),
+        "ptz_presets": sorted(ptz.get_presets()),  # @claude Saved slot numbers (FR-018).
         **camera.status_view(),
-        "mediamtx_alive": alive,
     }
