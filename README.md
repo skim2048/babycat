@@ -7,7 +7,6 @@
 </p>
 
 <div align="center">
-  <img src="https://img.shields.io/badge/v1.0-2b6e4f" alt="Version">
   <img src="https://img.shields.io/badge/Python-444444" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-444444" alt="FastAPI">
   <img src="https://img.shields.io/badge/GStreamer-444444" alt="GStreamer">
@@ -25,6 +24,12 @@ Babycat is a VLM-based video event-detection backend for the NVIDIA Jetson platf
 Babycat is a **backend**: it exposes an HTTP API and does not ship a user interface. Reference clients are provided under [`client/`](client/) as usage examples — see [Client](#client) below.
 
 Long-term trend summarization and audio-based detection are out of scope.
+
+## Limitations
+
+- **Detection is best-effort.** Events are judged by a vision-language model matching keywords against generated scene descriptions. Missed events and false alarms are inherent to this approach and no detection rate is guaranteed.
+- **Old clips are deleted automatically.** When free space on the clip volume drops below `CLIP_MIN_FREE_MB`, the oldest clips and their event-history rows are removed until `CLIP_TARGET_FREE_MB` is free. Deleted clips cannot be recovered; each deletion is logged.
+- **Private CA.** The API is served over HTTPS, but the certificate is signed by a private CA that Babycat creates on the device. Every client device must register that CA root once, and again whenever the CA is re-created. Babycat is still meant for a trusted network (a LAN or a VPN such as ZeroTier): the gateway is the only encrypted hop, and the private CA does not make the service safe to expose to the internet.
 
 ## Architecture
 
@@ -53,7 +58,7 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 | Jetson module | AGX Orin 64 GB | Orin NX 16 GB |
 | Storage | NVMe SSD 512 GB | NVMe SSD 256 GB |
 
-Tested on JetPack 6.2.1 (L4T R36.x). JetPack 7.x is not supported — it changes the GPU driver and device-node layout, and the inference stack depends on the JetPack 6 CUDA generation — so flash the board with JetPack 6.x.
+Tested on JetPack 6.2.1 (L4T R36.4.x). JetPack 7.x is not supported — it changes the GPU driver and device-node layout, and the inference stack depends on the JetPack 6 CUDA generation — so flash the board with JetPack 6.x.
 
 **2. The hardware video encoder and decoder.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes are provided by JetPack's multimedia stack and may be missing after a bare OS flash. Confirm both exist:
 
@@ -76,20 +81,24 @@ Babycat is distributed as source; images are built on the target device.
 ```bash
 # 1. Configure the environment
 cp .env.example .env
-# Edit .env — at minimum: HOST_IP, JWT_SECRET, DEFAULT_USER, DEFAULT_PASS, VLM_MODELS
+# Edit .env — required: HOST_IP, JWT_SECRET, DEFAULT_USER, DEFAULT_PASS, VLM_MODELS
 
-# 2. Build and start
+# 2. Create the data directories as your own user (otherwise the container
+#    runtime creates them owned by root)
+mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
+
+# 3. Build and start
 docker compose build
 docker compose up -d
 ```
 
-On the first boot the analyzer pre-compiles the candidate VLM models (minutes to tens of minutes each; the results are cached for later boots), and an initial admin account is created — the first login requires a password change.
+On the first boot the analyzer downloads and pre-compiles the candidate VLM models (minutes to tens of minutes each; the results are cached under `data/models` for later boots), and an initial admin account is created. The first login response carries `must_change_password: true`; the reference clients turn this into a forced password change.
 
-Configuration is injected through `.env`; every variable is documented in [`.env.example`](.env.example).
+Every operator-tunable variable is documented in [`.env.example`](.env.example); paths and internal addresses are fixed in `docker-compose.yml`.
 
 ## API
 
-The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ, client data persistence, the streaming and analysis lifecycle, clips and event history, and a merged monitoring stream (SSE). See the router service ([`router/`](router/)) for the full route map.
+The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ (pan/tilt), client data persistence, the streaming and analysis lifecycle, clips, event and inference history with a summary aggregation, and a merged monitoring stream (SSE). The route table is in the SRS ([`docs/srs/4_external_interface_requirements.md`](docs/srs/4_external_interface_requirements.md)) and the request/response conventions in the SDD ([`docs/sdd/6_interface_design.md`](docs/sdd/6_interface_design.md)).
 
 The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env`, and creates the private CA that signs it if none exists yet. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
@@ -97,9 +106,9 @@ Each connecting device registers the CA root (`data/caddy/caddy/pki/authorities/
 
 ## Client
 
-Babycat has no built-in UI. Two reference clients are provided under [`client/`](client/) as examples of how to consume the API. They are reference implementations and are **not part of the product scope**; each can run on the same host or a separate one, and is started independently. The backend address is entered on each client's login screen.
+Babycat has no built-in UI. Two reference clients are provided under [`client/`](client/) as examples of how to consume the API. They are reference implementations and are **not part of the product scope**; each can run on the same host or a separate one, and is started independently. The backend address is entered on each client's login screen. Both clients talk to the backend over HTTPS and must trust the device's CA root (see Limitations).
 
-**Web dashboard** ([`client/web`](client/web)) — a Vue 3 dashboard for desktop browsers. It runs as a container serving the Vite dev server on port `5173`:
+**Web dashboard** ([`client/web`](client/web)) — a Vue 3 dashboard for desktop browsers. The bundled container runs the Vite development server on port `5173`; it is a convenience for trying the dashboard on the LAN, not a production deployment:
 
 ```bash
 cd client/web
