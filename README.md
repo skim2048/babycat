@@ -29,7 +29,7 @@ Long-term trend summarization and audio-based detection are out of scope.
 
 - **Detection is best-effort.** Events are judged by a vision-language model matching keywords against generated scene descriptions. Missed events and false alarms are inherent to this approach and no detection rate is guaranteed.
 - **Old clips are deleted automatically.** When free space on the clip volume drops below `CLIP_MIN_FREE_MB`, the oldest clips and their event-history rows are removed until `CLIP_TARGET_FREE_MB` is free. Deleted clips cannot be recovered; each deletion is logged.
-- **Private CA.** The API is served over HTTPS, but the certificate is signed by a private CA that Babycat creates on the device. Every client device must register that CA root once, and again whenever the CA is re-created. Babycat is still meant for a trusted network (a LAN or a VPN such as ZeroTier): the gateway is the only encrypted hop, and the private CA does not make the service safe to expose to the internet.
+- **Private CA.** The API is served over HTTPS, but the certificate chains to a private CA, not a public one. Production devices ship with a per-device CA issued by the manufacturer root, which the mewly app bundles, so no client-side setup is needed; a development device without that file creates its own CA at first boot, and every client device must register that CA root once. Babycat is still meant for a trusted network (a LAN or a VPN such as ZeroTier): the gateway is the only encrypted hop, and the private CA does not make the service safe to expose to the internet.
 
 ## Architecture
 
@@ -100,9 +100,9 @@ Every operator-tunable variable is documented in [`.env.example`](.env.example);
 
 The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ (pan/tilt), client data persistence, the streaming and analysis lifecycle, clips, event and inference history with a summary aggregation, and a merged monitoring stream (SSE). The route table is in the SRS ([`docs/srs/4_external_interface_requirements.md`](docs/srs/4_external_interface_requirements.md)) and the request/response conventions in the SDD ([`docs/sdd/6_interface_design.md`](docs/sdd/6_interface_design.md)).
 
-The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env`, and creates the private CA that signs it if none exists yet. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
+The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env` and signs with the CA found at `data/caddy/caddy/pki/authorities/local/` — the per-device CA placed there at provisioning (`tools/provision-device.sh`), or a self-created CA when none is present. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
-Each connecting device registers the CA root (`data/caddy/caddy/pki/authorities/local/root.crt`) in its trust store once. To keep that a single registration across several devices, share the CA: copy the first device's `data/caddy/caddy/pki` directory to the same path on each additional device, and that device signs its own certificate with it at startup.
+Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, provisioning steps, and key custody are documented in [`docs/ops/pki.md`](docs/ops/pki.md).
 
 ## Client
 

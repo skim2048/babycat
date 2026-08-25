@@ -1,9 +1,10 @@
 # Babycat gateway — TLS 종단 (단일 진입점 8000의 HTTPS 전환).
 # 모든 접속 호스트를 SAN에 담은 단일 인증서(data/caddy/site/)를 서빙한다 —
 # IP로 접속하는 브라우저는 SNI를 보내지 않아 이름별 인증서 선택이 동작하지
-# 않기 때문이다. 발급·갱신과 접속 호스트 추가는 issue-cert.sh가 수행하며,
-# 서명 주체인 CA 루트(data/caddy/caddy/pki/authorities/local/root.crt)를
-# 클라이언트(브라우저 신뢰 저장소, mewly 앱 res/raw)에 1회 설치한다.
+# 않기 때문이다. 발급·갱신과 접속 호스트 추가는 issue-cert.sh가 수행한다.
+# cert.pem은 리프와 서명 CA(data/caddy/caddy/pki/authorities/local/root.crt)의
+# 체인이며, 클라이언트는 제조사 Root CA(제품) 또는 그 자체 CA(개발)를 신뢰한다
+# — docs/ops/pki.md.
 {
 	auto_https off
 }

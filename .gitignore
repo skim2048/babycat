@@ -16,6 +16,7 @@ npm-debug.log*
 
 # Runtime
 data/
+provision/
 config/cam_profile.json
 config/cam_applied.json
 
