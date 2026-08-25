@@ -24,7 +24,7 @@ const { entries: inferLog } = useInferLog()
 const { vlmDot, vlmLabel } = useVlmStatus()
 
 // @claude Profile save no longer touches playback: registration does not
-// @claude change the stream (FR-048), so the old save-triggered reconnect
+// @claude change the stream, so the old save-triggered reconnect
 // @claude only produced a black flash — or started playback the user had
 // @claude stopped.
 
@@ -47,7 +47,7 @@ const loading = ref(false)
 const stopped = ref(true)
 const fullscreen = ref(false)
 
-// ── Fullscreen chrome (시안: 커스텀 오버레이 + 접이식 로그 패널) ──
+// ── Fullscreen chrome (커스텀 오버레이 + 접이식 로그 패널) ──
 const fsLog = ref(true)
 const showSessionRemaining = computed(() =>
   isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
@@ -166,8 +166,14 @@ let retryTimer = null
 let pipelineRecoveryTimer = null
 let pc = null
 let sessionId = 0
+// @claude 8 s without currentTime advancing: longer than one HLS segment plus
+// @claude jitter, so a healthy live stream is never mistaken for a stall.
 const STALL_TIMEOUT = 8000
+// @claude 3 s between retries: lets the relay recover without hammering it.
 const RETRY_BACKOFF = 3000
+// @claude 1.25 s after the pipeline reports streaming again: enough for the
+// @claude first new segment to reach the player before deciding to reconnect.
+const PIPELINE_RECOVERY_DELAY = 1250
 
 // @claude The preference is shared with the dashboard top bar's pill.
 const { preferredProtocol, setProtocol } = useStreamProtocol()
@@ -175,7 +181,7 @@ const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !stopped.value)
 
-// @claude 낙관적 활성 정책 (시안 CLAUDE.md): 사전 비활성은 스트림 미연결과
+// @claude 낙관적 활성 정책: 사전 비활성은 스트림 미연결과
 // @claude PTZ 포트 미입력뿐이다. 명령 실패는 잠그지 않고 안내 줄로만 알린다.
 // @claude isPlaying 선언 뒤에 있어야 한다 — watch가 setup 중에 초기값을 즉시
 // @claude 평가하므로, 앞에 두면 TDZ 참조로 마운트가 실패한다.
@@ -280,7 +286,7 @@ function schedulePipelineRecovery() {
     pipelineRecoveryTimer = null
     if (!browserPlaybackNeedsReconnect(baselineTime)) return
     restartStream()
-  }, 1250)
+  }, PIPELINE_RECOVERY_DELAY)
 }
 
 // ── HLS ──
@@ -305,34 +311,36 @@ async function initHls() {
   const HlsLib = await ensureHls().catch(() => null)
   if (mySession !== sessionId) return
 
-  if (HlsLib && HlsLib.isSupported()) {
-    hls = new HlsLib({
-      liveSyncDurationCount: 1,
-      liveMaxLatencyDurationCount: 3,
-      maxBufferLength: 3,
-      maxMaxBufferLength: 6,
-      // @claude The HLS relay sits behind the router and every request —
-      // @claude playlist and segments alike — must carry the access token.
-      xhrSetup: (xhr) => {
-        if (accessToken.value) xhr.setRequestHeader('Authorization', `Bearer ${accessToken.value}`)
-      },
-    })
-    hls.loadSource(getHlsUrl())
-    hls.attachMedia(video)
-    hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
-    hls.on(HlsLib.Events.ERROR, (_, data) => {
-      if (!data.fatal || mySession !== sessionId) return
-      retryTimer = setTimeout(() => {
-        if (mySession === sessionId) initHls()
-      }, RETRY_BACKOFF)
-    })
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    // @claude Native HLS cannot set headers; the token rides the playlist URL.
-    // @claude Segment requests do not inherit it, so native-only browsers are
-    // @claude limited — hls.js above is the supported path.
-    video.src = `${getHlsUrl()}?token=${encodeURIComponent(accessToken.value || '')}`
-    video.addEventListener('loadedmetadata', () => { video.play().catch(() => {}) })
+  // @claude hls.js is the only HLS path: segment requests must carry the
+  // @claude access token in a header, which native HLS playback cannot do.
+  if (!HlsLib || !HlsLib.isSupported()) {
+    console.warn('hls.js is unavailable in this browser; HLS playback is not possible')
+    handleDisconnect()
+    return
   }
+  hls = new HlsLib({
+    // @claude Low-latency live tuning: sit 1 segment behind the live edge,
+    // @claude jump forward past 3, and keep the forward buffer at 3 s (6 s
+    // @claude hard cap) so a stall shows up quickly instead of playing old video.
+    liveSyncDurationCount: 1,
+    liveMaxLatencyDurationCount: 3,
+    maxBufferLength: 3,
+    maxMaxBufferLength: 6,
+    // @claude The HLS relay sits behind the router and every request —
+    // @claude playlist and segments alike — must carry the access token.
+    xhrSetup: (xhr) => {
+      if (accessToken.value) xhr.setRequestHeader('Authorization', `Bearer ${accessToken.value}`)
+    },
+  })
+  hls.loadSource(getHlsUrl())
+  hls.attachMedia(video)
+  hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
+  hls.on(HlsLib.Events.ERROR, (_, data) => {
+    if (!data.fatal || mySession !== sessionId) return
+    retryTimer = setTimeout(() => {
+      if (mySession === sessionId) initHls()
+    }, RETRY_BACKOFF)
+  })
 
   video.addEventListener('playing', onPlaying)
   startStallDetection(mySession)
@@ -406,7 +414,7 @@ async function initWebRTC() {
       headers: {
         'Content-Type': 'application/sdp',
         // @claude WHEP signaling passes the router relay and needs the token;
-        // @claude the WebRTC media itself then flows directly (UDP 8890).
+        // @claude the WebRTC media itself then flows directly (UDP 8189).
         ...(accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}),
       },
       body: pc.localDescription.sdp,
@@ -495,7 +503,7 @@ onBeforeUnmount(() => {
       </span>
 
       <button v-if="stopped" class="video-overlay" @click="handleConnect">
-        <span class="play-ring"><i class="ph-fill ph-play"></i></span>
+        <span class="play-ring"><i class="ph ph-play"></i></span>
         <span class="overlay-text">{{ t('live.connectIdle') }}</span>
       </button>
 
@@ -524,7 +532,7 @@ onBeforeUnmount(() => {
         <span v-if="showSessionRemaining" class="fs-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <!-- 시안: 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
         <button
           class="fs-pill"
           role="switch"
@@ -559,7 +567,7 @@ onBeforeUnmount(() => {
         ><i class="ph ph-corners-in"></i></button>
       </div>
 
-      <!-- 전체 화면: 접이식 추론 로그 패널 -->
+      <!-- 전체 화면: 접이식 세션 로그 패널 -->
       <aside v-if="fullscreen && fsLog" class="fs-log">
         <div class="fs-log-head">
           <span class="fs-vlm">
@@ -619,18 +627,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="ptz-mid">
-        <!-- 줌 — 백엔드 미지원으로 비활성 UI만 유지 (인계 문서 「확정 방침」 2) -->
-        <div class="ptz-zoom">
-          <div class="ptz-row-head">
-            <span>{{ t('live.ptz.zoom') }}</span>
-            <span class="ptz-zoom-val">×1.0</span>
-          </div>
-          <div class="ptz-zoom-ctl">
-            <button class="ptz-round" disabled><i class="ph ph-minus"></i></button>
-            <input type="range" min="1" max="8" step="0.5" value="1" disabled />
-            <button class="ptz-round" disabled><i class="ph ph-plus"></i></button>
-          </div>
-        </div>
         <div class="ptz-speed">
           <span class="ptz-row-label">{{ t('live.ptz.speed') }}</span>
           <div class="ptz-speed-seg">
@@ -906,52 +902,6 @@ onBeforeUnmount(() => {
   flex-direction: column;
   justify-content: center;
   gap: 14px;
-}
-.ptz-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12.5px;
-  color: var(--color-neutral-400);
-}
-.ptz-zoom { display: flex; flex-direction: column; gap: 7px; }
-.ptz-zoom-val {
-  color: var(--color-neutral-500);
-  font-variant-numeric: tabular-nums;
-}
-.ptz-zoom-ctl {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  opacity: 0.45;
-}
-.ptz-round {
-  width: 34px; height: 34px;
-  flex: none;
-  border-radius: 17px;
-  border: none;
-  background: var(--color-neutral-800);
-  color: var(--color-text);
-  font-size: 15px;
-  cursor: default;
-}
-.ptz-zoom-ctl input[type='range'] {
-  flex: 1;
-  min-width: 0;
-  appearance: none;
-  height: 18px;
-  background-image: linear-gradient(to right, var(--color-neutral-700), var(--color-neutral-700));
-  background-size: 100% 4px;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: transparent;
-  border-radius: 2px;
-}
-.ptz-zoom-ctl input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  background: var(--color-neutral-500);
 }
 .ptz-speed { display: flex; flex-direction: column; gap: 7px; }
 .ptz-row-label {

@@ -32,7 +32,7 @@ watch(
   { immediate: true },
 )
 
-// @claude 시안: 저장은 시트를 닫고, 취소·닫기·배경 클릭은 마지막 저장
+// @claude 저장은 시트를 닫고, 취소·닫기·배경 클릭은 마지막 저장
 // @claude 상태로 되돌린 뒤 닫는다.
 async function apply() {
   if (!prompt.value.trim()) return
@@ -43,14 +43,14 @@ async function apply() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt.value.trim(), triggers: triggers.value.trim() }),
     })
-    const data = await res.json()
-    if (data.ok) {
+    if (res.ok) {
       savedPrompt.value = prompt.value
       savedTriggers.value = triggers.value
       clearRejected()
       emit('close')
     } else {
-      errorNote.value = t('prompt.status.error', { message: data.error || t('prompt.status.unknown') })
+      const body = await res.json().catch(() => ({}))
+      errorNote.value = t('prompt.status.error', { message: body.detail || t('prompt.status.unknown') })
     }
   } catch {
     errorNote.value = t('prompt.status.failed')

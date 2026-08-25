@@ -106,6 +106,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Retry-After"],  # @claude Lockout wait for cross-origin clients (FR-007).
 )
 
 

@@ -63,8 +63,8 @@ async function handleSave() {
   await save()
 }
 
-// @claude FR-048/FR-049: registration never connects the source; these
-// @claude explicit actions start and stop live streaming.
+// @claude Registration never connects the source; these explicit actions
+// @claude start and stop live streaming.
 const streamingBusy = ref(false)
 const streamStatus = ref('')
 
@@ -74,9 +74,9 @@ async function requestStreaming(url) {
   streamStatus.value = ''
   try {
     const res = await authFetch(url, { method: 'POST' })
-    const data = await res.json()
-    if (!(res.ok && data.ok)) {
-      streamStatus.value = t('camera.streaming.failed') + (data.error ? `: ${data.error}` : '')
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      streamStatus.value = t('camera.streaming.failed') + (body.detail ? `: ${body.detail}` : '')
     }
   } catch {
     streamStatus.value = t('camera.streaming.failed')

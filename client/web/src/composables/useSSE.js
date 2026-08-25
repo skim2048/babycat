@@ -4,12 +4,16 @@ import { authFetch } from './useFetch.js'
 import { hasMessage, t } from './useLocale.js'
 import { API_ENDPOINTS, getEventsUrl } from '../endpoints.js'
 
-const state = reactive({
+// @claude Initial values for every /state field the client reads. resetState()
+// @claude restores these and drops any other key the server may have merged in,
+// @claude so nothing from a previous session survives logout.
+const INITIAL_STATE = Object.freeze({
   uptime: '-',
   // @claude Inference
   infer_raw: '',
   infer_ms: 0,
   event_triggered: false,
+  analysis_active: false,
   // @claude Pipeline
   frame_w: 0,
   frame_h: 0,
@@ -20,7 +24,6 @@ const state = reactive({
   pipeline_active_for_s: null,
   pipeline_last_frame_age_s: null,
   pipeline_restart_count: 0,
-  cfg_n_frames: 0,
   // @claude Hardware
   cpu_percent: 0,
   ram_used_mb: 0,
@@ -32,7 +35,7 @@ const state = reactive({
   gpu_load: 0,
   cpu_temp: 0,
   gpu_temp: 0,
-  // @claude Streaming (FR-048)
+  // @claude Streaming
   streaming_active: false,
   profile_pending: false,
   // @claude PTZ — ptz_presets lists the slot numbers holding a saved position.
@@ -55,52 +58,30 @@ const state = reactive({
   vlm_current_model: '',
 })
 
+function initialValue(key) {
+  const value = INITIAL_STATE[key]
+  return Array.isArray(value) ? [] : value
+}
+
+const state = reactive(Object.fromEntries(Object.keys(INITIAL_STATE).map((key) => [key, initialValue(key)])))
+
 let started = false
-const MAX_BACKOFF = 30000
+// @claude Reconnect backoff: 1 s first retry, doubling to a 30 s ceiling so a
+// @claude backend that is down for long is not polled every second.
+const INITIAL_BACKOFF_MS = 1000
+const MAX_BACKOFF_MS = 30000
 let eventSource = null
 let reconnectTimer = null
-let backoff = 1000
+let backoff = INITIAL_BACKOFF_MS
+
 function resetState() {
-  state.uptime = '-'
-  state.infer_raw = ''
-  state.infer_ms = 0
-  state.event_triggered = false
-  state.frame_w = 0
-  state.frame_h = 0
-  state.pipeline_state = 'idle'
-  state.pipeline_state_detail = 'waiting_for_vlm'
-  state.pipeline_source_protocol = ''
-  state.pipeline_source_transport = ''
-  state.pipeline_active_for_s = null
-  state.pipeline_last_frame_age_s = null
-  state.pipeline_restart_count = 0
-  state.cfg_n_frames = 0
-  state.cpu_percent = 0
-  state.ram_used_mb = 0
-  state.ram_total_mb = 0
-  state.disk_used_mb = 0
-  state.disk_total_mb = 0
-  state.disk_free_mb = 0
-  state.disk_path = ''
-  state.gpu_load = 0
-  state.cpu_temp = 0
-  state.gpu_temp = 0
-  state.streaming_active = false
-  state.profile_pending = false
-  state.ptz_pan = null
-  state.ptz_tilt = null
-  state.ptz_presets = []
-  state.inference_prompt = ''
-  state.trigger_keywords = ''
-  state.clip_count = 0
-  state.segment_recorder_state = 'disabled'
-  state.segment_recorder_error = ''
-  state.segment_recorder_segment_count = 0
-  state.segment_recorder_last_segment_age_s = null
-  state.vlm_state = 'initializing'
-  state.vlm_error = ''
-  state.vlm_models = []
-  state.vlm_current_model = ''
+  for (const key of Object.keys(state)) {
+    if (Object.prototype.hasOwnProperty.call(INITIAL_STATE, key)) {
+      state[key] = initialValue(key)
+    } else {
+      delete state[key]
+    }
+  }
 }
 
 function closeConnection() {
@@ -120,12 +101,13 @@ function scheduleReconnect(token) {
     reconnectTimer = null
     openConnection(token)
   }, backoff)
-  backoff = Math.min(backoff * 2, MAX_BACKOFF)
+  backoff = Math.min(backoff * 2, MAX_BACKOFF_MS)
 }
 
 // @claude EventSource cannot expose the 401 a replaced session receives on
-// @claude reconnect (FR-047), so a broken stream triggers a throttled probe
-// @claude through authFetch, whose 401 handling classifies and notifies.
+// @claude reconnect, so a broken stream triggers a throttled probe through
+// @claude authFetch, whose 401 handling classifies and notifies.
+// @claude 5 s throttle: a flapping stream must not turn into a request storm.
 const PROBE_MIN_INTERVAL_MS = 5000
 let lastProbeAt = 0
 function probeSession() {
@@ -147,14 +129,14 @@ function openConnection(token) {
   eventSource = new EventSource(getEventsUrl(token))
 
   eventSource.onopen = () => {
-    backoff = 1000
+    backoff = INITIAL_BACKOFF_MS
   }
 
   eventSource.onmessage = (e) => {
     try {
       Object.assign(state, JSON.parse(e.data))
-    } catch {
-      // @claude Malformed JSON — ignored.
+    } catch (err) {
+      console.warn('SSE: malformed state payload ignored', err)
     }
   }
 
@@ -175,7 +157,7 @@ function connect() {
   effectScope(true).run(() => {
     const { accessToken } = useAuth()
     watch(accessToken, (token) => {
-      backoff = 1000
+      backoff = INITIAL_BACKOFF_MS
       if (!token) {
         closeConnection()
         resetState()

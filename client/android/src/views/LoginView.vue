@@ -16,7 +16,7 @@ const rememberMe = ref(false)
 const error = ref('')
 const loading = ref(false)
 
-// @claude Why the previous session ended (FR-047) — read once on arrival; the
+// @claude Why the previous session ended — read once on arrival; the
 // @claude key is kept so the template retranslates when the locale changes.
 const logoutNotice = consumeLogoutNotice()
 const noticeKey = logoutNotice === 'sessionReplaced' ? 'login.notice.sessionReplaced' : ''
@@ -36,9 +36,11 @@ async function handleLogin() {
   } catch (e) {
     if (e.message === 'host unreachable') {
       error.value = t('login.error.hostUnreachable')
-    } else if (e.message.startsWith('too many attempts')) {
-      const seconds = e.message.replace('too many attempts, retry after ', '').replace('s', '')
-      error.value = t('login.error.tooManyAttempts', { seconds })
+    } else if (e.retryAfterSeconds != null) {
+      // @claude Lockout length comes from the 429 Retry-After header (useAuth).
+      error.value = t('login.error.tooManyAttempts', { seconds: e.retryAfterSeconds })
+    } else if (e.message === 'too many attempts') {
+      error.value = t('login.error.tooManyAttemptsUnknown')
     } else {
       error.value = t('login.error.invalidCredentials')
     }
@@ -159,7 +161,7 @@ async function handleLogin() {
   border-color: var(--color-accent);
 }
 
-/* 시안: 모바일 제출 버튼은 액센트 채움 알약 */
+/* 모바일 제출 버튼은 액센트 채움 알약 */
 .login-submit {
   height: 56px;
   border-radius: 100px;

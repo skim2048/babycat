@@ -3,25 +3,24 @@ import { useSSE } from './useSSE.js'
 import { authFetch } from './useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
-// @claude FR-024/FR-025: saving prompt settings never starts analysis; the
-// @claude explicit start fans out to the analyzer and the recorder. FR-050:
-// @claude the router rejects a start while live streaming is inactive — the
-// @claude rejected flag routes the 사유 안내 into the prompt panel.
+// @claude Saving prompt settings never starts analysis; the explicit start
+// @claude fans out to the analyzer and the recorder. The router rejects a
+// @claude start while live streaming is inactive — the rejected flag routes
+// @claude the reason notice into the prompt panel.
 const busy = ref(false)
 const rejected = ref(false)
 
 export function useAnalysis() {
   const { state } = useSSE()
 
-  // @claude idle means the pipeline waits for an explicit start (FR-024), so a
-  // @claude streaming pipeline that is not idle is an analysis in progress.
-  const analysisActive = computed(() => state.streaming_active && state.pipeline_state !== 'idle')
+  // @claude The analyzer reports whether an analysis is in progress; the
+  // @claude client does not infer it from pipeline or streaming state.
+  const analysisActive = computed(() => !!state.analysis_active)
 
   async function start() {
     try {
       const res = await authFetch(APP_ENDPOINTS.analysisStart, { method: 'POST' })
-      const data = await res.json()
-      if (res.ok && data.ok) return true
+      if (res.ok) return true
       if (res.status === 409) rejected.value = true
       return false
     } catch {
@@ -29,12 +28,11 @@ export function useAnalysis() {
     }
   }
 
-  // @claude FR-051: stop analysis and buffering while streaming stays up.
+  // @claude Stop analysis and buffering while streaming stays up.
   async function stop() {
     try {
       const res = await authFetch(APP_ENDPOINTS.analysisStop, { method: 'POST' })
-      const data = await res.json()
-      return res.ok && data.ok
+      return res.ok
     } catch {
       return false
     }

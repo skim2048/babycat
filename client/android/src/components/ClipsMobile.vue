@@ -35,7 +35,7 @@ const presets = computed(() => [
   { key: 'month', label: t('clips.preset.month'), range: () => [monthStart(), localDate()] },
 ])
 
-// @claude 시안: 활성 프리셋을 다시 누르면 해제된다.
+// @claude 활성 프리셋을 다시 누르면 해제된다.
 function applyPreset(preset) {
   if (activePreset.value === preset.key) {
     activePreset.value = ''
@@ -99,9 +99,16 @@ const allOnPage = computed(() =>
 function toggleSelectAll() {
   selected.value = allOnPage.value ? new Set() : new Set(clips.value.map((c) => c.name))
 }
+// @claude Deletion failure is reported here; the list is left as it was.
+const actionError = ref('')
 async function deleteSelected() {
   if (!selected.value.size) return
-  await deleteClips([...selected.value])
+  actionError.value = ''
+  const ok = await deleteClips([...selected.value])
+  if (!ok) {
+    actionError.value = t('clips.error.delete')
+    return
+  }
   selected.value = new Set()
   selectMode.value = false
 }
@@ -109,7 +116,7 @@ async function deleteSelected() {
 // ── Playback ─────────────────────────────────────────────────────────────────
 const playing = ref(null) // clip name or null
 const playerSrc = computed(() =>
-  playing.value ? getClipUrl(playing.value, 'full', accessToken.value || '') : '',
+  playing.value ? getClipUrl(playing.value, accessToken.value || '') : '',
 )
 
 function onClipClick(clip) {
@@ -118,12 +125,16 @@ function onClipClick(clip) {
 }
 
 // ── Server data ──────────────────────────────────────────────────────────────
-// @claude 페이지당 개수는 모바일 규칙(25·50·100, 기본 25)을 따른다.
-const PAGE_SIZES = [25, 50, 100]
-const pageSize = ref(25)
+// @claude Page sizes shared with the web client; 10 is the default so the
+// @claude first page loads quickly even on a slow link.
+const PAGE_SIZES = [10, 25, 50, 100]
+const pageSize = ref(10)
 const currentPage = ref(1)
 const clips = ref([])
 const total = ref(0)
+// @claude Set when the list request fails; rendered instead of the empty state
+// @claude so a broken backend is not mistaken for "no clips".
+const loadError = ref('')
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const rangeText = computed(() => {
   if (!total.value) return '0 / 0'
@@ -142,8 +153,12 @@ async function fetchClips() {
   params.set('offset', String((currentPage.value - 1) * pageSize.value))
   try {
     const res = await authFetch(`${API_ENDPOINTS.clips}?${params}`)
-    if (!res.ok) return
+    if (!res.ok) {
+      loadError.value = t('clips.error.loadStatus', { status: res.status })
+      return
+    }
     const data = await res.json()
+    loadError.value = ''
     clips.value = data.clips || []
     total.value = data.total ?? 0
     const maxPage = Math.max(1, Math.ceil(total.value / pageSize.value))
@@ -153,7 +168,9 @@ async function fetchClips() {
     }
     const names = new Set(clips.value.map((c) => c.name))
     selected.value = new Set([...selected.value].filter((n) => names.has(n)))
-  } catch {}
+  } catch {
+    loadError.value = t('clips.error.loadGeneric')
+  }
 }
 
 let fetchScheduled = false
@@ -171,10 +188,12 @@ function scheduleFetch(resetPage = false) {
 }
 
 watch(clipVersion, () => scheduleFetch(false), { immediate: true })
+// @claude 300 ms debounce: one request per typing pause instead of per keystroke.
+const SEARCH_DEBOUNCE_MS = 300
 let searchTimer = null
 watch(searchQuery, () => {
   clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => scheduleFetch(true), 300)
+  searchTimer = setTimeout(() => scheduleFetch(true), SEARCH_DEBOUNCE_MS)
 })
 watch([dateFrom, dateTo], () => scheduleFetch(true))
 watch(pageSize, () => scheduleFetch(true))
@@ -196,7 +215,7 @@ function clipCaption(clip) {
   return kind ? `${time} · ${kind}` : time
 }
 function thumbUrl(clip) {
-  return getClipUrl(clip.name, 'full', accessToken.value || '')
+  return getClipUrl(clip.name, accessToken.value || '')
 }
 </script>
 
@@ -283,8 +302,19 @@ function thumbUrl(clip) {
       </button>
     </div>
 
+    <div v-if="actionError" class="form-note warn">
+      <i class="ph ph-warning-circle"></i><span>{{ actionError }}</span>
+    </div>
+
+    <!-- ── Load error (distinct from an empty list) ── -->
+    <div v-if="loadError" class="clips-empty">
+      <i class="ph ph-warning-circle"></i>
+      <div class="clips-empty-title">{{ t('clips.error.title') }}</div>
+      <div class="clips-empty-body">{{ loadError }}</div>
+    </div>
+
     <!-- ── Empty ── -->
-    <div v-if="!clips.length" class="clips-empty">
+    <div v-else-if="!clips.length" class="clips-empty">
       <i class="ph ph-film-slate"></i>
       <div class="clips-empty-title">{{ filterActive ? t('clips.noMatch.title') : t('clips.empty.title') }}</div>
       <div class="clips-empty-body">{{ filterActive ? t('clips.noMatch.body') : t('clips.empty.body') }}</div>

@@ -5,7 +5,7 @@ import { API_ENDPOINTS } from '../endpoints.js'
 import { useLocale } from '../composables/useLocale.js'
 
 const emit = defineEmits(['close'])
-// @claude Forced first-login mode (FR-006): no cancel until the change succeeds.
+// @claude Forced first-login mode: no cancel until the change succeeds.
 const props = defineProps({ forced: { type: Boolean, default: false } })
 
 const currentPassword = ref('')
@@ -25,10 +25,6 @@ async function handleChange() {
 
   if (currentPassword.value === newPassword.value) {
     error.value = t('changePassword.error.sameAsCurrent')
-    return
-  }
-  if (newPassword.value.length < 4) {
-    error.value = t('changePassword.error.minLength')
     return
   }
   if (newPassword.value !== confirmPassword.value) {

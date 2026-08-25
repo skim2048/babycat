@@ -1,9 +1,10 @@
-import { computed, ref, reactive } from 'vue'
+import { computed, effectScope, ref, reactive, watch } from 'vue'
 import { authFetch } from './useFetch.js'
+import { useAuth } from './useAuth.js'
 import { t } from './useLocale.js'
 import { API_ENDPOINTS } from '../endpoints.js'
 
-const config = reactive({
+const INITIAL_CONFIG = Object.freeze({
   source_type: 'rtsp_camera',
   ip: '',
   rtsp_port: 554,
@@ -14,6 +15,8 @@ const config = reactive({
   onvif_port: null,
 })
 
+const config = reactive({ ...INITIAL_CONFIG })
+
 // @claude configured: profile is persisted in camera.json (durable).
 // @claude connecting: stream connection attempt in progress (transient).
 // @claude connected:  stream is actually playing (transient; set by LiveStream).
@@ -22,6 +25,30 @@ const connecting = ref(false)
 const connected = ref(false)
 const status = ref('')
 let loaded = false
+
+// @claude The profile belongs to the session: when the access token goes away
+// @claude (logout, expiry, replacement) the cached profile and the loaded flag
+// @claude are cleared so the next login fetches it again.
+function reset() {
+  Object.assign(config, INITIAL_CONFIG)
+  configured.value = false
+  connecting.value = false
+  connected.value = false
+  status.value = ''
+  loaded = false
+}
+
+let watcherStarted = false
+function ensureSessionWatcher() {
+  if (watcherStarted) return
+  watcherStarted = true
+  effectScope(true).run(() => {
+    const { accessToken } = useAuth()
+    watch(accessToken, (token) => {
+      if (!token) reset()
+    })
+  })
+}
 
 const ptzEnabled = computed(() => config.onvif_port != null)
 const cameraViewState = computed(() => {
@@ -125,6 +152,7 @@ function disconnect() {
 }
 
 export function useCamera() {
+  ensureSessionWatcher()
   return {
     config, configured, connecting, connected, status,
     ptzEnabled, cameraViewState,

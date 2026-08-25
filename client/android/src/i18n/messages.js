@@ -7,7 +7,6 @@ export const messages = {
   'dashboard.menu.logout': { en: 'Sign out', ko: '로그아웃' },
   'dashboard.tab.video': { en: 'Live', ko: '영상' },
   'dashboard.tab.clips': { en: 'Clips', ko: '클립' },
-  'dashboard.tab.settings': { en: 'Settings', ko: '설정' },
   'dashboard.resources': { en: 'Resources', ko: '리소스' },
   'dashboard.sidebarHide': { en: 'Hide sidebar', ko: '사이드바 숨기기' },
   'dashboard.sidebarShow': { en: 'Show sidebar', ko: '사이드바 보이기' },
@@ -28,15 +27,16 @@ export const messages = {
   'dashboard.vlm.switching': { en: 'Switching model', ko: '모델 전환 중' },
   'dashboard.vlm.error': { en: 'VLM error · retry needed', ko: 'VLM 오류 · 재시도 필요' },
   'dashboard.panel.prompt': { en: 'Inference prompt', ko: '추론 프롬프트' },
-  'dashboard.panel.log': { en: 'Inference log', ko: '추론 로그' },
+  'dashboard.panel.log': { en: 'Session log', ko: '세션 로그' },
   'dashboard.model.unknown': { en: 'Unknown model', ko: '모델 미확인' },
   'dashboard.model.none': { en: 'No models available', ko: '사용 가능한 모델이 없습니다' },
+  'dashboard.model.switchFailed': { en: 'Model switch failed: {message}', ko: '모델 전환 실패: {message}' },
   'dashboard.log.search': { en: 'Search logs', ko: '로그 검색' },
   'dashboard.log.select': { en: 'Select', ko: '선택' },
   'dashboard.log.cancel': { en: 'Cancel', ko: '취소' },
   'dashboard.log.selectAll': { en: 'Select all', ko: '전체 선택' },
   'dashboard.log.deselectAll': { en: 'Deselect all', ko: '전체 해제' },
-  'dashboard.log.delete': { en: 'Delete', ko: '삭제' },
+  'dashboard.log.delete': { en: 'Clear list', ko: '목록 지우기' },
   'dashboard.day.yesterday': { en: 'Yesterday', ko: '어제' },
   'dashboard.log.none': {
     en: 'No log matches your search.',
@@ -64,6 +64,10 @@ export const messages = {
   'login.error.tooManyAttempts': {
     en: 'Too many attempts. Try again after {seconds} seconds.',
     ko: '시도 횟수를 초과했습니다. {seconds}초 후 다시 시도하세요.',
+  },
+  'login.error.tooManyAttemptsUnknown': {
+    en: 'Too many attempts. Try again later.',
+    ko: '시도 횟수를 초과했습니다. 잠시 후 다시 시도하세요.',
   },
   'login.error.hostUnreachable': {
     en: 'Cannot reach the backend address. Check the address and the network.',
@@ -110,10 +114,6 @@ export const messages = {
     en: 'Enter a password different from the current password.',
     ko: '현재 비밀번호와 다른 비밀번호를 입력하세요.',
   },
-  'changePassword.error.minLength': {
-    en: 'The new password must be at least 4 characters.',
-    ko: '새 비밀번호는 4자 이상이어야 합니다.',
-  },
   'changePassword.error.mismatch': {
     en: 'The new passwords do not match.',
     ko: '새 비밀번호가 일치하지 않습니다.',
@@ -123,8 +123,8 @@ export const messages = {
     ko: '비밀번호 변경에 실패했습니다.',
   },
   'changePassword.forcedNotice': {
-    en: 'This is your first sign-in. You must change your password to continue; close, cancel and backdrop clicks are blocked. (FR-006)',
-    ko: '최초 로그인입니다. 비밀번호를 변경해야 계속할 수 있으며, 닫기·취소·바깥 클릭이 차단됩니다. (FR-006)',
+    en: 'This is your first sign-in. You must change your password to continue; close, cancel and backdrop clicks are blocked.',
+    ko: '최초 로그인입니다. 비밀번호를 변경해야 계속할 수 있으며, 닫기·취소·바깥 클릭이 차단됩니다.',
   },
   'changePassword.success': {
     en: 'Password has been changed.',
@@ -146,10 +146,6 @@ export const messages = {
   'prompt.status.needStreaming': {
     en: 'Streaming is off, so inference cannot start. Start streaming first.',
     ko: '스트리밍이 꺼져 있어 추론을 시작할 수 없습니다. 먼저 스트리밍을 시작하세요.',
-  },
-  'prompt.status.applied': {
-    en: 'Settings saved. Inference was not started. (FR-024·FR-025)',
-    ko: '설정을 저장했습니다. 추론은 시작되지 않았습니다. (FR-024·FR-025)',
   },
   'prompt.status.error': { en: 'Error: {message}', ko: '오류: {message}' },
   'prompt.status.unknown': { en: 'Unknown', ko: '알 수 없음' },
@@ -181,6 +177,19 @@ export const messages = {
     en: 'Clear the search or date range to see them again.',
     ko: '검색어나 기간을 지우면 다시 표시됩니다.',
   },
+  'clips.error.title': { en: 'Could not load clips', ko: '클립 목록을 불러오지 못했습니다' },
+  'clips.error.loadStatus': {
+    en: 'The clip list request failed. ({status})',
+    ko: '클립 목록 요청이 실패했습니다. ({status})',
+  },
+  'clips.error.loadGeneric': {
+    en: 'Failed to connect to the server.',
+    ko: '서버 연결에 실패했습니다.',
+  },
+  'clips.error.delete': {
+    en: 'Failed to delete the selected clips.',
+    ko: '선택한 클립을 삭제하지 못했습니다.',
+  },
 
   'player.play': { en: 'Play', ko: '재생' },
   'player.pause': { en: 'Pause', ko: '일시정지' },
@@ -200,7 +209,6 @@ export const messages = {
   'live.ptz.left': { en: 'Pan Left', ko: '좌' },
   'live.ptz.right': { en: 'Pan Right', ko: '우' },
   'live.ptz.stop': { en: 'Stop movement', ko: '움직임 정지' },
-  'live.ptz.zoom': { en: 'Zoom', ko: '줌' },
   'live.ptz.speed': { en: 'Move speed', ko: '이동 속도' },
   'live.ptz.speedSlow': { en: 'Slow', ko: '저속' },
   'live.ptz.speedNormal': { en: 'Normal', ko: '보통' },
@@ -241,10 +249,10 @@ export const messages = {
   'sse.pipeline.restarting': { en: 'Restarting', ko: '재시작 중' },
   'sse.pipeline.stopped': { en: 'Stopped', ko: '종료됨' },
   'sse.detail.waiting_for_vlm': { en: 'Waiting for VLM', ko: 'VLM 대기' },
-  'sse.detail.waiting_for_camera': { en: 'Waiting for Camera', ko: '카메라 대기' },
-  'sse.detail.startup': { en: 'Startup', ko: '초기 시작' },
-  'sse.detail.camera_apply': { en: 'Applying Camera', ko: '카메라 재설정' },
+  'sse.detail.waiting_for_start': { en: 'Waiting for start', ko: '시작 대기' },
+  'sse.detail.analysis_start': { en: 'Analysis starting', ko: '분석 시작' },
   'sse.detail.watchdog_timeout': { en: 'Camera Timeout', ko: '카메라 응답시간 초과' },
+  'sse.detail.startup': { en: 'Startup', ko: '초기 시작' },
   'sse.detail.shutdown': { en: 'Shutdown', ko: '종료' },
   'sse.unknown': { en: 'Unknown', ko: '알 수 없음' },
 }

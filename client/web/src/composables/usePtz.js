@@ -2,8 +2,9 @@ import { ref } from 'vue'
 import { authFetch } from './useFetch.js'
 import { APP_ENDPOINTS } from '../endpoints.js'
 
-// @claude ONVIF velocity is normalized to [-1, 1]; the three levels map the
-// @claude mockup's 저속·보통·고속 onto it. The backend passes values through.
+// @claude ONVIF velocity is normalized to [-1, 1]; the three levels (slow,
+// @claude normal, fast) map onto it. The backend passes values through.
+// @claude 0.9 rather than 1.0 at the top keeps some cameras from overshooting.
 const SPEED_FACTORS = [0.25, 0.5, 0.9]
 
 const speedLevel = ref(1)

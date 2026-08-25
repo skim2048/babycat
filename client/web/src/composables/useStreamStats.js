@@ -89,7 +89,7 @@ export function useStreamStats({ videoRef, isWebRTC, getPeerConnection, getHlsIn
         }
       })
     } catch {
-      // ignore transport stats collection failures
+      // @claude Intentionally ignored: stats are informational; a failed getStats() must not disturb playback.
     }
   }
 

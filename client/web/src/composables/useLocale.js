@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { messages } from '../i18n/messages.js'
 
 const LOCALE_KEY = 'locale'
@@ -60,26 +60,13 @@ export function hasMessage(key) {
   return Object.prototype.hasOwnProperty.call(messages, key)
 }
 
-export function formatDateTime(value, options) {
-  const tag = locale.value === 'ko' ? 'ko-KR' : 'en-US'
-  return new Intl.DateTimeFormat(tag, options).format(value)
-}
-
 export function useLocale() {
-  const isKorean = computed(() => locale.value === 'ko')
-
-  function setLocale(value) {
-    locale.value = normalizeLocale(value)
-  }
-
   function toggleLocale() {
     locale.value = locale.value === 'en' ? 'ko' : 'en'
   }
 
   return {
     locale,
-    isKorean,
-    setLocale,
     toggleLocale,
     t,
   }

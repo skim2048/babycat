@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 
-// @claude The protocol pill lives in the dashboard top bar (mockup) while the
-// @claude player consuming it lives in LiveStream, so the preference is shared
+// @claude The protocol pill lives in the dashboard top bar while the player
+// @claude consuming it lives in the live view, so the preference is shared
 // @claude module state rather than component state.
 const DEFAULT_STREAM_PROTOCOL = 'hls'
 const STREAM_PROTOCOL_STORAGE_KEY = 'babycat_stream_protocol'
@@ -35,5 +35,5 @@ export function useStreamProtocol() {
     writeStoredProtocol(protocol)
   }
 
-  return { preferredProtocol, setProtocol, protocols: STREAM_PROTOCOLS }
+  return { preferredProtocol, setProtocol }
 }

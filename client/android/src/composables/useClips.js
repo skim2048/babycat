@@ -9,6 +9,8 @@ import { API_ENDPOINTS } from '../endpoints.js'
 const clipVersion = ref(0)
 let knownCount = -1
 
+// @claude Resolves true when the server accepted the deletion. On failure the
+// @claude version is not bumped, so the caller keeps its list and can report.
 async function deleteClips(names) {
   try {
     const res = await authFetch(API_ENDPOINTS.clips, {
@@ -16,9 +18,11 @@ async function deleteClips(names) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ names }),
     })
-    if (res.ok) clipVersion.value++
+    if (!res.ok) return false
+    clipVersion.value++
+    return true
   } catch {
-    // @claude Network error — ignored; clipVersion not incremented so caller retains stale data.
+    return false
   }
 }
 

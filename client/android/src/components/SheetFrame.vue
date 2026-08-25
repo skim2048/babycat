@@ -5,7 +5,7 @@ defineProps({
 })
 const emit = defineEmits(['close'])
 
-// @claude 시안: 배경 클릭은 닫기와 같다(강제 비밀번호 변경만 차단).
+// @claude 배경 클릭은 닫기와 같다(강제 비밀번호 변경만 차단).
 function onBackdrop(e) {
   if (e.target === e.currentTarget) emit('close')
 }

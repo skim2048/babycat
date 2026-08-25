@@ -29,7 +29,7 @@ const activeTab = ref('video')
 const drawerOpen = ref(false)
 const sheet = ref(null) // null | 'camera' | 'password' | 'prompt' | 'ptz' | 'resources'
 
-// @claude Forced first-login flow (FR-006): the change-password sheet opens by
+// @claude Forced first-login flow: the change-password sheet opens by
 // @claude itself and cannot be dismissed until the password is changed.
 watch(mustChangePassword, (forced) => {
   if (forced) sheet.value = 'password'

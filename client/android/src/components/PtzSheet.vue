@@ -92,18 +92,6 @@ function onClose() {
         </div>
 
         <div class="ptz-mid">
-          <!-- 줌 — 백엔드 미지원으로 비활성 UI만 유지 (인계 문서 「확정 방침」 2) -->
-          <div class="ptz-zoom">
-            <div class="ptz-row-head">
-              <span>{{ t('live.ptz.zoom') }}</span>
-              <span class="ptz-zoom-val">×1.0</span>
-            </div>
-            <div class="ptz-zoom-ctl">
-              <button class="ptz-round" disabled><i class="ph ph-minus"></i></button>
-              <input type="range" min="1" max="8" step="0.5" value="1" disabled />
-              <button class="ptz-round" disabled><i class="ph ph-plus"></i></button>
-            </div>
-          </div>
           <div class="ptz-speed">
             <span class="ptz-row-label">{{ t('live.ptz.speed') }}</span>
             <div class="ptz-speed-seg">
@@ -211,52 +199,6 @@ function onClose() {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-.ptz-row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12.5px;
-  color: var(--color-neutral-400);
-}
-.ptz-zoom { display: flex; flex-direction: column; gap: 7px; }
-.ptz-zoom-val {
-  color: var(--color-neutral-500);
-  font-variant-numeric: tabular-nums;
-}
-.ptz-zoom-ctl {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  opacity: 0.45;
-}
-.ptz-round {
-  width: 38px; height: 38px;
-  flex: none;
-  border-radius: 19px;
-  border: none;
-  background: var(--color-neutral-800);
-  color: var(--color-text);
-  font-size: 16px;
-  cursor: default;
-}
-.ptz-zoom-ctl input[type='range'] {
-  flex: 1;
-  min-width: 0;
-  appearance: none;
-  height: 18px;
-  background-image: linear-gradient(to right, var(--color-neutral-700), var(--color-neutral-700));
-  background-size: 100% 4px;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-color: transparent;
-  border-radius: 2px;
-}
-.ptz-zoom-ctl input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  width: 16px; height: 16px;
-  border-radius: 50%;
-  background: var(--color-neutral-500);
 }
 .ptz-speed { display: flex; flex-direction: column; gap: 7px; }
 .ptz-row-label {

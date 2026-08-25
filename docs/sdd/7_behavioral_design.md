@@ -39,7 +39,7 @@ HLS는 `Client app → router → streamer`의 중계 연쇄이고, WebRTC는 �
 파이프라인 상태(`pipeline_state`)와 VLM 상태(`vlm_state`)의 두 축으로 표현하며, 값의 어휘는 §6.4 (4)의 표와 같다.
 
 - **idle** — 파이프라인이 없는 상태. 상세(`pipeline_state_detail`)가 `waiting_for_vlm`이면 모델 적재 대기, `waiting_for_start`이면 시작 요청 대기(기동 직후 또는 정지 후)다. 설정 저장(`/prompt`·`/camera`)은 이 상태를 바꾸지 않는다(`FR-025`).
-- **starting** — 시작 요청으로 파이프라인을 만들고 첫 프레임을 기다리는 상태. 스트림 접속 재시도(`FR-046`)는 이 상태와 아래 **stalled**·**restarting**의 반복으로 나타난다.
+- **starting** — 시작 요청(상세 `analysis_start`) 또는 기동 시 복원(상세 `startup`, `FR-014`)으로 파이프라인을 만들고 첫 프레임을 기다리는 상태. 스트림 접속 재시도(`FR-046`)는 이 상태와 아래 **stalled**·**restarting**의 반복으로 나타난다.
 - **streaming** — 프레임이 흐르고 추론이 도는 상태.
 - **stalled** — 워치독이 프레임 정지를 감지한 상태(상세 `watchdog_timeout`). 곧 **restarting**으로 이어진다.
 - **restarting** — 가동 중이던 파이프라인을 대체하는 상태(상세 `analysis_start` 또는 `watchdog_timeout`). 재시작 횟수(`pipeline_restart_count`)는 이 전이만 계수한다.

@@ -1,16 +1,20 @@
 import { computed, readonly, ref } from 'vue'
 import { API_ENDPOINTS, persistBabycatHost } from '../endpoints.js'
 
+// @claude 60 s before expiry: long enough for the operator to read the warning
+// @claude and press "extend" before the ephemeral session is cut.
 const WARNING_LEAD_MS = 60_000
+// @claude 60 s before expiry: the silent refresh of a kept-login session lands
+// @claude well before the access token stops being accepted.
 const AUTO_REFRESH_LEAD_MS = 60_000
 const SESSION_KIND_KEY = 'session_kind'
 const SESSION_KIND_PERSISTENT = 'persistent'
 const SESSION_KIND_EPHEMERAL = 'ephemeral'
 // @claude Why the session ended, carried across the full-page redirect to the
-// @claude login page (FR-047 notifies a session replaced by a newer login).
+// @claude login page (a session replaced by a newer login is notified).
 // @claude sessionStorage: per-tab, so the notice shows only in the kicked tab.
 const LOGOUT_NOTICE_KEY = 'logout_notice'
-// @claude FR-006/SRS §3.2: the first login must change the initial password.
+// @claude SDD §6.2: the first login must change the initial password.
 // @claude The flag rides the login response and is persisted with the session
 // @claude so a reload keeps forcing the change until it actually happens.
 const MUST_CHANGE_KEY = 'must_change_password'
@@ -207,8 +211,8 @@ function consumeLogoutNotice() {
 }
 
 async function revokeSessionTokens(sessionRefreshToken, sessionAccessToken) {
-  // @claude Ephemeral sessions carry no refresh token (FR-002), so the access
-  // @claude token identifies the user for the server-side epoch bump (FR-003).
+  // @claude Ephemeral sessions carry no refresh token, so the access token
+  // @claude identifies the user for the server-side epoch bump.
   if (!sessionRefreshToken && !sessionAccessToken) return
   const headers = { 'Content-Type': 'application/json' }
   if (sessionAccessToken) {
@@ -330,11 +334,11 @@ function initializeSession() {
   expiresAt.value = resolveExpiryMs(token.value)
   if (!expiresAt.value || expiresAt.value <= Date.now()) {
     // @claude An expired access token does not end a kept-login session:
-    // @claude the refresh token carries it across revisits (FR-002). Only a
-    // @claude session with no refresh token ends here (FR-001). A network
-    // @claude failure leaves the session intact — the next request's 401
-    // @claude path retries the refresh.
+    // @claude the refresh token carries it across revisits. Only a session
+    // @claude with no refresh token ends here. A network failure leaves the
+    // @claude session intact — the next request's 401 path retries the refresh.
     if (refreshToken.value) {
+      // @claude Intentionally ignored: a failed initial refresh is retried by the next request's 401 path.
       refreshAccessToken().catch(() => {})
     } else {
       void terminateSession({ redirect: false, revoke: true })
@@ -371,8 +375,17 @@ export function useAuth() {
     // @claude The host responded (even on 401/429), so it is reachable — remember it.
     persistBabycatHost()
     if (res.status === 429) {
+      // @claude The lockout length travels in the Retry-After header (seconds).
+      // @claude It is readable cross-origin only when the router exposes it via
+      // @claude CORS; the detail string is the fallback.
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || 'too many attempts')
+      const header = Number(res.headers.get('Retry-After'))
+      const fromDetail = Number((String(body.detail || '').match(/(\d+)\s*s\b/) || [])[1])
+      const error = new Error('too many attempts')
+      error.retryAfterSeconds = Number.isFinite(header) && header > 0
+        ? header
+        : (Number.isFinite(fromDetail) ? fromDetail : null)
+      throw error
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
@@ -399,8 +412,6 @@ export function useAuth() {
 
   return {
     accessToken: readonly(token),
-    storedRefreshToken: readonly(refreshToken),
-    sessionExpiresAt: readonly(expiresAt),
     mustChangePassword: readonly(mustChangePassword),
     warningVisible: readonly(warningVisible),
     remainingSeconds: readonly(remainingSeconds),

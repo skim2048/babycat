@@ -27,7 +27,9 @@ watch(() => props.open, async (open) => {
     if (!vid) return
     vid.volume = playerVolume.value
     vid.currentTime = 0
-    await vid.play()
+    // @claude Autoplay policy: the browser may refuse play() without a fresh
+    // @claude gesture; the user then starts playback with the play button.
+    vid.play().catch(() => {})
     return
   }
   document.removeEventListener('keydown', onKeydown)
@@ -57,7 +59,7 @@ function resetPlayer() {
 function togglePlayerPlay() {
   const vid = playerEl.value
   if (!vid) return
-  if (vid.paused) vid.play()
+  if (vid.paused) vid.play().catch(() => {}) // @claude Autoplay policy — see above.
   else vid.pause()
 }
 

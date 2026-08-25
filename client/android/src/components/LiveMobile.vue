@@ -79,16 +79,26 @@ function shortModelName(id) {
 const modelLabel = computed(() =>
   shortModelName(sseState.vlm_current_model) || t('dashboard.model.unknown'),
 )
+// @claude A refused switch (400 {detail}) or a transport failure is shown in
+// @claude the card; the note clears on the next successful request.
+const modelError = ref('')
 async function switchModel(name) {
   modelMenu.value = false
   if (!name || name === sseState.vlm_current_model) return
+  modelError.value = ''
   try {
-    await authFetch(APP_ENDPOINTS.vlmSwitch, {
+    const res = await authFetch(APP_ENDPOINTS.vlmSwitch, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: name }),
     })
-  } catch {}
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      modelError.value = t('dashboard.model.switchFailed', { message: body.detail || t('prompt.status.unknown') })
+    }
+  } catch {
+    modelError.value = t('dashboard.model.switchFailed', { message: t('changePassword.error.network') })
+  }
 }
 
 // @claude 거부되면(스트리밍 꺼짐) 사유 안내가 있는 프롬프트 시트를 연다.
@@ -105,7 +115,7 @@ function localDate(offsetDays = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude 시안: 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
+// @claude 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
 // @claude 어제는 문구로, 그보다 이전은 YY-MM-DD로 표기한다.
 function annotateDays(list) {
   const today = localDate()
@@ -183,8 +193,14 @@ let retryTimer = null
 let pipelineRecoveryTimer = null
 let pc = null
 let sessionId = 0
+// @claude 8 s without currentTime advancing: longer than one HLS segment plus
+// @claude jitter, so a healthy live stream is never mistaken for a stall.
 const STALL_TIMEOUT = 8000
+// @claude 3 s between retries: lets the relay recover without hammering it.
 const RETRY_BACKOFF = 3000
+// @claude 1.25 s after the pipeline reports streaming again: enough for the
+// @claude first new segment to reach the player before deciding to reconnect.
+const PIPELINE_RECOVERY_DELAY = 1250
 
 // @claude The preference is shared with the top bar's pill.
 const { preferredProtocol, setProtocol } = useStreamProtocol()
@@ -284,7 +300,7 @@ function schedulePipelineRecovery() {
     pipelineRecoveryTimer = null
     if (!browserPlaybackNeedsReconnect(baselineTime)) return
     restartStream()
-  }, 1250)
+  }, PIPELINE_RECOVERY_DELAY)
 }
 
 // ── HLS ──
@@ -309,34 +325,36 @@ async function initHls() {
   const HlsLib = await ensureHls().catch(() => null)
   if (mySession !== sessionId) return
 
-  if (HlsLib && HlsLib.isSupported()) {
-    hls = new HlsLib({
-      liveSyncDurationCount: 1,
-      liveMaxLatencyDurationCount: 3,
-      maxBufferLength: 3,
-      maxMaxBufferLength: 6,
-      // @claude The HLS relay sits behind the router and every request —
-      // @claude playlist and segments alike — must carry the access token.
-      xhrSetup: (xhr) => {
-        if (accessToken.value) xhr.setRequestHeader('Authorization', `Bearer ${accessToken.value}`)
-      },
-    })
-    hls.loadSource(getHlsUrl())
-    hls.attachMedia(video)
-    hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
-    hls.on(HlsLib.Events.ERROR, (_, data) => {
-      if (!data.fatal || mySession !== sessionId) return
-      retryTimer = setTimeout(() => {
-        if (mySession === sessionId) initHls()
-      }, RETRY_BACKOFF)
-    })
-  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    // @claude Native HLS cannot set headers; the token rides the playlist URL.
-    // @claude Segment requests do not inherit it, so native-only browsers are
-    // @claude limited — hls.js above is the supported path.
-    video.src = `${getHlsUrl()}?token=${encodeURIComponent(accessToken.value || '')}`
-    video.addEventListener('loadedmetadata', () => { video.play().catch(() => {}) })
+  // @claude hls.js is the only HLS path: segment requests must carry the
+  // @claude access token in a header, which native HLS playback cannot do.
+  if (!HlsLib || !HlsLib.isSupported()) {
+    console.warn('hls.js is unavailable in this browser; HLS playback is not possible')
+    handleDisconnect()
+    return
   }
+  hls = new HlsLib({
+    // @claude Low-latency live tuning: sit 1 segment behind the live edge,
+    // @claude jump forward past 3, and keep the forward buffer at 3 s (6 s
+    // @claude hard cap) so a stall shows up quickly instead of playing old video.
+    liveSyncDurationCount: 1,
+    liveMaxLatencyDurationCount: 3,
+    maxBufferLength: 3,
+    maxMaxBufferLength: 6,
+    // @claude The HLS relay sits behind the router and every request —
+    // @claude playlist and segments alike — must carry the access token.
+    xhrSetup: (xhr) => {
+      if (accessToken.value) xhr.setRequestHeader('Authorization', `Bearer ${accessToken.value}`)
+    },
+  })
+  hls.loadSource(getHlsUrl())
+  hls.attachMedia(video)
+  hls.on(HlsLib.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}) })
+  hls.on(HlsLib.Events.ERROR, (_, data) => {
+    if (!data.fatal || mySession !== sessionId) return
+    retryTimer = setTimeout(() => {
+      if (mySession === sessionId) initHls()
+    }, RETRY_BACKOFF)
+  })
 
   video.addEventListener('playing', onPlaying)
   startStallDetection(mySession)
@@ -410,7 +428,7 @@ async function initWebRTC() {
       headers: {
         'Content-Type': 'application/sdp',
         // @claude WHEP signaling passes the router relay and needs the token;
-        // @claude the WebRTC media itself then flows directly (UDP 8890).
+        // @claude the WebRTC media itself then flows directly (UDP 8189).
         ...(accessToken.value ? { Authorization: `Bearer ${accessToken.value}` } : {}),
       },
       body: pc.localDescription.sdp,
@@ -501,7 +519,7 @@ onBeforeUnmount(() => {
           </span>
 
           <button v-if="stopped" class="video-overlay" @click="handleConnect">
-            <span class="play-ring"><i class="ph-fill ph-play"></i></span>
+            <span class="play-ring"><i class="ph ph-play"></i></span>
             <span class="overlay-text">{{ t('live.connectIdle') }}</span>
           </button>
 
@@ -530,7 +548,7 @@ onBeforeUnmount(() => {
             <span v-if="showSessionRemaining" class="fs-chip">
               <i class="ph ph-clock"></i>{{ sessionRemainingText }}
             </span>
-            <!-- 시안: 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+            <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
             <button
               class="fs-pill"
               role="switch"
@@ -566,7 +584,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 전체 화면: 접이식 추론 로그 패널 -->
+        <!-- 전체 화면: 접이식 세션 로그 패널 -->
         <aside v-if="fullscreen && fsLog" class="fs-log">
           <div class="fs-log-head">
             <span class="fs-vlm">
@@ -639,6 +657,10 @@ onBeforeUnmount(() => {
             @click="onInferClick"
           >{{ analysisActive ? t('prompt.action.stop') : t('prompt.action.start') }}</button>
         </div>
+      </div>
+
+      <div v-if="modelError" class="form-note warn">
+        <i class="ph ph-warning-circle"></i><span>{{ modelError }}</span>
       </div>
 
       <div class="log-controls">
@@ -736,7 +758,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
 }
-/* 전체 화면: 세로 기기에서 가로 캔버스로 회전 (시안 방식) */
+/* 전체 화면: 세로 기기에서 가로 캔버스로 회전 */
 .video-wrap.fs {
   position: fixed;
   inset: 0;

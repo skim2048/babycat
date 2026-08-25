@@ -34,7 +34,7 @@ const dirty = computed(() =>
   prompt.value !== savedPrompt.value || triggers.value !== savedTriggers.value,
 )
 
-// @claude 시안: 저장 안내는 필드를 다시 편집하는 순간 사라진다.
+// @claude 저장 안내는 필드를 다시 편집하는 순간 사라진다.
 watch([prompt, triggers], () => {
   savedNote.value = false
   errorNote.value = ''
@@ -49,21 +49,21 @@ async function apply() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: prompt.value.trim(), triggers: triggers.value.trim() }),
     })
-    const data = await res.json()
-    if (data.ok) {
+    if (res.ok) {
       savedPrompt.value = prompt.value
       savedTriggers.value = triggers.value
       savedNote.value = true
       clearRejected()
     } else {
-      errorNote.value = t('prompt.status.error', { message: data.error || t('prompt.status.unknown') })
+      const body = await res.json().catch(() => ({}))
+      errorNote.value = t('prompt.status.error', { message: body.detail || t('prompt.status.unknown') })
     }
   } catch {
     errorNote.value = t('prompt.status.failed')
   }
 }
 
-// @claude 시안: 취소는 마지막 저장 상태로 되돌린다.
+// @claude 취소는 마지막 저장 상태로 되돌린다.
 function revert() {
   if (!dirty.value) return
   prompt.value = savedPrompt.value
@@ -114,7 +114,7 @@ function revert() {
   flex: 1;
   min-height: 0;
 }
-/* 패널은 neutral-900 위이므로 취소 버튼은 페이지 배경 채움을 쓴다 (시안) */
+/* 패널은 neutral-900 위이므로 취소 버튼은 페이지 배경 채움을 쓴다 */
 .form-btn.plain { background: var(--color-bg); }
 .form-btn.plain:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
 </style>

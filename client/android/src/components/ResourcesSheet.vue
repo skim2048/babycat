@@ -9,8 +9,8 @@ defineEmits(['close'])
 const { state: sse } = useSSE()
 const { t } = useLocale()
 
-// @claude 21 samples ≒ the mockup's sparkline resolution; one sample per SSE
-// @claude report keeps the line moving at the report cadence.
+// @claude 21 samples: wide enough for a readable sparkline in the row width;
+// @claude one sample per SSE report keeps the line moving at the report cadence.
 const HISTORY = 21
 
 const history = reactive({ cpu: [], gpu: [], ram: [], disk: [] })

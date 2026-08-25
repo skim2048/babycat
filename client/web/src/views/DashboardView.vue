@@ -82,7 +82,7 @@ function onRailClick() {
   if (railState.value === 'overlay') closeOverlay()
 }
 
-// @claude Forced first-login flow (FR-006): the change-password modal opens by
+// @claude Forced first-login flow: the change-password modal opens by
 // @claude itself and cannot be dismissed until the password is changed.
 watch(mustChangePassword, (forced) => {
   if (forced) modal.value = 'password'
@@ -162,16 +162,26 @@ function shortModelName(id) {
 const modelLabel = computed(() =>
   shortModelName(sse.vlm_current_model) || t('dashboard.model.unknown'),
 )
+// @claude A refused switch (400 {detail}) or a transport failure is shown in
+// @claude the panel; the note clears on the next successful request.
+const modelError = ref('')
 async function switchModel(name) {
   modelMenu.value = false
   if (!name || name === sse.vlm_current_model) return
+  modelError.value = ''
   try {
-    await authFetch(APP_ENDPOINTS.vlmSwitch, {
+    const res = await authFetch(APP_ENDPOINTS.vlmSwitch, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: name }),
     })
-  } catch {}
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      modelError.value = t('dashboard.model.switchFailed', { message: body.detail || t('prompt.status.unknown') })
+    }
+  } catch {
+    modelError.value = t('dashboard.model.switchFailed', { message: t('changePassword.error.network') })
+  }
 }
 
 // @claude 거부되면(스트리밍 꺼짐) 사유 안내가 있는 프롬프트 탭을 앞으로 가져온다.
@@ -180,7 +190,7 @@ async function onInferClick() {
   if (!ok) panel.value = 'prompt'
 }
 
-// ── Inference log ──
+// ── Session log ──
 const logQuery = ref('')
 const logSelectMode = ref(false)
 const logSelected = ref(new Set())
@@ -191,7 +201,7 @@ function localDate(offsetDays = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude 시안: 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
+// @claude 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
 // @claude 어제는 문구로, 그보다 이전은 YY-MM-DD로 표기한다.
 const visibleLog = computed(() => {
   const q = logQuery.value.trim().toLowerCase()
@@ -383,7 +393,7 @@ onBeforeUnmount(() => {
                 ><i :class="p.icon"></i>{{ p.label }}</button>
               </div>
 
-              <!-- 추론 로그 패널 -->
+              <!-- 세션 로그 패널 -->
               <div v-if="panel === 'log'" class="log-panel">
                 <div class="log-head">
                   <span class="vlm-status">
@@ -423,6 +433,10 @@ onBeforeUnmount(() => {
                       {{ analysisActive ? t('prompt.action.stop') : t('prompt.action.start') }}
                     </button>
                   </div>
+                </div>
+
+                <div v-if="modelError" class="form-note warn">
+                  <i class="ph ph-warning-circle"></i><span>{{ modelError }}</span>
                 </div>
 
                 <div class="log-controls">

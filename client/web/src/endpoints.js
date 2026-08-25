@@ -1,6 +1,6 @@
 // Route map for the dashboard.
 // The router (port 8000) is the single entry point for everything —
-// control, SSE/MJPEG relays, and the HLS/WHEP streaming relays.
+// control, the SSE relay, and the HLS/WHEP streaming relays.
 // Only WebRTC media (UDP 8189) bypasses it.
 
 const BABYCAT_HOST_STORAGE_KEY = 'babycat_host'
@@ -85,9 +85,6 @@ export const APP_ENDPOINTS = {
   get events() {
     return getApiUrl('/state')
   },
-  get mjpeg() {
-    return getApiUrl('/stream')
-  },
   get vlmSwitch() {
     return getApiUrl('/vlm/switch')
   },
@@ -120,17 +117,13 @@ export function persistBabycatHost() {
   }
 }
 
-export function getStreamHost() {
-  return getBabycatHost()
-}
-
 // @claude HLS and WHEP go through the router relay (single entry). Only the
 // @claude WebRTC media itself flows directly from the streamer (UDP 8189).
-export function getHlsUrl(host = getStreamHost()) {
+export function getHlsUrl(host = getBabycatHost()) {
   return `http://${host}:8000/live/hls/index.m3u8`
 }
 
-export function getWhepUrl(host = getStreamHost()) {
+export function getWhepUrl(host = getBabycatHost()) {
   return `http://${host}:8000/live/whep`
 }
 
@@ -138,6 +131,6 @@ export function getEventsUrl(token) {
   return `${APP_ENDPOINTS.events}?token=${encodeURIComponent(token)}`
 }
 
-export function getClipUrl(name, size, token) {
-  return `${API_ENDPOINTS.clipFile(name)}?s=${size}&token=${encodeURIComponent(token)}`
+export function getClipUrl(name, token) {
+  return `${API_ENDPOINTS.clipFile(name)}?token=${encodeURIComponent(token)}`
 }
