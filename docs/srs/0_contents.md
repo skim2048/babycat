@@ -3,9 +3,6 @@
 - 1.2 범위 (Product Scope)
 - 1.3 문서 규칙 (Document Conventions)
 - 1.4 용어 및 약어 (Terms and Abbreviations)
-- 1.5 관련 문서 (Related Documents)
-- 1.6 대상 독자 및 읽는 법 (Intended Audience and Reading Suggestions)
-- 1.7 프로젝트 산출물 (Project Output)
 
 #### 2. 전체 설명 (Overall Description)
 - 2.1 제품 조망 (Product Perspective)

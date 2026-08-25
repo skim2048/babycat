@@ -48,6 +48,10 @@
 
 그림은 본문에 직접 작성한 mermaid 다이어그램으로 표현한다.
 
+### (5) 날짜
+
+날짜는 `YYYY-MM-DD` 형식으로 적는다.
+
 ## 1.4 용어 및 약어 (Terms and Abbreviations)
 
 |용어 및 약어|설명|
@@ -75,15 +79,6 @@
 |Jetson Container|NVIDIA Jetson Platform 전용 Docker 이미지 빌드 시스템 및 사전 빌드 이미지 모음|
 |NanoLLM|NVIDIA Jetson에서 VLM/LLM 추론을 위한 최적화 라이브러리|
 |JWT(JSON Web Token)|사용자의 로그인 인증 및 권한 확인에 주로 사용하는 웹 표준 토큰|
-
-## 1.5 관련 문서 (Related Documents)
-
-작성 보류
-
-## 1.6 대상 독자 및 읽는 법 (Intended Audience and Reading Suggestions)
-
-작성 보류
-
-## 1.7 프로젝트 산출물 (Project Output)
-
-작성 보류
+|SSE(Server-Sent Events)|HTTP 연결 하나로 서버가 이벤트를 계속 내보내는 단방향 스트림|
+|MJPEG(Motion JPEG)|JPEG 프레임을 연속 전송하는 단순 비디오 스트림|
+|WHEP(WebRTC-HTTP Egress Protocol)|HTTP로 WebRTC 재생 세션을 수립하는 시그널링 규약|

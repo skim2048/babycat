@@ -8,7 +8,7 @@
 
 |경로|메서드|기능|인증|전달 대상|
 |---|---|---|---|---|
-|`/api/login`|POST|로그인. 기존 세션 대체(`FR-047`) 후 액세스·리프레시 토큰 발급.|불필요|`router` 자체|
+|`/api/login`|POST|로그인. 기존 세션 대체(`FR-047`) 후 액세스 토큰 발급(로그인 유지 요청 시 리프레시 토큰 포함).|불필요|`router` 자체|
 |`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(회전).|불필요|`router` 자체|
 |`/api/logout`|POST|토큰 폐기.|불필요|`router` 자체|
 |`/api/change-password`|POST|비밀번호 변경(기존 토큰 전체 폐기).|필요|`router` 자체|
@@ -29,7 +29,7 @@
 |---|---|---|---|---|
 |`/camera`|GET|비디오 소스 프로필 조회(비밀번호 마스킹).|필요|`streamer`|
 |`/camera`|POST|비디오 소스 프로필 등록(`FR-048` — 접속은 스트리밍 시작 시점).|필요|`streamer`|
-|`/ptz`|POST|팬·틸트·줌 이동/정지/절대 이동/프리셋 저장/프리셋 이동/자동 순찰 설정.|필요|`streamer`|
+|`/ptz`|POST|팬·틸트 이동/정지/절대 이동/프리셋 저장/프리셋 이동/자동 순찰 설정.|필요|`streamer`|
 
 ### 라이브 스트리밍 제어
 
@@ -79,7 +79,7 @@
 |`/live/whep`|POST|WebRTC 세션 수립(WHEP).|필요|`streamer`|
 |`/live/whep/{session}`|PATCH·DELETE|ICE 갱신·세션 종료.|필요|`streamer`|
 
-`/streaming/start`·`/streaming/stop`·`/analysis/start`·`/analysis/stop`은 모두 멱등이다. 시작 요청은 재시작을 겸하며(`FR-024`·`FR-048`), 병렬 전달의 부분 실패 시 ***Request router***는 오류로 응답하되 이미 성공한 컴포넌트를 되돌리지 않으며, ***Client app***의 재요청이 수복 수단이 된다. 부분 실패의 판정은 전달 실패(무응답·서버 오류)뿐 아니라 대상 컴포넌트가 응답 본문으로 알린 처리 실패도 포함한다 — 실패한 연쇄가 성공으로 보고되면 재요청이라는 수복 수단 자체가 성립하지 않는다.
+`/streaming/start`·`/streaming/stop`·`/analysis/start`·`/analysis/stop`은 모두 멱등이다. 시작 요청은 재시작을 겸하며(`FR-024`·`FR-048`), 병렬 전달의 부분 실패 시 ***Request router***는 오류로 응답하되 이미 성공한 컴포넌트를 되돌리지 않으며, ***Client app***의 재요청이 수복 수단이 된다. 부분 실패의 판정 기준은 전달 실패(무응답·서버 오류)와 대상 컴포넌트의 오류 응답(4xx)이다 — 내부 컴포넌트는 처리 실패를 항상 오류 상태 코드로 알린다(§6.5).
 
 ## 6.2 인증과 토큰 (Authentication and Tokens)
 
@@ -100,10 +100,10 @@
 |`streamer`(동반 프로세스)|GET·POST `/profile`|`router`|프로필 조회·등록|
 |`streamer`(동반 프로세스)|POST `/ptz`|`router`|PTZ 명령|
 |`streamer`(동반 프로세스)|POST `/streaming/start`·`/streaming/stop`|`router`|적용 프로필로 소스 연결/해제(스트리밍 시작·종료의 실체)|
-|`streamer`(동반 프로세스)|GET `/status`|`router`|PTZ 위치·프리셋 좌표·자동 순찰 설정·스트리밍 상태(모니터링 합성용)|
+|`streamer`(동반 프로세스)|GET `/status`|`router`|PTZ 위치·저장된 프리셋 슬롯·스트리밍 상태(모니터링 합성용)|
 |`analyzer`|POST `/prompt`·`/presets`·`/start`·`/stop`·`/vlm/switch`|`router`|분석 설정(프롬프트·키워드·라벨 어휘·프리셋)·시작·종료·모델 전환|
 |`analyzer`|GET `/events`(SSE)·`/stream`(MJPEG)|`router`|분석 상태 스트림·입력 프레임|
-|`recorder`|POST `/notify`|`analyzer`|이벤트 통지(매칭 키워드·장면 설명·발생 시각)|
+|`recorder`|POST `/notify`|`analyzer`|이벤트 통지(매칭 키워드·장면 설명·판정 시각·마지막 프레임 캡처 시각·추론 시각 정보)|
 |`recorder`|POST `/inferences`|`analyzer`|추론 이력 통지(`FR-053`) — 매 추론의 원문·라벨·프리셋·시각. `/notify`와 별개 경로로, 이벤트·클립 의미론을 건드리지 않는다|
 |`recorder`|POST `/buffer/start`·`/buffer/stop`|`router`|세그먼트 버퍼 시작·정지(분석 시작·종료의 일부)|
 |`recorder`|GET·DELETE `/clips`(계열)·`/events`(계열)|`router`|§6.1 클립·이력 기능의 실체|
@@ -126,8 +126,8 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 ### (2) HLS·WHEP 중계
 
 - HLS: ***Request router***가 `/live/hls/{path}`를 `streamer`의 HLS 서버로 중계한다. MediaMTX의 재생목록은 상대 URL을 쓰므로 본문 재작성이 필요 없다.
-- WHEP: `POST /live/whep`를 중계하고, 응답의 `Location` 헤더(세션 자원 경로)를 ***Request router*** 경로로 재작성한다. 이후의 `PATCH`(ICE 후보)·`DELETE`(종료)도 같은 경로로 중계한다.
-- SSE·MJPEG 중계를 포함한 모든 스트림 중계는 버퍼링 없이 도착분을 즉시 전달한다. 유휴 SSE가 정체로 오인되지 않도록 중계 읽기에 타임아웃을 두지 않는다.
+- WHEP: `POST /live/whep`를 중계한다. 응답의 `Location` 헤더(세션 자원 경로)는 MediaMTX가 경로형(`/live/whep/<id>`)으로 주고 ***Request router***가 같은 경로를 제공하므로 재작성 없이 그대로 전달한다. 이후의 `PATCH`(ICE 후보)·`DELETE`(종료)도 같은 경로로 중계한다.
+- SSE·MJPEG 중계를 포함한 모든 스트림 중계는 버퍼링 없이 도착분을 즉시 전달한다. 유휴 SSE가 정체로 오인되지 않도록 SSE·MJPEG 중계 읽기에는 타임아웃을 두지 않는다. 중계 시 `?token=` 파라미터는 제거한다(§4.1).
 
 ### (3) WebRTC 미디어 직접 경로
 
@@ -137,12 +137,23 @@ MediaMTX 제어 API(9997)는 동반 프로세스가 같은 컨테이너 안에�
 
 `FR-042`·`FR-043`의 실시간 제공은 ***Request router***의 합성으로 실현한다. ***Request router***는 `analyzer`의 SSE를 구독하여 추론·파이프라인 상태 변화를 즉시 받고, `recorder`와 `streamer`의 `/status`를 주기(2초)로 수집하여, 세 출처를 하나의 평면 JSON 스냅숏으로 병합해 `/state` SSE로 내보낸다. `analyzer` 스냅숏의 설정 필드 — `inference_prompt`, `trigger_keywords`, `label_groups`(라벨 어휘), `presets`(시간 구간 프리셋), `active_preset`(현재 적용 중인 프리셋 식별자) — 는 ***Client app***이 설정 화면을 프리필하는 계약 필드다. 어느 출처가 응답하지 않으면 그 필드 그룹을 결측으로 표시하고 나머지는 계속 전달한다 — 관측은 부분 실패에도 살아 있어야 한다(§2.1 목표 3).
 
+스냅숏의 필드는 출처별로 다음과 같다. 값의 어휘가 정해진 필드는 괄호에 적는다.
+
+|출처|필드|
+|---|---|
+|`analyzer`|`infer_raw`(장면 설명), `infer_ms`, `event_triggered`, `frame_w`·`frame_h`, `analysis_active`, `inference_prompt`, `trigger_keywords`, `vlm_state`(`initializing`·`downloading`·`compiling`·`loading`·`ready`·`switching`·`error`), `vlm_error`, `vlm_models`, `vlm_current_model`, `pipeline_state`(`idle`·`starting`·`streaming`·`stalled`·`restarting`·`stopped`), `pipeline_state_detail`(`waiting_for_vlm`·`waiting_for_start`·`analysis_start`·`watchdog_timeout`·`shutdown`·빈 문자열), `pipeline_source_protocol`·`pipeline_source_transport`, `pipeline_active_for_s`, `pipeline_last_frame_age_s`, `pipeline_restart_count`, `label_groups`·`presets`·`active_preset`(`FR-054`·`FR-055`), `cfg_min_infer_interval`(적용 중인 추론 간격 하한, `FR-058`)|
+|`recorder`|`cpu_percent`, `ram_used_mb`·`ram_total_mb`, `gpu_load`, `cpu_temp`·`gpu_temp`, `disk_used_mb`·`disk_total_mb`·`disk_free_mb`·`disk_path`, `buffer_active`, `clip_storage_state`·`clip_storage_reason`·`clip_storage_free_mb`, `segment_recorder_state`·`segment_recorder_error`·`segment_recorder_segment_count`·`segment_recorder_last_segment_age_s`, `uptime`, `clip_count`, `event_count`|
+|`streamer`|`ptz_pan`·`ptz_tilt`, `ptz_presets`(저장된 슬롯 목록), `streaming_active`, `profile_pending`|
+|`router`|`monitor_sources`(출처별 가용 여부)|
+
+소비자가 없는 필드는 두지 않는다 — 스냅숏은 ***Client app***에 보이는 상태의 정의이며, 읽는 곳이 없는 필드는 계약이 아니라 잔재다.
+
 클립의 생성·삭제는 이 스냅숏의 클립 계수 변화로 드러나고, ***Client app***은 계수 변화를 클립 목록 갱신의 신호로 쓴다. 따라서 계수의 변화는 그 변화가 목록 조회로 관찰 가능해진 뒤에만 일어나야 한다 — 신호가 데이터보다 앞서면 갱신이 새 클립을 얻지 못한 채 끝나고, 다음 계수 변화가 있을 때까지 목록에 반영되지 않는다.
 
 ## 6.5 오류 응답 규약 (Error Response Convention)
 
 - 오류 본문은 `{"detail": <문자열>}` 하나로 통일한다.
-- 상태 코드: 400(요청 형식 오류), 401(인증 실패·폐기된 토큰), 404(대상 부재), 409(전제 불충족 — 라이브 스트리밍이 진행 중이 아닌 분석 시작, `FR-050`), 429(로그인 차단, `FR-007`), 502(내부 컴포넌트 무응답·서버 오류).
+- 상태 코드: 400(요청 형식 오류 — JSON 파싱 실패, 필드 검증 실패, 알 수 없는 PTZ 동작), 401(인증 실패·폐기된 토큰), 404(대상 부재 — 없는 클립·이력, 저장되지 않은 프리셋), 409(전제 불충족 — 라이브 스트리밍이 진행 중이 아닌 분석 시작(`FR-050`), 등록 프로필 없는 스트리밍 시작, 현재 위치를 모르는 상태의 프리셋 저장), 429(로그인 차단, `FR-007`. 차단을 일으키는 10회째 실패부터), 502(내부 컴포넌트 무응답·서버 오류).
 - 전제의 확인이 불가능한 상태는 전제 불충족과 구분한다 — 확인 대상 컴포넌트가 응답하지 않으면 409가 아니라 502다.
 - 401의 `detail`은 토큰의 만료·무효와 폐기를 구분한다. ***Client app***은 이 구분으로 세션 대체 통지 여부를 판정한다(`FR-047`, §6.2).
 - 내부 컴포넌트의 5xx와 무응답은 ***Request router***가 502로 정규화한다. 4xx는 의미를 보존한 채 그대로 전달한다.
@@ -516,18 +527,18 @@ sequenceDiagram
     participant S as Video streamer
     participant V as Video source
 
-    U->>C: 팬·틸트·줌 제어 요청
+    U->>C: 팬·틸트 제어 요청
     C->>R: POST /ptz
     R->>S: 전달 (POST /ptz)
     S-->>C: 수신 확인 응답 (Router 경유, 제어 완료 아님)
     S->>V: ONVIF 제어 (onvif_port/tcp)
 ```
 
-1. ***User***가 팬·틸트·줌 제어를 요청한다.
+1. ***User***가 팬·틸트 제어를 요청한다.
 2. ***Client app***은 이 요청을 ***Request router***에게 전달한다.
     - 형태: `HTTPS(8000/tcp), POST /ptz, application/json`
     - 동작의 종류(이동·정지·절대 이동·프리셋 저장·프리셋 이동·자동 순찰 설정)와 이동량·좌표는 JSON 본문에 담긴다.
-    - 자동 순찰 설정(`FR-052`)은 `{"action": "patrol", "enabled": bool, "interval_s": int}` 형태로 전달한다. 적용된 순찰 상태(활성 여부·전환 간격·현재 순회 중인 프리셋 슬롯)는 `/state`(SSE)의 `ptz_patrol` 필드로 내려간다.
+    - 자동 순찰 설정(`FR-052`)은 `{"action": "patrol", "enabled": bool, "interval_s": int}` 형태로 전달한다. 순찰 상태는 모니터링 스트림에 넣지 않는다(§6.4 (4)).
 3. ***Request router***는 전달받은 요청을 ***Video streamer***에게 전달한다.
     - 형태: `HTTP(8080/tcp), POST /ptz, application/json`
 4. ***Video streamer***는 요청을 수신했다는 응답을 ***Request router***를 거쳐 ***Client app***에게 보낸다.
@@ -538,7 +549,7 @@ sequenceDiagram
     - 접속 포트는 프로필에 등록된 `onvif_port`를 따른다.
     - ***Video source***가 ONVIF를 지원하지 않거나 접근을 허용하지 않으면, 요청을 별도의 오류 없이 무시한다(`FR-020`).
     - 주의: 라이브 스트리밍이 진행 중일 때 PTZ 제어가 가능하며, 라이브 스트리밍이 종료되면 PTZ 연결도 종료된다(`FR-016`).
-6. 자동 순찰(`FR-052`)이 활성인 동안 ***Video streamer***는 전환 간격마다 저장된 프리셋 위치로 절대 이동 명령을 자체 발행한다(위 2~5의 경로 중 5만 반복). 현재 팬·틸트 위치와 슬롯별 프리셋 좌표는 `/state`(SSE)의 `ptz_pan`·`ptz_tilt`·`ptz_preset_positions` 필드로 ***Client app***에게 실시간 제공된다.
+6. 자동 순찰(`FR-052`)이 활성인 동안 ***Video streamer***는 전환 간격마다 저장된 프리셋 위치로 절대 이동 명령을 자체 발행한다(위 2~5의 경로 중 5만 반복). 현재 팬·틸트 위치와 저장된 프리셋 슬롯은 `/state`(SSE)의 `ptz_pan`·`ptz_tilt`·`ptz_presets` 필드로 ***Client app***에게 실시간 제공된다.
 
 ### (9) 이벤트 클립과 이력 관리
 

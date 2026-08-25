@@ -8,7 +8,7 @@
 
 설계 대상은 SRS §2.2의 네 구성요소(***Request router***·***Video streamer***·***Video analyzer***·***Event recorder***)와 그 배포 구성이다. 다음은 설계에서 제외한다.
 
-- ***Client app***의 내부 — `Babycat`은 백엔드이며, 별도로 관리하는 참조 구현 대시보드는 검증 수단일 뿐 설계 대상이 아니다.
+- ***Client app***의 내부 — `Babycat`은 백엔드이며, 저장소의 `client/`에 동봉한 참조 구현은 검증 수단일 뿐 설계 대상이 아니다(SRS §3.3).
 - ***Video source*** 장비 자체와 그 설정.
 - VLM 모델의 내부 구조와 품질 — 모델은 교체 가능한 외부 산출물로 취급한다.
 
@@ -39,11 +39,10 @@ SRS §1.4에 이미 있는 용어는 반복하지 않는다. 설계 단계에서
 ## 1.5 관련 문서 (Related Documents)
 
 - SRS — `docs/srs/` (이 문서의 상위 권위)
-- 작업 기록 — `workflow/` (설계 결정의 경위, 형상 관리 제외)
 - MediaMTX 공식 문서 — ***Video streamer*** 설정·제어 API·WHEP의 준거
 - ONVIF Profile S 사양 — PTZ 제어(`IF-004`)의 준거
 - jetson-containers / NanoLLM — `analyzer` 베이스 이미지의 준거
-- 설치 가이드 — 작성 예정(SRS §3.2)
+- 설치 절차 — `README.md`(SRS §3.2의 설치·설정 항목을 안내한다)
 
 ## 1.6 대상 독자 및 읽는 법 (Intended Audience and Reading Suggestions)
 

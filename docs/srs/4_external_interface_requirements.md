@@ -17,7 +17,7 @@
 
 |엔드포인트|메서드|기능|인증|
 |---|---|---|---|
-|`/api/login`|POST|로그인. JWT 및 리프레시 토큰 발급.|불필요|
+|`/api/login`|POST|로그인. 액세스 토큰 발급(로그인 유지 요청 시 리프레시 토큰 포함).|불필요|
 |`/api/refresh`|POST|리프레시 토큰으로 액세스 토큰 갱신(토큰 회전).|불필요|
 |`/api/logout`|POST|로그아웃. 발급된 토큰 폐기.|불필요|
 |`/api/change-password`|POST|비밀번호 변경.|필요|
@@ -28,7 +28,7 @@
 |`/camera`|POST|비디오 소스 프로필 등록(수정).|필요|
 |`/streaming/start`|POST|라이브 스트리밍 시작. 재시작을 겸한다.|필요|
 |`/streaming/stop`|POST|라이브 스트리밍 종료. 진행 중인 분석·버퍼링도 함께 정지.|필요|
-|`/clips`|GET|클립 목록 조회(키워드, 날짜 필터, 페이지네이션).|필요|
+|`/clips`|GET|클립 목록 조회(장면 설명 부분 일치, 날짜 필터, 페이지네이션).|필요|
 |`/clips/{name}`|GET|클립 재생(HTTP Range 지원).|필요|
 |`/clips`|DELETE|선택 클립 삭제.|필요|
 |`/clips/all`|DELETE|전체 클립 삭제.|필요|
@@ -48,14 +48,14 @@
 
 이벤트 푸시 알림용 디바이스 관리 API는 차기 버전으로 미룬다.
 
-각 엔드포인트의 상세 명세(요청/응답 스키마, 에러 코드)는 작성을 보류한다 — 본 문서 부록 또는 별도 IRS 문서로의 분리를 검토한다.
+각 엔드포인트의 요청/응답 형식과 오류 코드는 설계 문서(SDD §6)가 정의하며, 별도의 인터페이스 요구사항 명세서는 두지 않는다.
 
 ### IF-002: 비디오 스트림 수신 (***Video source*** → ***Video streamer***)
 
 - ***Video source***는 H.264로 인코딩된 비디오 스트림을 제공해야 한다.
 - ***Video streamer***는 스트리밍 시작 시점에 등록되어 있던 프로필(§2.3 (3))의 RTSP URL(`rtsp://<user>:<pass>@<ip>:<port>/<path>`)로 연결하여 스트림을 수신한다.
 - 발생 빈도: 라이브 스트리밍이 진행 중인 동안 상시 연결.
-- 에러 처리: 연결 실패 시 접속을 재시도한다(`FR-049`).
+- 에러 처리: 연결 실패 시 접속을 재시도한다(`FR-046`).
 
 ### IF-003: 라이브 스트리밍 (***Video streamer*** → ***Client app***)
 
@@ -66,8 +66,8 @@
 ### IF-004: PTZ 제어 (***Video streamer*** → ***Video source***)
 
 - 조건부 인터페이스이다. ***Video source***가 ONVIF PTZ를 지원하는 경우에 한한다.
-- ***Video streamer***는 비디오 소스 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 이동(continuous move)/정지 명령을 전달한다.
-- 발생 빈도: 사용자 입력 시에만 발생.
+- ***Video streamer***는 비디오 소스 프로필의 ONVIF 포트(`http://<ip>:<onvif_port>/onvif/service`)로 프로필 토큰 조회(GetProfiles), 연속 이동(ContinuousMove), 정지(Stop), 절대 이동(AbsoluteMove) 명령과 위치 조회(GetStatus)를 전달한다.
+- 발생 빈도: 이동·정지·절대 이동은 사용자 입력 시, 위치 조회는 라이브 스트리밍 중 2초 주기, 자동 순찰(`FR-052`)이 활성이면 전환 간격마다 절대 이동.
 
 ## 4.2 사용자 인터페이스 (User Interface)
 
@@ -81,12 +81,12 @@
 
 |이름|버전|출처|용도|
 |---|---|---|---|
-|MediaMTX|작성 보류 (버전 고정 필요)|Docker Hub (`bluenviron/mediamtx`)|RTSP 수신, HLS/WebRTC 송신.|
-|NanoLLM|작성 보류 (버전 고정 필요)|jetson-containers|VLM 추론 스택(***Video analyzer*** 베이스 이미지).|
+|MediaMTX|1.20.1|Docker Hub (`bluenviron/mediamtx`)|RTSP 수신, HLS/WebRTC 송신.|
+|NanoLLM|`dustynv/nano_llm:r36.4.0`|jetson-containers|VLM 추론 스택(***Video analyzer*** 베이스 이미지).|
 |GStreamer|1.x (베이스 이미지 및 호스트 NVIDIA 플러그인)|JetPack / 베이스 이미지|비디오 파이프라인(디코딩, 프레임 추출, 클립 인코딩).|
 |SQLite|Python 내장 `sqlite3`|Python 표준 라이브러리|사용자, 토큰, 이벤트 영속화.|
-|FastAPI / uvicorn|작성 보류 (버전 고정 필요)|PyPI|***Request router***·***Video streamer***(동반 프로세스)·***Event recorder***의 HTTP 서버 프레임워크.|
-|Caddy|2.x (`caddy:2`)|Docker Hub (`caddy`)|TLS 종단 게이트웨이. 사설(내부) CA 운용과 인증서 발급.|
+|FastAPI / uvicorn|0.141.1 / 0.52.3|PyPI|***Request router***·***Video streamer***(동반 프로세스)·***Event recorder***의 HTTP 서버 프레임워크.|
+|Caddy|2.11.4 (`caddy:2.11.4`)|Docker Hub (`caddy`)|TLS 종단 게이트웨이. 사설(내부) CA 운용과 인증서 발급.|
 
 ## 4.5 통신 인터페이스 (Communication Interface)
 
