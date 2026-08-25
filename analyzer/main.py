@@ -15,6 +15,7 @@ recorder (SDD §4.4); this process only judges events and notifies.
 import logging
 import os
 import queue
+import signal
 import sys
 import threading
 import time
@@ -47,22 +48,34 @@ MEDIAMTX_URL = os.getenv("MEDIAMTX_URL", "rtsp://streamer:8554/live")
 from holder import VLM_MODELS, set_holder as _set_holder, set_available as _set_available
 MODEL_ID = VLM_MODELS[0]
 
+# @claude Frame extraction rate and frames per inference (SDD §7.2 (1), §8.3).
 TARGET_FPS = float(os.getenv("TARGET_FPS", "1.0"))
 N_FRAMES   = int(os.getenv("N_FRAMES",   "4"))
 
-# @claude Minimum seconds between inference starts. 0 = natural pacing (the
-# @claude hardware's own inference duration sets the cycle). A floor trades
+# @claude Minimum seconds between inference starts (FR-058). 0 = natural pacing
+# @claude (the hardware's own inference duration sets the cycle). A floor trades
 # @claude event-detection latency for power/heat and history volume; aggregates
 # @claude stay comparable across devices because /summary carries per-bucket
 # @claude totals as the denominator.
 MIN_INFER_INTERVAL = float(os.getenv("MIN_INFER_INTERVAL", "0"))
 
-RING_SIZE = int(os.getenv("RING_SIZE", "30"))
+# @claude Ring capacity in frames: 30 s of context at 1 fps, well above any
+# @claude N_FRAMES in use. Fixed — the ring only needs to be larger than N_FRAMES.
+RING_SIZE = 30
 
-SERVER_PORT = int(os.getenv("SERVER_PORT", "8080"))
+# @claude Internal port, fixed by compose service URLs (SDD §6.3).
+SERVER_PORT = 8080
 
-# @claude SigLIP input resolution; the VLM resizes to 384x384 internally.
+# @claude Frames are resized to the VLM's SigLIP input size before they enter
+# @claude the ring: the model would resize anyway, and doing it here keeps the
+# @claude ring and the IPC payload to the child small. Non-square frames are
+# @claude squashed, not cropped (SDD §5.1).
 VLM_INPUT_SIZE = (384, 384)
+
+# @claude Consecutive inference failures (child respawn included) before the
+# @claude process exits and lets the container restart policy take over
+# @claude (SDD §7.5).
+MAX_CONSECUTIVE_INFER_FAILURES = 3
 
 
 # ── Ring buffer ──────────────────────────────────────────────────────────────
@@ -70,8 +83,8 @@ VLM_INPUT_SIZE = (384, 384)
 class RingBuffer:
     """
     Fixed-size circular buffer for VLM context frames. Pushed from the
-    GStreamer callback thread and read via latest() from the inference
-    thread.
+    GStreamer callback thread and read via latest_samples() from the
+    inference thread.
 
     @claude
     """
@@ -118,14 +131,13 @@ class ModelHolder:
         self.name = name
         self._switch_to: str | None = None
 
-    def request_switch(self, name: str) -> bool:
-        if name not in VLM_MODELS:
-            return False
+    def request_switch(self, name: str) -> None:
+        """Queue a switch. Validation against the available models is the
+        caller's (holder.request_switch) — one criterion, one place. @claude"""
         with self._lock:
             if name == self.name and self._switch_to is None:
-                return True  # @claude already the active model — treat as no-op success.
+                return  # @claude Already the active model — nothing to do.
             self._switch_to = name
-        return True
 
     def pop_request(self) -> str | None:
         with self._lock:
@@ -172,8 +184,8 @@ def _precompile_all(models: list[str]) -> list[str]:
     """
     Compile only models that lack a cached .so. Returns the list of models
     whose cache is complete. If the default model (first entry) fails to
-    compile, raise RuntimeError — booting is pointless without it.
-    Secondary model failures are dropped silently.
+    compile, raise RuntimeError — booting is pointless without it. A
+    secondary model that fails is logged and left out of the list.
 
     @claude
     """
@@ -249,6 +261,7 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
     """
     log.info("VLM inference thread started")
     last_infer_at = 0.0
+    failures = 0
     while True:
         # @claude Handle pending switch requests at the boundary between inferences.
         target = holder.pop_request()
@@ -295,12 +308,20 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         inference_started_at = time.time()
         last_infer_at = inference_started_at
         try:
-            # @claude vlm_proc.infer() respawns a crashed child on its own; a
-            # @claude failure here (incl. switch+rollback both failed) just skips.
+            # @claude vlm_proc.infer() respawns a crashed child on its own.
             raw = vlm_proc.infer(frames, prompt)
         except Exception as e:
-            log.error("VLM inference error: %s", e)
+            failures += 1
+            log.error("VLM inference error (%d/%d): %s", failures, MAX_CONSECUTIVE_INFER_FAILURES, e)
+            if failures >= MAX_CONSECUTIVE_INFER_FAILURES:
+                # @claude Persistent failure: give up and let the container
+                # @claude restart policy bring a clean process up (SDD §7.5).
+                app_state.set_vlm_state("error", f"inference failed {failures} times: {str(e)[:160]}")
+                log.critical("VLM inference failing persistently — exiting for a container restart")
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
             continue
+        failures = 0
         inference_elapsed_ms = int(round((time.time() - inference_started_at) * 1000))
 
         # @claude Stop discards in-flight work (SDD §7.3): a judgment that
@@ -334,10 +355,7 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         else:
             log.info("%dms -> normal", inference_elapsed_ms)
 
-        app_state.update_inference(
-            "EVENT" if event_triggered else "정상",
-            raw, inference_elapsed_ms,
-            event_triggered=event_triggered)
+        app_state.update_inference(raw, inference_elapsed_ms, event_triggered=event_triggered)
 
         if event_triggered:
             threading.Thread(
@@ -359,6 +377,10 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
 
 # ── GStreamer pipeline ───────────────────────────────────────────────────────
 
+SOURCE_PROTOCOL = "rtsp"
+SOURCE_TRANSPORT = "tcp"  # @claude rtspsrc protocols=; reported in the SSE snapshot.
+
+
 def build_pipeline_str(url: str, target_fps: float) -> str:
     """
     Build the pipeline string. `videorate` normalizes to target_fps so
@@ -369,7 +391,7 @@ def build_pipeline_str(url: str, target_fps: float) -> str:
     """
     fps = Fraction(target_fps).limit_denominator(1000)
     return (
-        f'rtspsrc location={url} latency=0 protocols=tcp '
+        f'rtspsrc location={url} latency=0 protocols={SOURCE_TRANSPORT} '
         '! rtph264depay ! h264parse ! nvv4l2decoder '
         '! nvvidconv ! video/x-raw,format=RGBA '
         f'! videorate ! video/x-raw,framerate={fps.numerator}/{fps.denominator} '
@@ -444,10 +466,12 @@ WATCHDOG_TIMEOUT  = 15.0   # @claude Restart if no frames arrive for this long a
 WATCHDOG_INTERVAL = 5.0    # @claude Check interval.
 
 
-def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startup", restart: bool = False) -> None:
-    """(Re)start the GStreamer pipeline. Stops and replaces any existing one. @claude"""
+def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startup") -> None:
+    """(Re)start the GStreamer pipeline. Stops and replaces any existing one;
+    the state is reported as a restart only when a pipeline was running. @claude"""
     global _pipeline, _pipeline_started_at, _last_frame_time
     with _pipeline_lock:
+        restart = _pipeline is not None
         # @claude Stop wins: /stop drops the active flag before tearing down,
         # @claude so a watchdog restart or a stale start callback that lost the
         # @claude race must not revive the pipeline (FR-049, FR-051). Only a
@@ -488,7 +512,7 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startu
 
 def start_analysis() -> bool:
     """Start or restart analysis on the router's request (FR-024). @claude"""
-    return _pipeline_lifecycle.request_restart(start_pipeline, "analysis_start")
+    return _pipeline_lifecycle.request_start(start_pipeline, "analysis_start")
 
 
 def stop_analysis() -> None:
@@ -560,6 +584,8 @@ def main() -> None:
         stream=sys.stdout,
     )
 
+    Gst.init(None)  # @claude Before the HTTP server: /start may build a pipeline at any time.
+
     log.info("=== Babycat analyzer start ===")
     log.info("  MEDIAMTX_URL : %s", MEDIAMTX_URL)
     log.info("  VLM_MODELS   : %s", VLM_MODELS)
@@ -585,10 +611,10 @@ def main() -> None:
     # @claude the VLM is still loading (precompile can take tens of minutes).
     start_server(SERVER_PORT)
 
-    # @claude MLC quantize() symlinks the HF snapshot into /data/models/mlc/dist/models/{MODEL};
-    # @claude NanoLLM doesn't mkdir the parent, so the container crashes with FileNotFoundError
-    # @claude if the directory is missing. Pre-create it so fresh Jetsons can go from
-    # @claude `git clone` to `docker compose up` in one shot.
+    # @claude Base-image dependency (SDD §8.2): MLC quantize() symlinks the HF
+    # @claude snapshot into /data/models/mlc/dist/models/{MODEL} and NanoLLM
+    # @claude does not mkdir the parent — pre-create it or a fresh volume crashes
+    # @claude with FileNotFoundError.
     Path("/data/models/mlc/dist/models").mkdir(parents=True, exist_ok=True)
 
     # @claude Publish the candidate model list. The true available list comes back from
@@ -625,15 +651,13 @@ def main() -> None:
     ring    = RingBuffer(maxlen=RING_SIZE)
     infer_q = queue.Queue(maxsize=1)
 
-    # @claude Publish refs for start_analysis (before this point, early calls are a safe no-op).
+    # @claude Publish refs for start_analysis. Before this point a /start only
+    # @claude records the active flag; ensure_startup_started below acts on it.
     _pipeline_lifecycle.set_refs(ring, infer_q)
-
-    # @claude Hand the ring ref to AppState so the SSE snapshot can expose ring fill level.
-    app_state.set_refs(ring, RING_SIZE, {
-        "target_fps": TARGET_FPS,
-        "n_frames":   N_FRAMES,
-        "min_infer_interval": MIN_INFER_INTERVAL,
-    })
+    app_state.set_source(SOURCE_PROTOCOL, SOURCE_TRANSPORT)
+    # @claude cfg_min_infer_interval is a client-facing SSE field (FR-058): the
+    # @claude effective pacing floor, so a client can confirm the deployed value.
+    app_state.set_config({"min_infer_interval": MIN_INFER_INTERVAL})
 
     worker = threading.Thread(
         target=inference_worker,
@@ -644,7 +668,6 @@ def main() -> None:
 
     threading.Thread(target=watchdog_worker, daemon=True).start()
 
-    Gst.init(None)
     # @claude Analysis starts only on the explicit request (FR-025), or resumes
     # @claude when the persisted state says it was running (FR-014).
     if not _pipeline_lifecycle.ensure_startup_started(start_pipeline):

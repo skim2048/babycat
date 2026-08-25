@@ -123,10 +123,20 @@ def resolve_preset(presets: list, now: float | None = None) -> dict | None:
 
 
 def load() -> dict:
+    # @claude A temp file left by a crash mid-write is swept here (SDD §5.4).
+    try:
+        os.unlink(f"{STATE_PATH}.tmp")
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        log.warning("temp file %s.tmp not removed: %s", STATE_PATH, e)
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
+        data = {}
+    except json.JSONDecodeError as e:
+        log.warning("settings file %s unreadable, using defaults: %s", STATE_PATH, e)
         data = {}
     return {
         "prompt": data.get("prompt") or PROMPT_DEFAULT,

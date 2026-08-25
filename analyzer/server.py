@@ -6,7 +6,6 @@ HTTP caller (SDD §6.3). No authentication — requests that reach here
 already passed the router.
 
 Endpoints:
-  GET  /            Health check
   GET  /events      SSE (inference results + pipeline/VLM state)
   GET  /stream      MJPEG stream (VLM input frames)
   POST /prompt      Change VLM prompt / trigger keywords
@@ -70,15 +69,16 @@ def persist_settings() -> None:
 class AnalyzerHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
+        # @claude No per-request access log here: the router is the only
+        # @claude caller and keeps the access log (SDD §8.4); the SSE and MJPEG
+        # @claude connections would otherwise log continuously.
         pass
 
     # ── GET ──────────────────────────────────────────────────────────────────
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
-        if path == "/":
-            self._send_json({"status": "ok"})
-        elif path == "/stream":
+        if path == "/stream":
             self._serve_mjpeg()
         elif path == "/events":
             self._serve_sse()
@@ -104,18 +104,29 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
 
     # ── Utilities ────────────────────────────────────────────────────────────
 
-    def _read_json_body(self) -> dict:
+    def _read_json_body(self) -> dict | None:
+        """Parse the JSON object body. Returns None after answering 400 when
+        the body is missing, oversized, or not a JSON object (SDD §6.5)."""
         try:
             length = int(self.headers.get("Content-Length", 0))
         except (ValueError, TypeError):
-            return {}
-        if length <= 0 or length > MAX_BODY:
-            return {}
+            length = 0
+        if length <= 0:
+            self._send_json({"detail": "request body required"}, status=400)
+            return None
+        if length > MAX_BODY:
+            self._send_json({"detail": "request body too large"}, status=400)
+            return None
         raw = self.rfile.read(length)
         try:
-            return json.loads(raw) if raw else {}
-        except (json.JSONDecodeError, ValueError):
-            return {}
+            body = json.loads(raw)
+        except ValueError:
+            self._send_json({"detail": "invalid request body"}, status=400)
+            return None
+        if not isinstance(body, dict):
+            self._send_json({"detail": "invalid request body"}, status=400)
+            return None
+        return body
 
     def _send_json(self, obj: dict, status: int = 200) -> None:
         body = json.dumps(obj, ensure_ascii=False).encode()
@@ -172,10 +183,12 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         Validation precedes any state change, so a rejected request leaves
         both values untouched — no partial apply."""
         body = self._read_json_body()
-        prompt = body.get("prompt", "").strip()
-        triggers_raw = body.get("triggers", "").strip()
+        if body is None:
+            return
+        prompt = str(body.get("prompt", "")).strip()
+        triggers_raw = str(body.get("triggers", "")).strip()
         if not prompt:
-            self._send_json({"ok": False, "error": "prompt required"}, status=400)
+            self._send_json({"detail": "prompt required"}, status=400)
             return
         keywords = [k.strip().lower() for k in triggers_raw.split(",") if k.strip()]
         app_state.set_prompt(prompt)
@@ -231,8 +244,8 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         started = False
         if _start_analysis_callback is not None:
             started = _start_analysis_callback()
-        # @claude started=False while the VLM is still loading is fine: main
-        # @claude starts the pipeline once loading completes (analysis_active).
+        # @claude started=False while the VLM is still loading: the active flag
+        # @claude is recorded and main starts the pipeline once loading completes.
         self._send_json({"ok": True, "started": started})
 
     def _handle_stop(self):
@@ -247,17 +260,23 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
     def _handle_vlm_switch(self):
         """
         Request:  {"model": "<model_id>"}
-        Response: {"ok": bool, "reason": str}
-        The switch is performed by the inference worker between inferences.
+        Response: 200 {"ok": true} when queued; 400 {"detail": reason} when
+        refused. The switch is performed by the inference worker between
+        inferences.
         """
         from holder import request_switch
         body = self._read_json_body()
-        name = (body.get("model") or "").strip()
+        if body is None:
+            return
+        name = str(body.get("model") or "").strip()
         if not name:
-            self._send_json({"ok": False, "reason": "model required"}, status=400)
+            self._send_json({"detail": "model required"}, status=400)
             return
         ok, reason = request_switch(name)
-        self._send_json({"ok": ok, "reason": reason}, status=200 if ok else 400)
+        if ok:
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"detail": reason}, status=400)
 
 
 # ── Server bootstrap ─────────────────────────────────────────────────────────

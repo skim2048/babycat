@@ -36,9 +36,9 @@ from multiprocessing.connection import Client, Listener
 log = logging.getLogger(__name__)
 
 # @claude Model load against a warm .so cache (precompile guarantees the cache
-# @claude exists before any live child is spawned). Generous ceiling for 13b.
+# @claude exists before any live child is spawned). SDD §8.3.
 LOAD_TIMEOUT = float(os.getenv("VLM_LOAD_TIMEOUT", "1800"))
-# @claude One generate() call — a cold 13b on Orin NX is slow but not this slow.
+# @claude Ceiling for one generate() call. SDD §8.3.
 INFER_TIMEOUT = float(os.getenv("VLM_INFER_TIMEOUT", "120"))
 # @claude Upper bound on tokens per VLM generation. Stop markers (</s>, <|im_end|>,
 # @claude etc.) may truncate earlier; see _child_run_inference.
@@ -57,7 +57,7 @@ def _child_run_inference(model, ChatHistory, frames, prompt):
     """
     Run VLM inference over a list of PIL frames using the ChatHistory API.
     chat.reset() and gc.collect() are mandatory — see NanoLLM GitHub
-    issue #39 on memory leaks. (Moved verbatim from main.run_inference.)
+    issue #39 on memory leaks.
 
     @claude
     """
@@ -108,8 +108,13 @@ def _child_main(model_id: str, ipc_addr: str) -> None:
     try:
         conn = listener.accept()
     finally:
-        # @claude Unlink the socket file once the single expected client is in.
+        # @claude Unlink the socket file once the single expected client is in
+        # @claude (or the accept failed): nothing is left behind in /tmp.
         listener.close()
+        try:
+            os.unlink(ipc_addr)
+        except OSError:
+            pass
 
     try:
         try:
@@ -195,11 +200,6 @@ class VlmProcess:
         self._proc: subprocess.Popen | None = None
         self._conn = None
         self._current: str | None = None
-
-    @property
-    def current(self) -> str | None:
-        """The model id of the running child, or None if none has loaded. @claude"""
-        return self._current
 
     def is_ready(self) -> bool:
         """True when a child is alive and connected. @claude"""

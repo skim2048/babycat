@@ -21,20 +21,12 @@ class PipelineLifecycle:
     def set_refs(self, ring: Any, infer_q: Any) -> None:
         self._refs = (ring, infer_q)
 
-    def request_start(
-        self,
-        starter: Callable[..., None],
-        reason: str = "startup",
-        restart: bool = False,
-    ) -> bool:
+    def request_start(self, starter: Callable[..., None], reason: str = "startup") -> bool:
         if self._refs is None:
             return False
         ring, infer_q = self._refs
-        starter(ring, infer_q, reason=reason, restart=restart)
+        starter(ring, infer_q, reason=reason)
         return True
-
-    def request_restart(self, starter: Callable[..., None], reason: str) -> bool:
-        return self.request_start(starter, reason=reason, restart=True)
 
     def mark_waiting_for_vlm(self) -> None:
         self._app_state.mark_pipeline_idle("waiting_for_vlm")
@@ -46,8 +38,8 @@ class PipelineLifecycle:
         if not self._is_analysis_active():
             self.mark_waiting_for_start()
             return False
-        return self.request_start(starter, reason="startup", restart=False)
+        return self.request_start(starter, reason="startup")
 
     def handle_watchdog_timeout(self, starter: Callable[..., None]) -> bool:
         self._app_state.mark_pipeline_stalled("watchdog_timeout")
-        return self.request_restart(starter, "watchdog_timeout")
+        return self.request_start(starter, "watchdog_timeout")

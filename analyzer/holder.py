@@ -49,5 +49,6 @@ def request_switch(name: str) -> tuple[bool, str]:
         return False, "models not ready yet"
     if name not in _available_models:
         return False, "model not available (not precompiled)"
+    # @claude This is the only validation; ModelHolder.request_switch just queues.
     _holder.request_switch(name)
     return True, "queued"

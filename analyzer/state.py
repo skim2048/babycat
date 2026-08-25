@@ -24,18 +24,15 @@ class AppState:
     def __init__(self):
         self._lock = threading.Lock()
         self._sse_lock = threading.Lock()
-        self._start_time = time.time()
 
         self.frame:       Optional[Image.Image] = None
         self.frame_w:     int   = 0
         self.frame_h:     int   = 0
-        self.infer_label: str   = ""
         self.infer_raw:   str   = ""
         self.infer_ms:    float = 0.0
-
-        self._ring      = None
-        self._ring_size: int  = 0
-        self._config:   dict  = {}
+        self.source_protocol: str = ""
+        self.source_transport: str = ""
+        self._config: dict = {}
 
         self._sse_queues: list[queue.Queue] = []
         self.inference_prompt: str = ""
@@ -85,10 +82,15 @@ class AppState:
                 except queue.Full:
                     pass
 
-    def set_refs(self, ring, ring_size: int, config: dict):
-        self._ring      = ring
-        self._ring_size = ring_size
-        self._config    = config
+    def set_source(self, protocol: str, transport: str):
+        with self._lock:
+            self.source_protocol = protocol
+            self.source_transport = transport
+
+    def set_config(self, config: dict):
+        """Deployment values exposed to clients as cfg_* fields (FR-058). @claude"""
+        with self._lock:
+            self._config = dict(config)
 
     def set_prompt(self, prompt: str):
         with self._lock:
@@ -133,7 +135,6 @@ class AppState:
                 # @claude Stop clears the last judgment: without this the final
                 # @claude event stays in every later SSE snapshot and the UI
                 # @claude keeps showing it (bulb, overlay) after analysis ends.
-                self.infer_label = ""
                 self.infer_raw = ""
                 self.event_triggered = False
         self._sse_push()
@@ -162,10 +163,8 @@ class AppState:
         if transitioned:
             self._sse_push()
 
-    def update_inference(self, label: str, raw: str, elapsed_ms: float,
-                         event_triggered: bool = False):
+    def update_inference(self, raw: str, elapsed_ms: float, event_triggered: bool = False):
         with self._lock:
-            self.infer_label = label
             self.infer_raw   = raw
             self.infer_ms    = elapsed_ms
             self.event_triggered = event_triggered
@@ -183,15 +182,12 @@ class AppState:
         return {
             "frame_w":     self.frame_w,
             "frame_h":     self.frame_h,
-            "infer_label": self.infer_label,
             "infer_raw":   self.infer_raw,
             "infer_ms":    round(self.infer_ms, 1),
         }
 
     def _runtime_snapshot_locked(self) -> dict:
         return {
-            "ring_len":      len(self._ring) if self._ring is not None else 0,
-            "ring_size":     self._ring_size,
             "inference_prompt": self.inference_prompt,
             "trigger_keywords": ",".join(self.trigger_keywords),
             "label_groups": dict(self.label_groups),
@@ -219,8 +215,8 @@ class AppState:
         return {
             "pipeline_state": self.pipeline_state,
             "pipeline_state_detail": self._current_pipeline_state_detail_locked(),
-            "pipeline_source_protocol": "rtsp",
-            "pipeline_source_transport": "tcp",
+            "pipeline_source_protocol": self.source_protocol,
+            "pipeline_source_transport": self.source_transport,
             "pipeline_active_for_s": active_for,
             "pipeline_last_frame_age_s": last_frame_age,
             "pipeline_restart_count": self.pipeline_restart_count,
@@ -265,12 +261,6 @@ class AppState:
 
     def _normalize_pipeline_state_detail_locked(self) -> None:
         self.pipeline_state_detail = self._current_pipeline_state_detail_locked()
-
-    def _uptime_text(self) -> str:
-        uptime_s = int(time.time() - self._start_time)
-        h, rem = divmod(uptime_s, 3600)
-        m, s = divmod(rem, 60)
-        return f"{h}h {m:02d}m {s:02d}s"
 
     def snapshot(self) -> dict:
         # @claude No "uptime" here: the recorder's /status carries it (always-on
