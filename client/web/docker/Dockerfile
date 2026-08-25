@@ -1,8 +1,9 @@
-# @claude Babycat — web dashboard container (dev).
-# @claude Vue 3 + Vite dev server.
-# @claude node_modules is populated under the bind-mounted project root (./node_modules).
+# @claude Babycat — reference web client, development server only (Vue 3 + Vite).
+# @claude The client is outside the product scope (SRS §3.3); this container
+# @claude exists to run it on the LAN without a local Node install. node_modules
+# @claude is populated under the bind-mounted client/web directory.
 
-FROM node:22-slim
+FROM node:22.23.2-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Seoul

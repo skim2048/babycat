@@ -20,17 +20,30 @@ authInternalUsers:
       - action: api
       - action: publish
       - action: read
-      - action: playback
+
+# @claude Only the protocols Babycat uses are served (SDD §8.2): RTSP for the
+# @claude internal consumers, HLS and WebRTC for playback through the router.
+rtmp: no
+srt: no
+moq: no
+playback: no
 
 # @claude RTSP server (internal: analyzer / recorder consume, source is pulled).
+# @claude TCP only — the internal consumers use protocols=tcp and no UDP
+# @claude listener (8000/8001) is needed.
 rtspAddress: :8554
+rtspTransports: [tcp]
+
+# @claude HLS server. Relayed by the router (STREAMER_HLS_URL).
+hlsAddress: :8888
 
 # @claude WebRTC server. Signaling (8889) is relayed by the router; only the
 # @claude media/ICE port (8189/udp) is published to the host.
 webrtcAddress: :8889
 # @claude webrtcAdditionalHosts: extra host IPs/names to advertise as ICE candidates.
 # @claude Containers cannot see the host NIC, so docker-compose injects
-# @claude MTX_WEBRTCADDITIONALHOSTS=${HOST_IP} (from .env).
+# @claude MTX_WEBRTCADDITIONALHOSTS=${HOST_IP} (from .env); MediaMTX reads a
+# @claude comma-separated environment value as a list.
 webrtcLocalUDPAddress: :8189
 
 paths:

@@ -1,17 +1,17 @@
 # @claude Babycat — analyzer container.
-# @claude Base: NanoLLM (VILA VLM inference + PyTorch + CUDA).
-# @claude Added: gstreamer1.0-plugins-bad. NVIDIA plugins (nvv4l2decoder, nvvidconv, ...)
-# @claude are NOT installed here — they are bind-mounted from the host (see compose.yml).
-# @claude Target: Jetson Orin NX 16GB, JetPack 6.2 (L4T R36.5.x).
-# @claude Build:  docker build -f docker/analyzer/Dockerfile -t babycat-analyzer .
-# @claude Run:    see compose.yml
+# @claude Base: NanoLLM (VILA VLM inference + PyTorch + CUDA), pinned to the
+# @claude L4T R36.4 build. NVIDIA plugins (nvv4l2decoder, nvvidconv, ...) are
+# @claude NOT installed here — they are bind-mounted from the host (see
+# @claude docker-compose.yml). Target: Jetson Orin, JetPack 6.2.x (L4T R36.4.x).
+# @claude Build:  docker compose build analyzer
 
 FROM dustynv/nano_llm:r36.4.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Seoul
 
-# @claude Install GStreamer bad plugins (h264parse, rtph264depay, videorate, ...).
+# @claude gstreamer1.0-plugins-bad supplies h264parse; rtph264depay (-good) and
+# @claude videorate (-base) come with the base image.
 # @claude NVIDIA GStreamer plugins (nvv4l2decoder, nvvidconv, ...) are provided via host bind-mounts:
 # @claude   /usr/lib/aarch64-linux-gnu/gstreamer-1.0 -> GST_PLUGIN_PATH (NVIDIA .so files)
 # @claude   /usr/lib/aarch64-linux-gnu/nvidia         -> LD_LIBRARY_PATH (tegra libs)
@@ -19,20 +19,16 @@ ENV TZ=Asia/Seoul
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tzdata \
         gstreamer1.0-plugins-bad \
-        kmod \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
-# @claude Python dependencies for the application.
-RUN pip install --no-cache-dir \
-    pillow \
-    numpy
+# @claude pillow and numpy come with the base image; nothing is added.
 
 # @claude Patch the clip_trt package (from the NanoLLM base image). Its init_trt()
 # @claude builds the engine file path with os.path.expanduser() but calls
 # @claude os.makedirs() on the raw "~/.cache/clip_trt" string, creating a literal
-# @claude "~" directory in the container CWD (/app -> host ./app/~). Expand the
+# @claude "~" directory in the container CWD (/app). Expand the
 # @claude tilde so the cache dir resolves to /root/.cache/clip_trt as intended.
 # @claude The grep guards fail the build if the base image no longer matches.
 RUN set -eu; \

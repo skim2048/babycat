@@ -42,7 +42,7 @@ services:
     ports:
       - "8189:8189/udp"  # WebRTC Media/ICE — 유일한 직접 경로(IF-003)
     volumes:
-      - ./config:/config  # mediamtx.yml(설정)과 cam_profile.json(동반 프로세스 소유)
+      - ./config:/config  # mediamtx.yml(설정), cam_profile.json·cam_applied.json(동반 프로세스 소유)
 
   router:
     build:
@@ -90,19 +90,22 @@ services:
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
       - VLM_MODELS=${VLM_MODELS:?required}
       - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
-      # 추론 시작 간격의 하한(초)입니다. 0이면 하드웨어의 자연 주기를 따릅니다.
+      # 추론 시작 간격의 하한(초)입니다. 0이면 하드웨어의 자연 주기를 따릅니다(FR-058).
       - MIN_INFER_INTERVAL=${MIN_INFER_INTERVAL:-0}
+      - TARGET_FPS=${TARGET_FPS:-1.0}
+      - N_FRAMES=${N_FRAMES:-4}
+      - VLM_LOAD_TIMEOUT=${VLM_LOAD_TIMEOUT:-1800}
+      - VLM_INFER_TIMEOUT=${VLM_INFER_TIMEOUT:-120}
     group_add:
       - video
     devices:
-      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin NX).
+      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin).
       - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2decoder에 필요합니다.
       - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
       - /dev/nvhost-gpu       # GPU 채널 장치입니다.
     volumes:
       - ./data/models:/data/models # NanoLLM 모델 캐시입니다(MLC 컴파일 결과). 이식성을 위해 프로젝트 트리 안에 유지해야 합니다.
       - ./data/state/analyzer:/data/state
-      - ./analyzer:/app
       # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다. 이미지 빌드 시점에는 설치할 수 없습니다.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
@@ -143,7 +146,7 @@ services:
     group_add:
       - video
     devices:
-      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin NX).
+      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin).
       - /dev/v4l2-nvenc  # 하드웨어 비디오 인코더입니다(세그먼트 재인코딩, SDD §2.4 (3)).
       - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2 코덱 경로에 필요합니다.
       - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
@@ -152,7 +155,6 @@ services:
       - ./data/clips:/data/clips
       - ./data/db/recorder:/data/db
       - ./data/state/recorder:/data/state
-      - ./recorder:/app
       # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
