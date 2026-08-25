@@ -12,7 +12,7 @@
 
 - Jetson 실기(NVENC/NVDEC 확인: `ls /dev/v4l2-nvdec /dev/v4l2-nvenc`).
 - RTSP(H.264) 비디오 소스: 실제 ONVIF PTZ 카메라 1대. PTZ 제외 항목은 대체 소스로도 가능하다.
-- `.env`: `HOST_IP`·`JWT_SECRET`·`DEFAULT_USER`·`DEFAULT_PASS`를 설정한다.
+- `.env`: `HOST_IP`·`DEFAULT_USER`·`DEFAULT_PASS`를 설정한다.
 - 클라이언트 2개 이상: 세션 대체 검증용으로 서로 다른 브라우저 또는 기기 2대.
 - Jetson과 다른 네트워크 경로의 외부 노드 1대: WebRTC 외부 접속 검증용.
 - 삭제·자동 정리 시나리오(M-44~M-47)는 데이터가 지워지므로 `data/` 백업 후 수행한다.
@@ -28,7 +28,7 @@
 - 확인: 4개 이미지(`babycat-router`·`babycat-streamer`·`babycat-analyzer`·`babycat-recorder`)가 모두 빌드된다. 내부 포트 8080 통일이 반영된 최신 Dockerfile로 빌드되었는지 확인한다.
 
 **M-02 필수 환경 변수 검증**
-- 절차: `.env`에서 `HOST_IP`·`JWT_SECRET`·`DEFAULT_USER`·`DEFAULT_PASS` 중 하나를 비운 채 `docker compose up`을 시도한다.
+- 절차: `.env`에서 `HOST_IP`·`DEFAULT_USER`·`DEFAULT_PASS` 중 하나를 비운 채 `docker compose up`을 시도한다.
 - 확인: compose가 `required` 오류로 기동을 거부한다. 변수를 복원하면 기동된다.
 
 **M-03 최초 기동과 VLM 준비**

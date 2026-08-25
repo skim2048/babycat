@@ -54,7 +54,6 @@ services:
     environment:
       - TZ=${TZ:-Asia/Seoul}
       - DB_PATH=/data/db/router.db
-      - JWT_SECRET=${JWT_SECRET:?required}
       - JWT_EXPIRY=${JWT_EXPIRY:-600}
       - REFRESH_EXPIRY=${REFRESH_EXPIRY:-2592000}
       - DEFAULT_USER=${DEFAULT_USER:?required}

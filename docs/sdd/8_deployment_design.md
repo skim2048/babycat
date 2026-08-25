@@ -24,13 +24,12 @@
 
 ## 8.3 설정 주입 (Configuration Injection)
 
-주입 값은 `.env` 파일과 Compose의 환경 변수로 전달한다. 비밀키와 자격증명은 형상 관리에서 제외하며(SRS §3.6), 저장소에는 `.env.example` 템플릿만 둔다.
+주입 값은 `.env` 파일과 Compose의 환경 변수로 전달한다. 자격증명은 형상 관리에서 제외하며(SRS §3.6), 저장소에는 `.env.example` 템플릿만 둔다. 토큰 서명 비밀키(`NFR-013`)는 주입 대상이 아니다 — `router`가 최초 기동 시 생성하여 `data/db/router/jwt_secret`에 보관하며, 볼륨을 지우면 함께 사라져 모든 사용자가 재로그인한다. 기기가 여럿일 때 토큰을 공유하려면 CA와 같이 이 파일을 복사한다.
 
 |변수|대상|필수|설명|
 |---|---|---|---|
 |`HOST_IP`|`streamer`·`gateway`|필수|외부 도달 가능 IP. WebRTC ICE 후보로 광고하고, TLS 인증서의 주소(SAN)로도 쓴다. 쉼표로 복수 지정할 수 있다(MediaMTX가 환경 변수의 쉼표 목록을 배열로 읽는다)|
 |`TLS_EXTRA_HOSTS`|`gateway`|선택|TLS 인증서에 더할 주소·호스트명(공백 구분). `HOST_IP`·localhost는 항상 포함된다|
-|`JWT_SECRET`|`router`|필수|토큰 서명 비밀키(`NFR-013`). 기본값이 없으며 미설정 시 `router`가 기동하지 않는다|
 |`JWT_EXPIRY`·`REFRESH_EXPIRY`|`router`|선택|토큰 수명. 기본값은 SRS `FR-001`·`FR-002`의 600초·30일|
 |`DEFAULT_USER`·`DEFAULT_PASS`|`router`|필수|최초 기동 시 1회 생성되는 초기 계정(SRS §3.2)|
 |`VLM_MODELS`|`analyzer`|필수|후보 VLM 모델 목록(SRS §3.2)|

@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import os
+import pathlib
 import secrets
 import sqlite3
 import threading
@@ -25,9 +26,28 @@ from fastapi import Depends, HTTPException, Request
 
 from database import get_db
 
-# @claude No default: a missing secret must fail the boot, not sign tokens with
-# @claude a value published in the repository (NFR-013).
-JWT_SECRET = os.environ["JWT_SECRET"]
+# @claude Generated once with a CSPRNG and kept next to the account database
+# @claude (0600), never taken from the environment or the repository (NFR-013).
+# @claude Like the gateway's CA, sharing it across devices is a file copy.
+_SECRET_PATH = pathlib.Path(os.environ.get("DB_PATH", "/data/db/router.db")).with_name("jwt_secret")
+
+
+def _load_or_create_secret() -> str:
+    try:
+        secret = _SECRET_PATH.read_text().strip()
+        if secret:
+            return secret
+    except FileNotFoundError:
+        pass
+    _SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_hex(32)
+    fd = os.open(_SECRET_PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(secret)
+    return secret
+
+
+JWT_SECRET = _load_or_create_secret()
 JWT_EXPIRY = int(os.environ.get("JWT_EXPIRY", "600"))  # @claude 10m default (FR-001).
 REFRESH_EXPIRY = int(os.environ.get("REFRESH_EXPIRY", str(60 * 60 * 24 * 30)))  # @claude 30d default (FR-002).
 

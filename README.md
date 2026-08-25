@@ -81,7 +81,7 @@ Babycat is distributed as source; images are built on the target device.
 ```bash
 # 1. Configure the environment
 cp .env.example .env
-# Edit .env — required: HOST_IP, JWT_SECRET, DEFAULT_USER, DEFAULT_PASS, VLM_MODELS
+# Edit .env — required: HOST_IP, DEFAULT_USER, DEFAULT_PASS, VLM_MODELS
 
 # 2. Create the data directories as your own user (otherwise the container
 #    runtime creates them owned by root)
