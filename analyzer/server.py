@@ -245,7 +245,17 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
         persist_settings()
         started = False
         if _start_analysis_callback is not None:
-            started = _start_analysis_callback()
+            try:
+                started = _start_analysis_callback()
+            except Exception as e:
+                # @claude A pipeline that cannot be built (e.g. a missing GStreamer
+                # @claude element on the host) must surface as a 500 with the
+                # @claude cause, not as a dropped connection: the router relays
+                # @claude the status and the client shows the detail (SDD §6.5).
+                # @claude The active flag stays set so a later start can retry.
+                log.error("analysis start failed: %s", e)
+                self._send_json({"detail": f"pipeline start failed: {e}"}, status=500)
+                return
         # @claude started=False while the VLM is still loading: the active flag
         # @claude is recorded and main starts the pipeline once loading completes.
         self._send_json({"ok": True, "started": started})

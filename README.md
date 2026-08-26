@@ -60,13 +60,14 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 
 Tested on JetPack 6.2.1 (L4T R36.4.x). JetPack 7.x is not supported — it changes the GPU driver and device-node layout, and the inference stack depends on the JetPack 6 CUDA generation — so flash the board with JetPack 6.x.
 
-**2. The hardware video encoder and decoder.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes are provided by JetPack's multimedia stack and may be missing after a bare OS flash. Confirm both exist:
+**2. The hardware video encoder and decoder, and their GStreamer plugin.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes and the GStreamer elements that drive them (`nvv4l2decoder`, `nvv4l2h264enc`) are provided by separate JetPack packages, and either may be missing after a bare OS flash. Confirm both:
 
 ```bash
 ls /dev/v4l2-nvdec /dev/v4l2-nvenc
+gst-inspect-1.0 nvv4l2decoder | head -1
 ```
 
-If either is absent, install the full JetPack component set on the device with `sudo apt install nvidia-jetpack`.
+If a device node is absent, install the full JetPack component set with `sudo apt install nvidia-jetpack`. If the nodes exist but `gst-inspect-1.0` reports `No such element or plugin`, install `sudo apt install nvidia-l4t-gstreamer` — the containers mount the host's GStreamer plugin directory, so a plugin missing on the host is missing inside them too, and the analyzer and recorder cannot build their pipelines.
 
 **3. Docker Engine with the Compose plugin.** Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions.
 
