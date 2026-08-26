@@ -142,7 +142,7 @@ echo | openssl s_client -connect <HOST_IP>:8000 -CAfile ~/.babycat-ca/root.crt 2
 rm -r provision/BC-2026-00000001
 ```
 
-Device CA 개인키는 보드 안에만 있어야 한다. 보드의 `data/caddy/`를 잃었을 때는 지운 파일을 되살리지 않고 3·5·6단계를 다시 수행한다. 클라이언트는 Root CA 인증서만 신뢰하므로 Device CA가 바뀌어도 클라이언트에서 할 일은 없다.
+Device CA 개인키는 보드 안에만 있어야 한다. 새 보드를 준비할 때 기존 보드의 `data/caddy/`를 복사하지 않는다 — 그 안의 Device CA는 기존 보드의 것이며, 두 보드가 Device CA를 공유하면 보드마다 CA를 나눈 의미가 없어진다. 새 보드에는 3단계에서 새 시리얼로 발급한 것만 넣는다. 보드의 `data/caddy/`를 잃었을 때는 지운 파일을 되살리지 않고 3·5·6단계를 다시 수행한다. 클라이언트는 Root CA 인증서만 신뢰하므로 Device CA가 바뀌어도 클라이언트에서 할 일은 없다.
 
 ### 4.8 개발 보드를 제품 조건으로 전환
 
