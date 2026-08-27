@@ -58,16 +58,15 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 | Jetson module | AGX Orin 64 GB | Orin NX 16 GB |
 | Storage | NVMe SSD 512 GB | NVMe SSD 256 GB |
 
-Tested on JetPack 6.2.1 (L4T R36.4.x). JetPack 7.x is not supported — it changes the GPU driver and device-node layout, and the inference stack depends on the JetPack 6 CUDA generation — so flash the board with JetPack 6.x.
+Supported on JetPack 6.2.1 (L4T R36.4.x) only. JetPack 6.2.2 (L4T R36.5) is not supported — the hardware decoder path does not open inside the containers (confirmed 2026-08-27) — and neither is JetPack 7.x, which changes the GPU driver and device-node layout while the inference stack depends on the JetPack 6 CUDA generation. Check with `head -1 /etc/nv_tegra_release`; it must read `R36 (release), REVISION: 4.x`.
 
-**2. The hardware video encoder and decoder, and their GStreamer plugin.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes and the GStreamer elements that drive them (`nvv4l2decoder`, `nvv4l2h264enc`) are provided by separate JetPack packages, and either may be missing after a bare OS flash. Confirm both:
+**2. The hardware video encoder and decoder, and their GStreamer plugin.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes, the NvSciIPC socket (`/tmp/nvscsock`, from `nvs-service`), and the GStreamer elements that drive the codecs (`nvv4l2decoder`, `nvv4l2h264enc`) come from separate JetPack packages, and any of them may be missing after a bare OS flash. You do not have to check these by hand: every `docker compose up` first runs a `preflight` container that verifies the L4T release, the device nodes, the socket, the tegra libraries, and the GStreamer elements, and refuses to start the analyzer and recorder if anything is missing. Read its verdict and the fix for each failed item with:
 
 ```bash
-ls /dev/v4l2-nvdec /dev/v4l2-nvenc
-gst-inspect-1.0 nvv4l2decoder | head -1
+docker compose logs preflight
 ```
 
-If a device node is absent, install the full JetPack component set with `sudo apt install nvidia-jetpack`. If the nodes exist but `gst-inspect-1.0` reports `No such element or plugin`, install `sudo apt install nvidia-l4t-gstreamer` — the containers mount the host's GStreamer plugin directory, so a plugin missing on the host is missing inside them too, and the analyzer and recorder cannot build their pipelines.
+The usual fixes are `sudo apt install nvidia-jetpack` (device nodes, libraries) and `sudo apt install nvidia-l4t-gstreamer` (GStreamer elements); the containers mount the host's plugin directory, so a plugin missing on the host is missing inside them too.
 
 **3. Docker Engine with the Compose plugin.** Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions.
 

@@ -7,12 +7,13 @@
 |서비스|베이스|하드웨어 접근|볼륨|포트 공개|
 |---|---|---|---|---|
 |`gateway`|caddy 공식 이미지(`caddy:2`) + openssl|없음|`docker/gateway/Caddyfile`(ro)·`data/caddy`(Device CA·서빙 인증서)|8000/tcp (HTTPS)|
+|`preflight`|`recorder` 이미지 재사용, 엔트리포인트만 교체|호스트 `/dev`·`/tmp`·`/etc/nv_tegra_release`·GStreamer 플러그인·tegra 라이브러리(모두 ro)|`docker/preflight/preflight.sh`(ro)|없음|
 |`router`|python 3.11 slim + FastAPI|없음|`data/db/router`|없음|
 |`streamer`|python 3.11 slim + MediaMTX 1.20.1 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8189/udp|
 |`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state/analyzer`|없음|
 |`recorder`|ubuntu 22.04 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db/recorder`·`data/state/recorder`, tmpfs(`/run/babycat-segments`)|없음|
 
-`analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다. 호스트의 `data/` 하위 디렉터리는 기동 전에 운영자 소유로 만들어 둔다(`README.md`) — 없으면 컨테이너 런타임이 root 소유로 만든다. 소스 코드는 볼륨으로 마운트하지 않으며 이미지에만 담는다(§8.2).
+`preflight`는 기동 시 한 번 실행되고 종료하는 사전 검사다(`restart: "no"`). `analyzer`와 `recorder`는 `depends_on`의 `service_completed_successfully` 조건으로 그 성공을 기다리므로, 호스트에 L4T R36.4.x·장치 노드·NvSciIPC 소켓·tegra 라이브러리·NVIDIA GStreamer 요소 중 하나라도 없으면 두 서비스는 기동하지 않고 원인은 `preflight`의 로그에 남는다. 검사 항목은 2026-08-26~27의 실제 장애(`nvidia-l4t-gstreamer` 미설치, JetPack 6.2.2)에서 도출하였다. `analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다. 호스트의 `data/` 하위 디렉터리는 기동 전에 운영자 소유로 만들어 둔다(`README.md`) — 없으면 컨테이너 런타임이 root 소유로 만든다. 소스 코드는 볼륨으로 마운트하지 않으며 이미지에만 담는다(§8.2).
 
 ## 8.2 이미지 빌드 (Image Build)
 

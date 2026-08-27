@@ -71,6 +71,28 @@ services:
       - analyzer
       - recorder
 
+  # 사전 검사 — analyzer·recorder보다 먼저 실행되어 호스트의 하드웨어 코덱 경로
+  # (L4T 릴리스, 장치 노드, NvSciIPC 소켓, NVIDIA GStreamer 플러그인)를 확인한다.
+  # 실패하면 두 서비스는 기동하지 않고, 원인은 `docker compose logs preflight`에 남는다.
+  # recorder 이미지를 그대로 쓰므로 별도 빌드가 없다(docker/preflight/preflight.sh).
+  preflight:
+    image: babycat-recorder
+    build:
+      context: .
+      dockerfile: docker/recorder/Dockerfile
+    restart: "no"
+    entrypoint: ["sh", "/preflight/preflight.sh"]
+    environment:
+      - GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
+      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
+    volumes:
+      - ./docker/preflight/preflight.sh:/preflight/preflight.sh:ro
+      - /etc/nv_tegra_release:/host/nv_tegra_release:ro
+      - /dev:/host/dev:ro
+      - /tmp:/host/tmp:ro
+      - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
+      - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
+
   analyzer:
     build:
       context: .
@@ -111,8 +133,12 @@ services:
       - /tmp/nvscsock:/tmp/nvscsock # NvSciIPC 데몬 소켓입니다. NvMMLite 하드웨어 경로에 필요하며, 없으면 cuvidv4l2로 폴백한 뒤 CUDA_GPU_ID EINVAL 오류로 실패합니다.
     ipc: host      # NvSciIPC가 호스트 IPC 네임스페이스의 POSIX shm/mqueue를 사용합니다.
     depends_on:
-      - streamer
-      - recorder
+      preflight:
+        condition: service_completed_successfully
+      streamer:
+        condition: service_started
+      recorder:
+        condition: service_started
 
   recorder:
     build:
@@ -162,4 +188,7 @@ services:
       - /run/babycat-segments:size=64m,mode=1777
     ipc: host
     depends_on:
-      - streamer
+      preflight:
+        condition: service_completed_successfully
+      streamer:
+        condition: service_started

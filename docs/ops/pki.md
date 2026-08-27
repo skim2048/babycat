@@ -101,6 +101,8 @@ cp .env.example .env
 mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
 ```
 
+보드의 JetPack은 6.2.1(L4T R36.4.x)이어야 한다(`head -1 /etc/nv_tegra_release`). 6.2.2(R36.5)는 동작하지 않으며, 그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
+
 `mkdir`를 미리 하는 이유는 소유자다. Docker가 없는 디렉터리를 만들면 root 소유가 되어 이후 `data/` 아래의 파일 작업(5단계의 복사, 클립 정리 등)에 `sudo`가 필요해진다.
 
 ### 4.5 Device CA 파일 복사
@@ -124,6 +126,7 @@ cp -r provision/BC-2026-00000001/caddy data/caddy/
 ```bash
 docker compose build
 docker compose up -d
+docker compose logs preflight   # "모든 검사 통과"가 아니면 표시된 조치 후 up을 다시 실행한다
 docker compose logs gateway
 ```
 
