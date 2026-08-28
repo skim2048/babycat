@@ -101,20 +101,20 @@ cp .env.example .env
 mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
 ```
 
-새로 플래시한 보드에서는 그 전에 Docker 권한을 갖추어야 한다. 사용자가 `docker` 그룹에 없으면 `docker compose`가 `permission denied while trying to connect to the docker API`로 실패한다.
+새로 플래시한 보드는 위 명령 전에 다음 순서로 준비한다. 순서가 중요하다 — `nvidia-jetpack`이 끌어오는 `nvidia-container`가 Docker의 `docker-ce`·`containerd.io`와 충돌하여 제거하므로, Docker를 먼저 설치하면 JetPack 설치 후 `docker: command not found`가 된다(2026-08-27, 206에서 확인).
 
-```bash
-sudo usermod -aG docker $USER
-newgrp docker        # 또는 로그아웃 후 재로그인
-docker ps            # 오류 없이 빈 목록이 나오면 정상
-```
-
-보드의 JetPack은 6.2.1(L4T R36.4.x)이어야 한다(`head -1 /etc/nv_tegra_release`). 6.2.2(R36.5)는 동작하지 않는다. 플래시 기본 구성에는 NVIDIA GStreamer 플러그인이 없으므로 JetPack 구성 요소 전체를 설치한다. `apt update`를 먼저 하지 않으면 NVIDIA 저장소 목록이 없어 패키지를 찾지 못한다.
-
-```bash
-sudo apt update && sudo apt install nvidia-jetpack
-sudo reboot
-```
+1. JetPack 확인. 6.2.1(L4T R36.4.x)이어야 하며(`head -1 /etc/nv_tegra_release`), 6.2.2(R36.5)는 동작하지 않는다.
+2. JetPack 구성 요소 전체 설치. 플래시 기본 구성에는 NVIDIA GStreamer 플러그인이 없다. `apt update`를 먼저 하지 않으면 NVIDIA 저장소 목록이 없어 패키지를 찾지 못한다.
+   ```bash
+   sudo apt update && sudo apt install nvidia-jetpack
+   sudo reboot
+   ```
+3. Docker Engine 설치(README §Requirements 3의 공식 안내) 후 `docker` 그룹 추가. 그룹에 없으면 `docker compose`가 `permission denied while trying to connect to the docker API`로 실패한다.
+   ```bash
+   sudo usermod -aG docker $USER
+   newgrp docker        # 또는 로그아웃 후 재로그인
+   docker ps            # 오류 없이 빈 목록이 나오면 정상
+   ```
 
 그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
 

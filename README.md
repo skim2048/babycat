@@ -68,7 +68,7 @@ docker compose logs preflight
 
 The fix is the same for every item: `sudo apt update && sudo apt install nvidia-jetpack`, then reboot — a bare flash ships without the NVIDIA GStreamer plugins, and the containers mount the host's plugin directory, so a plugin missing on the host is missing inside them too. Run `apt update` first; on a freshly flashed board the NVIDIA repository index has not been fetched yet and `apt install` reports the package as not found.
 
-**3. Docker Engine with the Compose plugin.** Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions.
+**3. Docker Engine with the Compose plugin.** Install it **after** `nvidia-jetpack`, not before: `nvidia-jetpack` pulls in `nvidia-container`, which conflicts with Docker's own `docker-ce`/`containerd.io` packages and removes them (observed 2026-08-27 — `docker: command not found` after the JetPack install). Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions — and finish with the post-installation step `sudo usermod -aG docker $USER`, otherwise `docker compose` fails with `permission denied while trying to connect to the docker API`.
 
 **4. The NVIDIA Container Toolkit.** Required to expose the GPU and hardware codecs to the containers. As with the multimedia stack, it may be missing after a bare flash; it ships with `nvidia-jetpack`, or install it on its own per the [NVIDIA Container Toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
