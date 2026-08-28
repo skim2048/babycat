@@ -32,8 +32,8 @@ watch(
   { immediate: true },
 )
 
-// @claude 저장은 시트를 닫고, 취소·닫기·배경 클릭은 마지막 저장
-// @claude 상태로 되돌린 뒤 닫는다.
+// @claude Save closes the sheet; cancel·close·backdrop click revert to the last saved
+// @claude state and then close.
 async function apply() {
   if (!prompt.value.trim()) return
   errorNote.value = ''

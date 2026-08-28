@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 
 # @claude Column names are kept from the prototype so the external contract
 # @claude (EventOut: id/trigger/clip_name/created_at) survives the split.
-# @claude `inferences` is the 2층 history: every inference, matched or not,
+# @claude `inferences` is the layer-2 history: every inference, matched or not,
 # @claude with the raw text preserved so labels can be re-derived after a
 # @claude vocabulary change. Its lifetime is independent of clips (FR-033
 # @claude deletion never touches it).
@@ -97,7 +97,7 @@ _last_prune_at = 0.0
 
 def insert_inference(created_at: str, vlm_text: str, labels_json: str,
                      preset: str, model: str, elapsed_ms: int | None) -> None:
-    """Append one inference row (2층 이력); called from the notify handler."""
+    """Append one inference row (layer-2 history); called from the notify handler."""
     conn = _connect()
     try:
         conn.execute(

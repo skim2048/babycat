@@ -37,7 +37,7 @@ class AppState:
         self._sse_queues: list[queue.Queue] = []
         self.inference_prompt: str = ""
         self.trigger_keywords: list[str] = []
-        # @claude 2층: client-injected label vocabulary ({label: [synonyms]})
+        # @claude layer 2: client-injected label vocabulary ({label: [synonyms]})
         # @claude and time-ranged presets. Both are opaque data here.
         self.label_groups: dict = {}
         self.presets: list = []

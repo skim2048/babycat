@@ -1,10 +1,10 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    Babycat — Global Stylesheet
-   Web 팔레트 — 다크 #1e1e20 / 액센트 #42b883 계열
+   Web palette — dark #1e1e20 / accent #42b883 family
    Dark / Light theme via data-theme attribute + CSS custom properties
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Fonts — 폐쇄망 운용을 위해 public/fonts에 내장 ── */
+/* ── Fonts — bundled in public/fonts for closed-network operation ── */
 @font-face {
   font-family: 'NanumSquare';
   font-weight: 300;
@@ -48,7 +48,7 @@
 :root {
   color-scheme: dark;
 
-  /* ── 원형 토큰 ([data-t]) ── */
+  /* ── Primitive tokens ([data-t]) ── */
   --color-bg:      #1e1e20;
   --color-surface: #27272b;
   --color-text:    #dfdfd6;
@@ -56,7 +56,7 @@
   --color-accent-2: #5cc699;
   --color-divider: rgba(255, 255, 245, 0.09);
 
-  /* Tonal ramps — 300~900에 100·200을 같은 간격으로 연장 */
+  /* Tonal ramps — 300~900 extended with 100·200 at the same interval */
   --color-neutral-100: #f1f1f4;
   --color-neutral-200: #dfdfe3;
   --color-neutral-300: #c6c6cb;
@@ -88,12 +88,12 @@
   --radius-sm: 4px;
   --radius-md: 8px;
 
-  /* Elevation — 팝오버·모달 그림자 */
+  /* Elevation — popover·modal shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 16px 36px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
 
-  /* ── 기존 변수 → 개정판 대응 ── */
+  /* ── Legacy variables → revised-edition mapping ── */
 
   /* Background */
   --bg-page:              var(--color-bg);
@@ -121,7 +121,7 @@
   --accent-bg:     var(--color-accent-900);
   --accent-shadow: color-mix(in srgb, var(--color-accent) 25%, transparent);
 
-  /* Status — 고정색: 정상 #5fbf8a · 오류 #e05b6a · 경고 #d9a44a */
+  /* Status — fixed colors: ok #5fbf8a · error #e05b6a · warning #d9a44a */
   --success:        #5fbf8a;
   --success-bg:     #12281c;
   --success-border: #1e4630;
@@ -162,7 +162,7 @@
   --play-icon-bg:    rgba(255, 255, 255, 0.88);
   --play-icon-arrow: #1a1c1b;
 
-  /* Typography — 나눔스퀘어는 300·400·700·800만 보유. 500·600 금지 */
+  /* Typography — NanumSquare ships only 300·400·700·800. 500·600 are forbidden */
   --font-heading: 'NanumSquare', 'Inter', system-ui, sans-serif;
   --font-heading-weight: 700;
   --font-body: 'NanumSquare', 'Inter', system-ui, sans-serif;
@@ -171,11 +171,11 @@
   --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 }
 
-/* ── Light Theme — [data-t="light"] 값 ── */
+/* ── Light Theme — [data-t="light"] values ── */
 [data-theme="light"] {
   color-scheme: light;
 
-  /* 기본 토큰의 라이트 재정의 */
+  /* Light overrides of the base tokens */
   --color-bg:      #f6f6f7;
   --color-surface: #ffffff;
   --color-text:    #3c3c43;
@@ -183,7 +183,7 @@
   --color-accent-2: #2c7a58;
   --color-divider: rgba(60, 60, 67, 0.12);
 
-  /* 램프 재대응 — 다크 기준으로 쓰인 짙은 단계가 라이트에서 옅은 값을 갖도록 */
+  /* Ramp remapping — so the dark steps used against the dark baseline take light values in light mode */
   --color-neutral-900: #ececee;
   --color-neutral-800: #d9d9de;
   --color-neutral-700: #bfbfc7;
@@ -200,7 +200,7 @@
   --color-accent-200: #1f5c41;
   --color-accent-100: #174a33;
 
-  /* Elevation — 라이트에서는 부드러운 그림자 */
+  /* Elevation — softer shadows in light mode */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.16);
@@ -255,7 +255,7 @@ body {
   background: var(--bg-page);
   color: var(--text-1);
   line-height: 1.5;
-  /* 지원 최소 크기 — 이보다 작은 창에서는 축소 대신 스크롤이 생긴다 */
+  /* Minimum supported size — below this the window scrolls instead of shrinking */
   min-width: 640px;
   min-height: 455px;
   -webkit-font-smoothing: antialiased;
@@ -269,8 +269,8 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-700); }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   공용 컴포넌트 층 — 채움 버튼·채움 입력란.
-   토큰만 쓰며 개별 화면에서 재정의하지 않는다.
+   Shared component layer — filled buttons·filled inputs.
+   Uses tokens only and is never redefined in individual screens.
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* — buttons — */
@@ -292,7 +292,7 @@ body {
 }
 .btn-primary:hover { background: color-mix(in srgb, var(--color-accent) 42%, transparent); }
 .btn-primary:active { background: color-mix(in srgb, var(--color-accent) 48%, transparent); }
-/* — modal forms (테두리 없는 채움) — */
+/* — modal forms (borderless fill) — */
 .form-col { display: flex; flex-direction: column; gap: 12px; }
 .form-row { display: flex; gap: 12px; }
 .form-row > .form-field { flex: 1; }
@@ -316,7 +316,7 @@ body {
 .form-field textarea:focus-visible {
   outline: 2px solid var(--color-accent); outline-offset: 0;
 }
-/* 페이지 배경 위(로그인 등)에서는 한 단계 밝은 채움을 쓴다 */
+/* On the page background (login etc.) a one-step lighter fill is used */
 .form-field.on-bg input,
 .form-field.on-bg textarea { background: var(--color-neutral-900); }
 .form-note {
@@ -343,7 +343,7 @@ body {
 .form-btn.danger:hover:not(:disabled) { background: color-mix(in srgb, #e07a86 18%, transparent); }
 .form-btn:disabled { opacity: 0.45; cursor: default; }
 
-/* — compact chip buttons (34px, 필터·패널 조작 공용) — */
+/* — compact chip buttons (34px, shared by filter·panel controls) — */
 .chip-btn {
   flex: none; height: 34px; padding: 0 12px; border-radius: 7px; border: none;
   background: var(--color-neutral-900); color: var(--color-text);

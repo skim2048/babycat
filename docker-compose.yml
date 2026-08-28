@@ -7,9 +7,9 @@ name: babycat
 
 services:
 
-  # TLS 종단 — 단일 진입점 8000을 HTTPS로 제공한다. 서빙 인증서는 기동 시
-  # HOST_IP를 SAN으로 하여 스스로 발급하고(사설 CA도 없으면 생성), CA
-  # 루트(data/caddy/caddy/pki/authorities/local/root.crt)만 클라이언트에 1회 설치한다.
+  # TLS termination — serves the single entry point 8000 over HTTPS. At start the server
+  # certificate is issued by itself with HOST_IP as the SAN (the private CA is created too if absent);
+  # only the CA root (data/caddy/caddy/pki/authorities/local/root.crt) is installed once on clients.
   gateway:
     build:
       context: .
@@ -17,11 +17,11 @@ services:
     image: babycat-gateway
     restart: unless-stopped
     ports:
-      - "8000:8000"  # 단일 외부 진입점(IF-001) — router로 중계
+      - "8000:8000"  # single external entry point (IF-001) — relayed to router
     environment:
       - TZ=${TZ:-Asia/Seoul}
-      - HOST_IP=${HOST_IP:?required}  # 인증서 SAN(접속 주소)의 출처
-      - TLS_EXTRA_HOSTS=${TLS_EXTRA_HOSTS:-}  # SAN에 더할 주소·호스트명
+      - HOST_IP=${HOST_IP:?required}  # source of the certificate SAN (connection address)
+      - TLS_EXTRA_HOSTS=${TLS_EXTRA_HOSTS:-}  # additional addresses/hostnames to add to the SAN
     volumes:
       - ./docker/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
@@ -36,13 +36,13 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ:-Asia/Seoul}
-      # 브라우저 클라이언트가 MediaMTX의 WebRTC 스트림에 접속할 수 있도록
-      # .env의 HOST_IP를 MediaMTX가 광고하는 ICE 후보에 추가한다.
+      # Add HOST_IP from .env to the ICE candidates MediaMTX advertises so that
+      # browser clients can reach the MediaMTX WebRTC stream.
       - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:?required}
     ports:
-      - "8189:8189/udp"  # WebRTC Media/ICE — 유일한 직접 경로(IF-003)
+      - "8189:8189/udp"  # WebRTC Media/ICE — the only direct path (IF-003)
     volumes:
-      - ./config:/config  # mediamtx.yml(설정), cam_profile.json·cam_applied.json(동반 프로세스 소유)
+      - ./config:/config  # mediamtx.yml (config), cam_profile.json and cam_applied.json (owned by the companion process)
 
   router:
     build:
@@ -50,7 +50,7 @@ services:
       dockerfile: docker/router/Dockerfile
     image: babycat-router
     restart: unless-stopped
-    # 외부 포트 없음 — 진입은 gateway(TLS 종단)를 거친다
+    # no external port — entry goes through gateway (TLS termination)
     environment:
       - TZ=${TZ:-Asia/Seoul}
       - DB_PATH=/data/db/router.db
@@ -58,7 +58,7 @@ services:
       - REFRESH_EXPIRY=${REFRESH_EXPIRY:-2592000}
       - DEFAULT_USER=${DEFAULT_USER:?required}
       - DEFAULT_PASS=${DEFAULT_PASS:?required}
-      - CORS_EXTRA_ORIGINS=${CORS_EXTRA_ORIGINS:-}  # 사설망 규칙 밖에서 추가 허용할 origin 목록
+      - CORS_EXTRA_ORIGINS=${CORS_EXTRA_ORIGINS:-}  # list of origins to additionally allow outside the private-network rule
       - STREAMER_URL=http://streamer:8080
       - ANALYZER_URL=http://analyzer:8080
       - RECORDER_URL=http://recorder:8080
@@ -71,10 +71,10 @@ services:
       - analyzer
       - recorder
 
-  # 사전 검사 — analyzer·recorder보다 먼저 실행되어 호스트의 하드웨어 코덱 경로
-  # (L4T 릴리스, 장치 노드, NvSciIPC 소켓, NVIDIA GStreamer 플러그인)를 확인한다.
-  # 실패하면 두 서비스는 기동하지 않고, 원인은 `docker compose logs preflight`에 남는다.
-  # recorder 이미지를 그대로 쓰므로 별도 빌드가 없다(docker/preflight/preflight.sh).
+  # Preflight check — runs before analyzer and recorder and verifies the host's hardware codec path
+  # (L4T release, device nodes, NvSciIPC socket, NVIDIA GStreamer plugin).
+  # On failure the two services do not start, and the cause is left in `docker compose logs preflight`.
+  # It reuses the recorder image, so there is no separate build (docker/preflight/preflight.sh).
   preflight:
     image: babycat-recorder
     build:
@@ -111,7 +111,7 @@ services:
       - LD_LIBRARY_PATH=/usr/local/lib/python3.10/dist-packages/tvm:/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu
       - VLM_MODELS=${VLM_MODELS:?required}
       - MAX_NEW_TOKENS=${MAX_NEW_TOKENS:-32}
-      # 추론 시작 간격의 하한(초)입니다. 0이면 하드웨어의 자연 주기를 따릅니다(FR-058).
+      # Lower bound (seconds) on the interval between inference starts. 0 follows the hardware's natural cadence (FR-058).
       - MIN_INFER_INTERVAL=${MIN_INFER_INTERVAL:-0}
       - TARGET_FPS=${TARGET_FPS:-1.0}
       - N_FRAMES=${N_FRAMES:-4}
@@ -120,18 +120,18 @@ services:
     group_add:
       - video
     devices:
-      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin).
-      - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2decoder에 필요합니다.
-      - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
-      - /dev/nvhost-gpu       # GPU 채널 장치입니다.
+      - /dev/v4l2-nvdec  # hardware video decoder (Orin).
+      - /dev/nvmap            # GPU memory manager; required by nvv4l2decoder.
+      - /dev/nvhost-ctrl-gpu  # GPU control device.
+      - /dev/nvhost-gpu       # GPU channel device.
     volumes:
-      - ./data/models:/data/models # NanoLLM 모델 캐시입니다(MLC 컴파일 결과). 이식성을 위해 프로젝트 트리 안에 유지해야 합니다.
+      - ./data/models:/data/models # NanoLLM model cache (MLC compilation output). Must stay inside the project tree for portability.
       - ./data/state/analyzer:/data/state
-      # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다. 이미지 빌드 시점에는 설치할 수 없습니다.
+      # Mount the host's NVIDIA GStreamer plugins and tegra libraries. They cannot be installed at image build time.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
-      - /tmp/nvscsock:/tmp/nvscsock # NvSciIPC 데몬 소켓입니다. NvMMLite 하드웨어 경로에 필요하며, 없으면 cuvidv4l2로 폴백한 뒤 CUDA_GPU_ID EINVAL 오류로 실패합니다.
-    ipc: host      # NvSciIPC가 호스트 IPC 네임스페이스의 POSIX shm/mqueue를 사용합니다.
+      - /tmp/nvscsock:/tmp/nvscsock # NvSciIPC daemon socket. Required by the NvMMLite hardware path; without it, the pipeline falls back to cuvidv4l2 and then fails with a CUDA_GPU_ID EINVAL error.
+    ipc: host      # NvSciIPC uses POSIX shm/mqueue in the host IPC namespace.
     depends_on:
       preflight:
         condition: service_completed_successfully
@@ -157,8 +157,8 @@ services:
       - TRIGGER_COOLDOWN=${TRIGGER_COOLDOWN:-30}
       - TRIGGER_CLIP_DUR=${TRIGGER_CLIP_DUR:-5}
       - TRIGGER_PRE_EVENT_SEC=${TRIGGER_PRE_EVENT_SEC:-2}
-      - TRIGGER_POST_EVENT_SEC=${TRIGGER_POST_EVENT_SEC:-${TRIGGER_CLIP_DUR:-5}}  # 미설정 시 TRIGGER_CLIP_DUR을 따릅니다.
-      # 추론 이력의 보존 기간(일)입니다. 초과분은 매시 정리합니다.
+      - TRIGGER_POST_EVENT_SEC=${TRIGGER_POST_EVENT_SEC:-${TRIGGER_CLIP_DUR:-5}}  # follows TRIGGER_CLIP_DUR when unset.
+      # Retention period (days) of the inference history. Rows beyond it are purged hourly.
       - INFERENCE_RETENTION_DAYS=${INFERENCE_RETENTION_DAYS:-90}
       - CLIP_MIN_FREE_MB=${CLIP_MIN_FREE_MB:-512}
       - CLIP_TARGET_FREE_MB=${CLIP_TARGET_FREE_MB:-1024}
@@ -171,16 +171,16 @@ services:
     group_add:
       - video
     devices:
-      - /dev/v4l2-nvdec  # 하드웨어 비디오 디코더입니다(Orin).
-      - /dev/v4l2-nvenc  # 하드웨어 비디오 인코더입니다(세그먼트 재인코딩, SDD §2.4 (3)).
-      - /dev/nvmap            # GPU 메모리 관리자이며, nvv4l2 코덱 경로에 필요합니다.
-      - /dev/nvhost-ctrl-gpu  # GPU 제어 장치입니다.
-      - /dev/nvhost-gpu       # GPU 채널 장치입니다.
+      - /dev/v4l2-nvdec  # hardware video decoder (Orin).
+      - /dev/v4l2-nvenc  # hardware video encoder (segment re-encoding, SDD §2.4 (3)).
+      - /dev/nvmap            # GPU memory manager; required by the nvv4l2 codec path.
+      - /dev/nvhost-ctrl-gpu  # GPU control device.
+      - /dev/nvhost-gpu       # GPU channel device.
     volumes:
       - ./data/clips:/data/clips
       - ./data/db/recorder:/data/db
       - ./data/state/recorder:/data/state
-      # 호스트의 NVIDIA GStreamer 플러그인과 tegra 라이브러리를 마운트합니다.
+      # Mount the host's NVIDIA GStreamer plugins and tegra libraries.
       - /usr/lib/aarch64-linux-gnu/gstreamer-1.0:/usr/lib/aarch64-linux-gnu/gstreamer-1.0:ro
       - /usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/nvidia:ro
       - /tmp/nvscsock:/tmp/nvscsock

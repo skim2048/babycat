@@ -1,9 +1,9 @@
-# Babycat gateway — TLS 종단 (단일 진입점 8000의 HTTPS 전환).
-# 모든 접속 호스트를 SAN에 담은 단일 인증서(data/caddy/site/)를 서빙한다 —
-# IP로 접속하는 브라우저는 SNI를 보내지 않아 이름별 인증서 선택이 동작하지
-# 않기 때문이다. 발급·갱신과 접속 호스트 추가는 issue-cert.sh가 수행한다.
-# cert.pem은 리프와 서명 CA(data/caddy/caddy/pki/authorities/local/root.crt)의
-# 체인이며, 클라이언트는 제조사 Root CA(제품) 또는 그 자체 CA(개발)를 신뢰한다
+# Babycat gateway — TLS termination (HTTPS for the single entry point 8000).
+# Serves a single certificate (data/caddy/site/) carrying every connection host in the SAN —
+# because browsers connecting by IP send no SNI, so per-name certificate selection does
+# not work. Issuance, renewal and adding connection hosts are performed by issue-cert.sh.
+# cert.pem is the chain of the leaf and the signing CA (data/caddy/caddy/pki/authorities/local/root.crt),
+# and clients trust the manufacturer Root CA (product) or that self-made CA (development)
 # — docs/ops/pki.md.
 {
 	auto_https off
@@ -11,7 +11,7 @@
 
 https://:8000 {
 	tls /data/site/cert.pem /data/site/key.pem
-	# SSE(/state)·MJPEG(/stream) 등 스트리밍 응답을 버퍼링 없이 통과시킨다
+	# Pass streaming responses such as SSE (/state) and MJPEG (/stream) through without buffering
 	reverse_proxy router:8000 {
 		flush_interval -1
 	}

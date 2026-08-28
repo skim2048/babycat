@@ -73,13 +73,13 @@ const protocolOptions = [
   { key: 'webrtc', label: 'WebRTC' },
 ]
 
-// ── Drawer (웹 레일과 같은 구성: 탭 상단, 기능·설정·하단 항목) ──
+// ── Drawer (same layout as the web rail: tabs on top, feature·settings·bottom items) ──
 const drawerTabs = computed(() => [
   { key: 'video', icon: 'ph ph-monitor-play', label: t('dashboard.tab.video') },
   { key: 'clips', icon: 'ph ph-film-strip', label: t('dashboard.tab.clips') },
 ])
-// @claude 기능 그룹: 바텀 시트를 여는 항목들. PTZ는 포트 미입력 시 숨긴다
-// @claude (낙관적 활성 정책의 사전 비활성 조건과 동일).
+// @claude Feature group: items that open a bottom sheet. PTZ is hidden when no port is entered
+// @claude (same as the pre-disable condition of the optimistic-enable policy).
 const drawerFeatures = computed(() => [
   { key: 'camera', icon: 'ph ph-video-camera', label: t('dashboard.menu.camera'), onClick: () => openSheet('camera') },
   { key: 'prompt', icon: 'ph ph-chat-text', label: t('dashboard.panel.prompt'), onClick: () => openSheet('prompt') },
@@ -122,7 +122,7 @@ onMounted(loadCamera)
         <span v-if="showSessionRemaining" class="session-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <!-- Pressing any part of the pill switches to the opposite protocol -->
         <button
           class="proto-pill"
           role="switch"
@@ -163,7 +163,7 @@ onMounted(loadCamera)
     <Transition name="drawer">
       <div v-if="drawerOpen" class="drawer-backdrop" @click.self="drawerOpen = false">
         <nav class="drawer">
-          <!-- 상단바와 같은 높이·구성의 머리: 햄버거는 닫기 동작 -->
+          <!-- Header with the same height·layout as the top bar: the hamburger acts as close -->
           <div class="drawer-head">
             <button class="drawer-toggle" :title="t('dashboard.sidebarHide')" @click="drawerOpen = false">
               <i class="ph ph-list"></i>
@@ -371,7 +371,7 @@ onMounted(loadCamera)
   gap: 4px;
   overflow-y: auto;
 }
-/* 상단바와 같은 높이·구성 — 열림/닫힘 사이에 이질감이 없도록 정렬을 맞춘다 */
+/* Same height·layout as the top bar — align so there is no discontinuity between open/closed */
 .drawer-head {
   height: 52px;
   flex: none;
@@ -424,7 +424,7 @@ onMounted(loadCamera)
   flex: none;
 }
 
-/* 서랍 전환: 배경은 흐려지고 패널은 좌측에서 밀려 나온다 */
+/* Drawer transition: the backdrop dims and the panel slides in from the left */
 .drawer-enter-active,
 .drawer-leave-active { transition: opacity 0.2s; }
 .drawer-enter-active .drawer,

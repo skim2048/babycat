@@ -12,9 +12,9 @@ function normalizeTheme(value) {
   return SUPPORTED_THEMES.has(value) ? value : DEFAULT_THEME
 }
 
-// @claude 저장된 명시적 선택이 있으면 그것을, 없으면 브라우저/기기 환경
-// @claude (prefers-color-scheme)을 따른다. 환경값은 저장하지 않으므로 사용자가
-// @claude 전환하기 전까지는 매 실행마다 환경을 다시 따른다.
+// @claude If an explicit saved choice exists use it; otherwise follow the browser/device
+// @claude environment (prefers-color-scheme). The environment value is not saved, so until
+// @claude the user switches, the environment is followed again on every run.
 function initialTheme() {
   if (!hasWindow()) return DEFAULT_THEME
   const stored = window.localStorage.getItem(THEME_KEY)
@@ -33,8 +33,8 @@ function applyTheme(value) {
 
 const theme = ref(initialTheme())
 
-// @claude main.js가 이 모듈을 가져오는 시점(앱 시작)에 즉시 적용된다 —
-// @claude 로그인 화면과 로그인 후 화면이 같은 테마로 시작해야 한다.
+// @claude Applied immediately when main.js imports this module (app start) —
+// @claude the login screen and the post-login screen must start with the same theme.
 watch(theme, (value) => {
   applyTheme(value)
 }, { immediate: true })

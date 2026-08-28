@@ -35,14 +35,14 @@ const { analysisActive, busy: analysisBusy, toggle: toggleAnalysis } = useAnalys
 const activeTab = ref('video')
 const railOpen = ref(true)
 const modal = ref(null) // null | 'camera' | 'password'
-const panel = ref('log') // 'prompt' | 'log' — 우측 패널 탭
+const panel = ref('log') // 'prompt' | 'log' — right panel tab
 
-// @claude 사이드바는 창 폭에 따라 자동으로 단계를 낮춘다:
-// @claude >1100px 펼침(사용자 선택 존중) → ≤1100px 접음(아이콘) → ≤720px 감춤.
-// @claude 좁은 폭에서 토글을 누르면 본문 위에 오버레이로 펼친다.
+// @claude The sidebar steps down automatically by window width:
+// @claude >1100px expanded (user choice respected) → ≤1100px collapsed (icons) → ≤720px hidden.
+// @claude Pressing the toggle at narrow widths expands it as an overlay over the body.
 const windowWidth = ref(window.innerWidth)
 const railOverlay = ref(false)
-// @claude 닫힘 전환 동안 absolute를 유지해 폭 축소가 본문을 밀지 않게 한다.
+// @claude Keep absolute during the close transition so the width shrink does not push the body.
 const railClosing = ref(false)
 let railCloseTimer = null
 function onWindowResize() {
@@ -77,7 +77,7 @@ function toggleRail() {
     railOverlay.value = true
   }
 }
-// @claude 오버레이 상태에서 항목을 고르면 오버레이를 닫는다.
+// @claude Picking an item while in overlay state closes the overlay.
 function onRailClick() {
   if (railState.value === 'overlay') closeOverlay()
 }
@@ -152,8 +152,8 @@ const railBottom = computed(() => [
 const { vlmDot, vlmLabel } = useVlmStatus()
 
 const modelMenu = ref(false)
-// @claude 모델 id의 마지막 경로 조각만 표기한다
-// @claude (예: Efficient-Large-Model/VILA1.5-3b → VILA1.5-3b).
+// @claude Show only the last path segment of the model id
+// @claude (e.g. Efficient-Large-Model/VILA1.5-3b → VILA1.5-3b).
 function shortModelName(id) {
   if (!id) return ''
   const parts = id.split('/')
@@ -184,7 +184,7 @@ async function switchModel(name) {
   }
 }
 
-// @claude 거부되면(스트리밍 꺼짐) 사유 안내가 있는 프롬프트 탭을 앞으로 가져온다.
+// @claude If refused (streaming off), bring the prompt tab with the reason notice to the front.
 async function onInferClick() {
   const ok = await toggleAnalysis()
   if (!ok) panel.value = 'prompt'
@@ -201,8 +201,8 @@ function localDate(offsetDays = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
-// @claude 어제는 문구로, 그보다 이전은 YY-MM-DD로 표기한다.
+// @claude Insert a divider only where the date changes, omitting today;
+// @claude yesterday is shown as a phrase, anything earlier as YY-MM-DD.
 const visibleLog = computed(() => {
   const q = logQuery.value.trim().toLowerCase()
   const today = localDate()
@@ -281,7 +281,7 @@ onBeforeUnmount(() => {
         <span v-if="showSessionRemaining" class="session-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <!-- Pressing any part of the pill switches to the opposite protocol -->
         <button
           class="proto-pill"
           role="switch"
@@ -302,8 +302,8 @@ onBeforeUnmount(() => {
     <div class="app-body">
 
       <!-- ── Rail ── -->
-      <!-- 오버레이로 전환되면 레일이 문서 흐름에서 빠지므로, 접힘 폭만큼
-           자리를 지켜 본문이 좌우로 튀지 않게 한다 (감춤 구간은 원래 0폭) -->
+      <!-- When switched to overlay the rail leaves the document flow, so hold the collapsed
+           width to keep the body from jumping sideways (the hidden range was 0 width anyway) -->
       <div
         v-if="(railState === 'overlay' || railState === 'closing') && windowWidth > 720"
         class="rail-ghost"
@@ -377,7 +377,7 @@ onBeforeUnmount(() => {
 
             <aside class="side-col">
 
-              <!-- 패널 탭 -->
+              <!-- Panel tabs -->
               <div class="panel-tabs" role="tablist">
                 <button
                   v-for="p in [
@@ -393,7 +393,7 @@ onBeforeUnmount(() => {
                 ><i :class="p.icon"></i>{{ p.label }}</button>
               </div>
 
-              <!-- 세션 로그 패널 -->
+              <!-- Session log panel -->
               <div v-if="panel === 'log'" class="log-panel">
                 <div class="log-head">
                   <span class="vlm-status">
@@ -486,12 +486,12 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <!-- 추론 프롬프트 패널 -->
+              <!-- Inference prompt panel -->
               <div v-else class="prompt-holder">
                 <PromptPanel />
               </div>
 
-              <!-- 시스템 정보 -->
+              <!-- System info -->
               <StatCards class="side-res" />
             </aside>
           </div>
@@ -962,7 +962,7 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .log-clear:hover { background: var(--color-neutral-800); }
-/* 패널이 neutral-900이므로 칩 버튼은 페이지 배경 채움을 쓴다 */
+/* The panel is neutral-900, so chip buttons use the page-background fill */
 .log-controls .chip-btn { background: var(--color-bg); }
 .log-controls .chip-btn.on { background: color-mix(in srgb, var(--color-accent) 16%, transparent); }
 .log-controls .chip-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
@@ -1104,8 +1104,8 @@ onBeforeUnmount(() => {
 
 /* — narrow widths: the side column drops below the video — */
 @media (max-width: 1100px) {
-  /* 쌓임 배치에서는 높이를 배분하지 않고 자연 높이 + 페이지 스크롤로 흐르게 한다.
-     높이를 고정하면 좌측 열의 내용이 넘쳐 아래 영역과 겹친다. */
+  /* In the stacked layout, do not distribute heights; let content flow at natural height + page scroll.
+     Fixing the height makes the left column overflow and overlap the area below. */
   .video-tab { flex: none; flex-direction: column; min-height: auto; }
   .side-col { width: auto; min-height: auto; }
   .log-panel, .prompt-holder { max-height: 340px; }

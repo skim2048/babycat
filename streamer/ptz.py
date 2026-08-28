@@ -283,9 +283,9 @@ def poll_once() -> None:
 PATROL_MIN_INTERVAL_S = 5
 PATROL_DEFAULT_INTERVAL_S = 30
 
-# @claude slot: 순찰이 마지막으로 이동시킨 프리셋 슬롯. 순찰을 꺼도 값을
-# @claude 유지하여, 클라이언트가 카메라가 멈춰 선 위치의 프리셋을 계속
-# @claude 가리킬 수 있게 한다. 프리셋 무효화·재기동 시에만 None이 된다.
+# @claude slot: the preset slot the patrol last moved to. The value is kept even
+# @claude after the patrol is turned off, so the client can keep pointing at the
+# @claude preset where the camera stopped. It becomes None only on preset invalidation or restart.
 _patrol: dict = {"enabled": False, "interval_s": PATROL_DEFAULT_INTERVAL_S, "slot": None}
 
 
@@ -300,8 +300,8 @@ def set_patrol(enabled: bool, interval_s: Optional[int] = None) -> dict:
         _patrol["enabled"] = bool(enabled)
         if interval_s is not None:
             _patrol["interval_s"] = max(PATROL_MIN_INTERVAL_S, int(interval_s))
-    # @claude 순찰을 끄면 카메라를 프리셋 1로 복귀시킨다(위치·표시 모두).
-    # @claude 프리셋 1이 없으면 복귀 없이 슬롯 표시만 비운다.
+    # @claude Turning the patrol off returns the camera to preset 1 (both position and indication).
+    # @claude If preset 1 does not exist, only the slot indication is cleared, with no return.
     if was_enabled and not enabled:
         home = get_preset(1)
         with _lock:
@@ -345,7 +345,7 @@ def patrol_loop() -> None:
             interval = _patrol["interval_s"]
             slots = sorted(_presets)
         if not slots:
-            # @claude 프리셋이 무효화되면(카메라 교체 등) 순회 슬롯 표시도 무효다.
+            # @claude When presets are invalidated (camera replacement etc.), the patrol slot indication is invalid too.
             with _lock:
                 _patrol["slot"] = None
         if not enabled or not slots or not is_configured():

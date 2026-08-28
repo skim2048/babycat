@@ -159,7 +159,7 @@ async def notify(request: Request):
 
 @app.post("/inferences", status_code=202)
 async def post_inference(request: Request):
-    """Inference-history notification from the analyzer (2층 이력). Every
+    """Inference-history notification from the analyzer (layer-2 history). Every
     inference arrives here, matched or not; the raw text is preserved so
     labels can be re-derived after a vocabulary change."""
     payload = await request.json()
@@ -436,7 +436,7 @@ def list_inferences(
     offset: int = Query(0, ge=0),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Inference history (2층 이력). `label` filters rows whose label list
+    """Inference history (layer-2 history). `label` filters rows whose label list
     contains the exact label; date bounds follow the /events convention."""
     date_from = _normalize_date_query("date_from", date_from)
     date_to = _normalize_date_query("date_to", date_to)
@@ -478,7 +478,7 @@ def summary(
     bucket: str = Query("hour"),
     db: sqlite3.Connection = Depends(get_db),
 ):
-    """Label-count aggregation over the inference history (3층). Buckets are
+    """Label-count aggregation over the inference history (layer 3). Buckets are
     system-local (TZ) hours or days; each bucket carries the label counts and
     the total inference count so the client can normalize by the total —
     inference cadence varies by device and preset, so raw counts alone would
@@ -512,7 +512,7 @@ def summary(
             start = start.replace(hour=0)
         b = buckets.get(start.isoformat())
         if b is None:
-            continue  # @claude DST 등 경계 밖의 잔여 행은 버린다.
+            continue  # @claude Drop leftover rows outside the bounds (DST etc.).
         b["total"] += 1
         try:
             labels = json.loads(r["labels"])

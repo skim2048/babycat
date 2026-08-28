@@ -1,5 +1,5 @@
-# @claude Babycat — TLS 종단 게이트웨이. 공식 Caddy에 openssl만 더해,
-# @claude 기동 시 인증서를 스스로 발급할 수 있게 한다(entrypoint.sh).
+# @claude Babycat — TLS termination gateway. Adds only openssl to the official Caddy
+# @claude so it can issue its own certificate at start (entrypoint.sh).
 
 FROM caddy:2.11.4
 

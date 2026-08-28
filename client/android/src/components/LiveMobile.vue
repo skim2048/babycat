@@ -46,16 +46,16 @@ const stopped = ref(true)
 const fullscreen = ref(false)
 const fsLog = ref(true)
 
-// @claude 기기 방향이 전체 화면을 자동 전환한다: 가로 → 진입, 세로 → 종료.
-// @claude 버튼으로 한 수동 전환은 다음 방향 전환 때까지 유지된다.
+// @claude Device orientation toggles fullscreen automatically: landscape → enter, portrait → exit.
+// @claude A manual toggle via the button persists until the next orientation change.
 let landscapeMq = null
 function onOrientationChange(e) {
   fullscreen.value = e.matches
 }
 
-// @claude 가로 상태에서 축소하면 화면을 세로로 잠근다 — 기기가 가로여도
-// @claude 일반 UI는 세로로 유지된다. 잠금은 다시 확대할 때 풀린다.
-// @claude (브라우저에서는 lock이 전체 화면 밖에서 거부될 수 있어 무시한다.)
+// @claude Shrinking from landscape locks the screen to portrait — even if the device is
+// @claude landscape, the normal UI stays portrait. The lock is released on the next expand.
+// @claude (In browsers, lock may be rejected outside fullscreen, so this is ignored.)
 function enterFullscreen() {
   try { screen.orientation?.unlock?.() } catch {}
   fullscreen.value = true
@@ -69,8 +69,8 @@ function exitFullscreen() {
 
 // ── VLM card: model switch / infer toggle / log ──
 const modelMenu = ref(false)
-// @claude 모델 id의 마지막 경로 조각만 표기한다
-// @claude (예: Efficient-Large-Model/VILA1.5-3b → VILA1.5-3b).
+// @claude Show only the last path segment of the model id
+// @claude (e.g. Efficient-Large-Model/VILA1.5-3b → VILA1.5-3b).
 function shortModelName(id) {
   if (!id) return ''
   const parts = id.split('/')
@@ -101,7 +101,7 @@ async function switchModel(name) {
   }
 }
 
-// @claude 거부되면(스트리밍 꺼짐) 사유 안내가 있는 프롬프트 시트를 연다.
+// @claude If refused (streaming off), open the prompt sheet with the reason notice.
 async function onInferClick() {
   const ok = await toggleAnalysis()
   if (!ok) emit('open-sheet', 'prompt')
@@ -115,8 +115,8 @@ function localDate(offsetDays = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude 날짜가 바뀌는 지점에만 구분선을 넣되 오늘은 생략하고,
-// @claude 어제는 문구로, 그보다 이전은 YY-MM-DD로 표기한다.
+// @claude Insert a divider only where the date changes, omitting today;
+// @claude yesterday is shown as a phrase, anything earlier as YY-MM-DD.
 function annotateDays(list) {
   const today = localDate()
   const yesterday = localDate(-1)
@@ -140,8 +140,8 @@ const visibleLog = computed(() => {
 })
 const fsLogEntries = computed(() => annotateDays([...inferLog]))
 
-// @claude 로그 선택·삭제 — 웹 대시보드와 동일한 규칙. 이 로그는 서버에
-// @claude 저장되지 않는 세션 내 데이터이므로 삭제는 화면 목록에서의 제거다.
+// @claude Log selection·deletion — same rules as the web dashboard. This log is
+// @claude in-session data not stored on the server, so deletion is removal from the on-screen list.
 const logSelectMode = ref(false)
 const logSelected = ref(new Set())
 
@@ -184,7 +184,7 @@ const protocolOptions = [
   { key: 'webrtc', label: 'WebRTC' },
 ]
 
-// ── Stream (client/web LiveStream과 동일한 연결 논리) ──
+// ── Stream (same connection logic as client/web LiveStream) ──
 
 let hls = null
 let Hls = null
@@ -507,7 +507,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="live-mobile">
 
-    <!-- ── Video (전체 화면 시 가로 회전 캔버스가 된다) ── -->
+    <!-- ── Video (becomes a landscape-rotated canvas in fullscreen) ── -->
     <div class="video-wrap" :class="{ fs: fullscreen }">
       <div class="rotor">
         <div class="videobox">
@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
             <span class="overlay-text">{{ t('live.connectingCancel', { protocol: activeProtocol.toUpperCase() }) }}</span>
           </button>
 
-          <!-- 축소 화면: 연결 해제 + 전체 화면 -->
+          <!-- Shrunk view: disconnect + fullscreen -->
           <div v-if="!fullscreen" class="video-actions">
             <button
               v-if="isPlaying"
@@ -543,12 +543,12 @@ onBeforeUnmount(() => {
             ><i class="ph ph-corners-out"></i></button>
           </div>
 
-          <!-- 전체 화면: 세션 · 프로토콜 · 연결 해제 · 로그 · 종료 -->
+          <!-- Fullscreen: session · protocol · disconnect · log · exit -->
           <div v-else class="fs-cluster">
             <span v-if="showSessionRemaining" class="fs-chip">
               <i class="ph ph-clock"></i>{{ sessionRemainingText }}
             </span>
-            <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+            <!-- Pressing any part of the pill switches to the opposite protocol -->
             <button
               class="fs-pill"
               role="switch"
@@ -584,7 +584,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- 전체 화면: 접이식 세션 로그 패널 -->
+        <!-- Fullscreen: collapsible session log panel -->
         <aside v-if="fullscreen && fsLog" class="fs-log">
           <div class="fs-log-head">
             <span class="fs-vlm">
@@ -758,7 +758,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
 }
-/* 전체 화면: 세로 기기에서 가로 캔버스로 회전 */
+/* Fullscreen: rotate to a landscape canvas on a portrait device */
 .video-wrap.fs {
   position: fixed;
   inset: 0;
@@ -766,8 +766,8 @@ onBeforeUnmount(() => {
   height: auto;
   background: #0b0c12;
 }
-/* 세로 화면: 가로 캔버스를 90° 회전해 채운다.
-   inset은 top·left의 축약형이므로 반드시 top/left보다 먼저 두어야 한다. */
+/* Portrait screen: rotate the landscape canvas 90° to fill.
+   inset is the shorthand for top·left, so it must come before top/left. */
 .video-wrap.fs .rotor {
   inset: auto;
   top: 50%;
@@ -776,8 +776,8 @@ onBeforeUnmount(() => {
   height: 100vw;
   transform: translate(-50%, -50%) rotate(90deg);
 }
-/* 이미 가로 화면이면 회전 없이 그대로 채운다.
-   inset: 0이 네 변을 모두 지정하므로 top/left를 다시 선언하지 않는다. */
+/* If the screen is already landscape, fill it as is without rotation.
+   inset: 0 sets all four sides, so top/left are not redeclared. */
 @media (orientation: landscape) {
   .video-wrap.fs .rotor {
     inset: 0;

@@ -201,7 +201,7 @@ class AnalyzerHandler(BaseHTTPRequestHandler):
 
     def _handle_presets(self):
         """
-        Store the label vocabulary and time-ranged presets (2층).
+        Store the label vocabulary and time-ranged presets (layer 2).
         Request: {"labels": {"<label>": ["<synonym>", ...], ...},
                   "presets": [{"id", "start", "end", "prompt"?, "labels"?}, ...]}
         Both are opaque client-injected data; validation only checks shape

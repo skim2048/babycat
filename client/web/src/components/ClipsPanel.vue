@@ -28,8 +28,8 @@ function monthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-// @claude 프리셋과 임의 기간을 하나의 팝오버에 담고, 서버의
-// @claude date_from/date_to로 그대로 대응시킨다.
+// @claude Presets and a custom range share one popover and map directly to the
+// @claude server's date_from/date_to.
 const presets = computed(() => [
   { key: 'today', label: t('clips.preset.today'), range: () => [localDate(), localDate()] },
   { key: 'yesterday', label: t('clips.preset.yesterday'), range: () => [localDate(-1), localDate(-1)] },
@@ -37,7 +37,7 @@ const presets = computed(() => [
   { key: 'month', label: t('clips.preset.month'), range: () => [monthStart(), localDate()] },
 ])
 
-// @claude 활성 프리셋을 다시 누르면 해제된다.
+// @claude Pressing the active preset again clears it.
 function applyPreset(preset) {
   if (activePreset.value === preset.key) {
     activePreset.value = ''

@@ -11,6 +11,6 @@ services:
     environment:
       - TZ=Asia/Seoul
     ports:
-      - "5173:5173"    # Vite 개발 서버입니다.
+      - "5173:5173"    # Vite development server.
     volumes:
-      - .:/app         # HMR을 위해 web/ 디렉토리를 실시간 마운트합니다. node_modules는 ./node_modules 아래에 생성됩니다.
+      - .:/app         # Bind-mount web/ for HMR. node_modules stays under ./node_modules on the host.

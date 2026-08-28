@@ -6,7 +6,7 @@ import { usePtz } from '../composables/usePtz.js'
 import { useLocale } from '../composables/useLocale.js'
 
 const props = defineProps({
-  active: { type: Boolean, default: false }, // 재생 중 여부 — 낙관적 활성 정책의 사전 비활성 판단
+  active: { type: Boolean, default: false }, // whether playing — pre-disable check of the optimistic-enable policy
 })
 const emit = defineEmits(['close'])
 

@@ -46,7 +46,7 @@
 |`CLIP_MIN_FREE_MB`·`CLIP_TARGET_FREE_MB`|`recorder`|선택|자동 정리 발동·회복 여유 수위(SRS `FR-033`)|
 |`RECORDER_ENCODE_BITRATE`·`RECORDER_ENCODE_FPS`|`recorder`|선택|세그먼트 재인코딩 비트레이트와 소스 프레임레이트 가정(§4.4)|
 
-TLS(§2.4 (8))의 서빙 인증서는 `gateway`가 기동 시 스스로 확보한다 — 기동 스크립트가 `HOST_IP`·`TLS_EXTRA_HOSTS`·localhost를 SAN 목록으로 삼아, 인증서가 없거나 그 목록이 바뀌었거나 만료 30일 이내이면 `issue-cert.sh`를 호출해 발급하고 `data/caddy/site/`에 둔다. 운영자의 발급 절차는 없으며, 설치는 `.env` 작성과 `docker compose up -d --build`로 끝난다.
+TLS(§2.4 (8))의 서빙 인증서는 `gateway`가 기동 시 스스로 확보한다 — 기동 스크립트가 `HOST_IP`·`TLS_EXTRA_HOSTS`·localhost를 SAN 목록으로 삼아, 인증서가 없거나 그 목록이 바뀌었거나 만료 30일 이내이면 `issue-cert.sh`를 호출해 발급하고 `data/caddy/site/`에 둔다. 운영자의 발급 절차는 없으며, 설치는 `.env` 작성과 `docker compose up -d --build`로 끝난다. 호스트 준비는 `tools/setup-jetson.sh`(L4T 릴리스 확인, JetPack 구성 요소와 Docker 설치)와 기동 시의 `preflight`(검증)로 나뉜다.
 
 CA는 제조사 Root CA → 기기별 Device CA → 서빙 인증서의 세 단계다. 보호자 한 명이 기기 여러 대를 운용해도 클라이언트가 CA 하나(Root)만 신뢰하면 되도록 하기 위함이며, 기기 사이에 파일을 옮기는 절차를 두지 않는다. Root CA의 개인키는 저장소 밖(개발 PC)에 보관하고, 출고 시 `tools/provision-device.sh`가 시리얼별 Device CA를 발급하여 기기의 `data/caddy/caddy/pki/authorities/local/`에 둔다. 발급 스크립트는 그 자리의 CA로 서명하므로 제품 기기와 개발 기기의 기동 절차는 같고, 파일이 없는 개발 기기만 자체 root CA를 생성한다. Device CA에는 사설 IPv4 대역·`localhost`·`.local`로 nameConstraints를 두어, 유출되어도 그 밖의 주소에 대한 인증서를 만들 수 없게 한다. `cert.pem`은 리프와 Device CA를 이어 붙인 체인이다 — 클라이언트는 Device CA를 모르기 때문이다. mewly는 Root CA를 리소스로 동봉하고 사용자 설치 CA도 신뢰하므로(network security config), 개발 기기의 자체 CA는 그 루트를 폰에 설치하면 접속된다. 절차와 키 보관 규칙은 `docs/ops/pki.md`에 있다.
 

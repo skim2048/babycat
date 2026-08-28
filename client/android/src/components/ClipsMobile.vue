@@ -35,7 +35,7 @@ const presets = computed(() => [
   { key: 'month', label: t('clips.preset.month'), range: () => [monthStart(), localDate()] },
 ])
 
-// @claude 활성 프리셋을 다시 누르면 해제된다.
+// @claude Pressing the active preset again clears it.
 function applyPreset(preset) {
   if (activePreset.value === preset.key) {
     activePreset.value = ''
@@ -244,7 +244,7 @@ function thumbUrl(clip) {
         </button>
       </div>
 
-      <!-- 인라인 필터 패널 -->
+      <!-- Inline filter panel -->
       <div v-if="filterOpen" class="filter-panel">
         <div class="filter-group">
           <span class="filter-label">{{ t('clips.customRange') }}</span>
@@ -281,7 +281,7 @@ function thumbUrl(clip) {
         </div>
       </div>
 
-      <!-- 활성 기간 칩 -->
+      <!-- Active period chip -->
       <div v-if="!filterOpen && rangeSet" class="range-chip-row">
         <button class="range-chip" @click="clearRange">
           {{ rangeLabel }}<i class="ph ph-x"></i>
@@ -320,7 +320,7 @@ function thumbUrl(clip) {
       <div class="clips-empty-body">{{ filterActive ? t('clips.noMatch.body') : t('clips.empty.body') }}</div>
     </div>
 
-    <!-- ── Grid (3열 정방형) ── -->
+    <!-- ── Grid (3 columns, square) ── -->
     <div v-else class="clips-grid">
       <button
         v-for="clip in clips"

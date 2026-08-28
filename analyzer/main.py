@@ -335,7 +335,7 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
         matched = [kw for kw in triggers if kw in raw_lower] if triggers else []
         event_triggered = len(matched) > 0
 
-        # @claude 2층 label match: a label hits when any of its synonyms appears
+        # @claude layer-2 label match: a label hits when any of its synonyms appears
         # @claude in the text. Labels and synonyms are opaque client strings —
         # @claude same substring mechanism as the trigger keywords above.
         matched_labels = [
@@ -364,8 +364,8 @@ def inference_worker(holder: "ModelHolder", vlm_proc: VlmProcess, ring: RingBuff
                 daemon=True,
             ).start()
 
-        # @claude 1층: every inference — matched or not — goes into the history
-        # @claude (FR 예정). Separate from the event path above, which keeps its
+        # @claude layer 1: every inference — matched or not — goes into the history
+        # @claude (FR pending). Separate from the event path above, which keeps its
         # @claude clip-recording semantics untouched.
         threading.Thread(
             target=notify_inference,

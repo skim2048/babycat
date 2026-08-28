@@ -1,6 +1,6 @@
 # Using Android gitignore template: https://github.com/github/gitignore/blob/HEAD/Android.gitignore
 
-# Signing keystores — 서명 키는 저장소에 올리지 않는다
+# Signing keystores — never commit signing keys
 *.jks
 *.keystore
 

@@ -54,7 +54,7 @@ def notify_inference(
     inference_elapsed_ms: int,
 ) -> None:
     """
-    Persist one inference into the recorder's history (1층). Fire-and-forget
+    Persist one inference into the recorder's history (layer 1). Fire-and-forget
     like notify_event: a lost row degrades the aggregate slightly and is not
     retried — the history is a sampled record, not a ledger.
     """

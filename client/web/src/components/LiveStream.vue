@@ -47,7 +47,7 @@ const loading = ref(false)
 const stopped = ref(true)
 const fullscreen = ref(false)
 
-// ── Fullscreen chrome (커스텀 오버레이 + 접이식 로그 패널) ──
+// ── Fullscreen chrome (custom overlay + collapsible log panel) ──
 const fsLog = ref(true)
 const showSessionRemaining = computed(() =>
   isAuthenticated.value && !isPersistentSession.value && sessionRemainingSeconds.value > 0,
@@ -67,8 +67,8 @@ function fsLocalDate(offsetDays = 0) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// @claude 날짜 구분선 규칙은 대시보드 로그 패널과 동일: 오늘 생략, 어제는
-// @claude 문구, 그 이전은 YY-MM-DD.
+// @claude Date divider rules are the same as the dashboard log panel: omit today, yesterday
+// @claude as a phrase, earlier as YY-MM-DD.
 const fsLogEntries = computed(() => {
   const today = fsLocalDate()
   const yesterday = fsLocalDate(-1)
@@ -117,7 +117,7 @@ function stopPtzMotion() {
   stopMove()
 }
 
-// @claude 패드 가운데의 정지 버튼: 누름 상태와 무관하게 즉시 Stop을 보낸다.
+// @claude The stop button at the pad center: sends Stop immediately regardless of press state.
 function ptzStopNow() {
   if (ptzOff.value) return
   ptzPressing.value = null
@@ -181,10 +181,10 @@ const activeProtocol = ref(preferredProtocol.value)
 const isWebRTC = computed(() => activeProtocol.value === 'webrtc')
 const isPlaying = computed(() => connected.value && !loading.value && !stopped.value)
 
-// @claude 낙관적 활성 정책: 사전 비활성은 스트림 미연결과
-// @claude PTZ 포트 미입력뿐이다. 명령 실패는 잠그지 않고 안내 줄로만 알린다.
-// @claude isPlaying 선언 뒤에 있어야 한다 — watch가 setup 중에 초기값을 즉시
-// @claude 평가하므로, 앞에 두면 TDZ 참조로 마운트가 실패한다.
+// @claude Optimistic-enable policy: the only pre-disable conditions are stream not connected and
+// @claude PTZ port not entered. Command failures do not lock; they are reported only via the notice line.
+// @claude Must come after the isPlaying declaration — watch evaluates the initial value immediately
+// @claude during setup, so placing it earlier fails the mount with a TDZ reference.
 const ptzOff = computed(() => !ptzEnabled.value || !isPlaying.value)
 watch(ptzOff, (off) => {
   if (!off) return
@@ -512,7 +512,7 @@ onBeforeUnmount(() => {
         <span class="overlay-text">{{ t('live.connectingCancel', { protocol: activeProtocol.toUpperCase() }) }}</span>
       </button>
 
-      <!-- 축소 화면: 연결 해제 + 전체 화면 -->
+      <!-- Shrunk view: disconnect + fullscreen -->
       <div v-if="!fullscreen" class="video-actions">
         <button
           v-if="isPlaying"
@@ -527,12 +527,12 @@ onBeforeUnmount(() => {
         ><i class="ph ph-corners-out"></i></button>
       </div>
 
-      <!-- 전체 화면: 세션 · 프로토콜 · 연결 해제 · 로그 패널 · 종료 -->
+      <!-- Fullscreen: session · protocol · disconnect · log panel · exit -->
       <div v-else class="fs-cluster">
         <span v-if="showSessionRemaining" class="fs-chip">
           <i class="ph ph-clock"></i>{{ sessionRemainingText }}
         </span>
-        <!-- 알약의 어느 부분을 눌러도 반대 프로토콜로 전환된다 -->
+        <!-- Pressing any part of the pill switches to the opposite protocol -->
         <button
           class="fs-pill"
           role="switch"
@@ -567,7 +567,7 @@ onBeforeUnmount(() => {
         ><i class="ph ph-corners-in"></i></button>
       </div>
 
-      <!-- 전체 화면: 접이식 세션 로그 패널 -->
+      <!-- Fullscreen: collapsible session log panel -->
       <aside v-if="fullscreen && fsLog" class="fs-log">
         <div class="fs-log-head">
           <span class="fs-vlm">
@@ -603,7 +603,7 @@ onBeforeUnmount(() => {
       <span class="metrics">{{ stats.resolution || '–' }} · {{ stats.fps || 0 }} FPS</span>
     </div>
 
-    <!-- ── PTZ panel (항상 표시, 미지원·미재생 시 비활성) ── -->
+    <!-- ── PTZ panel (always shown, disabled when unsupported·not playing) ── -->
     <div class="ptz-card" :class="{ off: ptzOff }" :aria-disabled="ptzOff">
 
       <div class="ptz-pad">
@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
 }
-/* 전체 화면에서 로그 패널이 열리면 영상 영역이 그만큼 줄어든다 */
+/* In fullscreen, when the log panel opens the video area shrinks by that amount */
 .video-card.fs-open video,
 .video-card.fs-open .video-overlay {
   width: calc(100% - 360px);
@@ -818,9 +818,9 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
 }
 
-/* 쌓임 배치(1100px 이하): 영상은 채움 대신 16:9 고정 비율로 자연 높이를
-   갖는다. 채움을 유지하면 좌측 열이 화면 높이로 압축되어 넘친 패널이
-   스크롤 없이 잘린다. */
+/* Stacked layout (1100px and below): the video takes its natural height at a fixed 16:9
+   ratio instead of filling. Keeping the fill compresses the left column to the viewport
+   height and the overflowing panel is clipped without scrolling. */
 @media (max-width: 1100px) {
   .live { flex: none; min-height: auto; }
   .video-card {

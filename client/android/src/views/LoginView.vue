@@ -161,7 +161,7 @@ async function handleLogin() {
   border-color: var(--color-accent);
 }
 
-/* 모바일 제출 버튼은 액센트 채움 알약 */
+/* The mobile submit button is an accent-filled pill */
 .login-submit {
   height: 56px;
   border-radius: 100px;

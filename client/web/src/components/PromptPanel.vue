@@ -34,7 +34,7 @@ const dirty = computed(() =>
   prompt.value !== savedPrompt.value || triggers.value !== savedTriggers.value,
 )
 
-// @claude 저장 안내는 필드를 다시 편집하는 순간 사라진다.
+// @claude The save notice disappears the moment a field is edited again.
 watch([prompt, triggers], () => {
   savedNote.value = false
   errorNote.value = ''
@@ -63,7 +63,7 @@ async function apply() {
   }
 }
 
-// @claude 취소는 마지막 저장 상태로 되돌린다.
+// @claude Cancel reverts to the last saved state.
 function revert() {
   if (!dirty.value) return
   prompt.value = savedPrompt.value
@@ -114,7 +114,7 @@ function revert() {
   flex: 1;
   min-height: 0;
 }
-/* 패널은 neutral-900 위이므로 취소 버튼은 페이지 배경 채움을 쓴다 */
+/* The panel sits on neutral-900, so the cancel button uses the page-background fill */
 .form-btn.plain { background: var(--color-bg); }
 .form-btn.plain:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 22%, transparent); }
 </style>

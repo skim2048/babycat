@@ -60,17 +60,14 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 
 Supported on JetPack 6.2.1 (L4T R36.4.x) only. JetPack 6.2.2 (L4T R36.5) is not supported — the hardware decoder path does not open inside the containers (confirmed 2026-08-27) — and neither is JetPack 7.x, which changes the GPU driver and device-node layout while the inference stack depends on the JetPack 6 CUDA generation. Check with `head -1 /etc/nv_tegra_release`; it must read `R36 (release), REVISION: 4.x`.
 
-**2. The hardware video encoder and decoder, and their GStreamer plugin.** Babycat requires both NVENC and NVDEC. Development kits include them by SKU, but the device nodes, the NvSciIPC socket (`/tmp/nvscsock`, from `nvs-service`), and the GStreamer elements that drive the codecs (`nvv4l2decoder`, `nvv4l2h264enc`) come from separate JetPack packages, and any of them may be missing after a bare OS flash. You do not have to check these by hand: every `docker compose up` first runs a `preflight` container that verifies the L4T release, the device nodes, the socket, the tegra libraries, and the GStreamer elements, and refuses to start the analyzer and recorder if anything is missing. Read its verdict and the fix for each failed item with:
+**2. JetPack components, Docker Engine, and the NVIDIA Container Toolkit.** A bare flash ships without the NVIDIA GStreamer plugins (`nvv4l2decoder`, `nvv4l2h264enc`) and without Docker. Run the setup script once on the board and reboot:
 
 ```bash
-docker compose logs preflight
+sudo tools/setup-jetson.sh
+sudo reboot
 ```
 
-The fix is the same for every item: `sudo apt update && sudo apt install nvidia-jetpack`, then reboot — a bare flash ships without the NVIDIA GStreamer plugins, and the containers mount the host's plugin directory, so a plugin missing on the host is missing inside them too. Run `apt update` first; on a freshly flashed board the NVIDIA repository index has not been fetched yet and `apt install` reports the package as not found.
-
-**3. Docker Engine with the Compose plugin.** Install it **after** `nvidia-jetpack`, not before: `nvidia-jetpack` pulls in `nvidia-container`, which conflicts with Docker's own `docker-ce`/`containerd.io` packages and removes them (observed 2026-08-27 — `docker: command not found` after the JetPack install). Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions — and finish with the post-installation step `sudo usermod -aG docker $USER`, otherwise `docker compose` fails with `permission denied while trying to connect to the docker API`.
-
-**4. The NVIDIA Container Toolkit.** Required to expose the GPU and hardware codecs to the containers. As with the multimedia stack, it may be missing after a bare flash; it ships with `nvidia-jetpack`, or install it on its own per the [NVIDIA Container Toolkit install guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+It checks the L4T release, installs `nvidia-jetpack` (which brings the codec plugins and the container toolkit), then installs Docker Engine with the Compose plugin, registers the `nvidia` runtime, and adds you to the `docker` group. The order matters — `nvidia-jetpack` removes a previously installed `docker-ce` — so do not install Docker by hand first. Every later `docker compose up` runs a `preflight` container that verifies the L4T release, the codec device nodes, the NvSciIPC socket, the tegra libraries, and the GStreamer elements, and refuses to start the analyzer and recorder if anything is missing; `docker compose logs preflight` shows the verdict and the fix for each failed item.
 
 Separately, a video source that provides an H.264 RTSP stream is required — an IP camera, or a substitute source replaying recorded video.
 

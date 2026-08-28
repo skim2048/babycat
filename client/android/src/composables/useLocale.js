@@ -13,8 +13,8 @@ function normalizeLocale(value) {
   return SUPPORTED_LOCALES.has(value) ? value : DEFAULT_LOCALE
 }
 
-// @claude 저장된 선택이 없으면 브라우저 언어 설정에서 유도한다. 사용자가 한 번
-// @claude 전환하면 그 값이 저장되어 이후에는 저장값을 우선한다.
+// @claude Without a saved choice, derive from the browser language setting. Once the user
+// @claude switches, that value is saved and takes precedence thereafter.
 function browserLocale() {
   if (!hasWindow()) return DEFAULT_LOCALE
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
