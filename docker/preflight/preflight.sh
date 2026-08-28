@@ -32,7 +32,7 @@ fi
 # 2. 장치 노드
 for dev in v4l2-nvdec v4l2-nvenc nvmap nvhost-ctrl-gpu nvhost-gpu; do
   if [ -e "/host/dev/$dev" ]; then ok "/dev/$dev"
-  else bad "/dev/$dev 없음" "sudo apt install nvidia-jetpack 후 재부팅"; fi
+  else bad "/dev/$dev 없음" "sudo apt update && sudo apt install nvidia-jetpack 후 재부팅"; fi
 done
 
 # 3. NvSciIPC 소켓 — 없으면 Docker가 디렉터리를 만들어 고착될 수 있으므로 종류까지 본다
@@ -41,17 +41,17 @@ elif [ -d /host/tmp/nvscsock ]; then
   bad "/tmp/nvscsock이 소켓이 아니라 디렉터리다" \
       "docker compose down; sudo rmdir /tmp/nvscsock; sudo systemctl restart nvs-service"
 else
-  bad "/tmp/nvscsock 없음" "sudo systemctl restart nvs-service (없으면 sudo apt install nvidia-l4t-nvsci 후 재부팅)"
+  bad "/tmp/nvscsock 없음" "sudo systemctl restart nvs-service (서비스가 없으면 sudo apt update && sudo apt install nvidia-jetpack 후 재부팅)"
 fi
 
 # 4. tegra 라이브러리
 if [ -e /usr/lib/aarch64-linux-gnu/nvidia/libnvbufsurface.so ]; then ok "tegra 라이브러리(libnvbufsurface.so)"
-else bad "/usr/lib/aarch64-linux-gnu/nvidia/libnvbufsurface.so 없음" "sudo apt install nvidia-jetpack"; fi
+else bad "/usr/lib/aarch64-linux-gnu/nvidia/libnvbufsurface.so 없음" "sudo apt update && sudo apt install nvidia-jetpack 후 재부팅"; fi
 
 # 5. NVIDIA GStreamer 요소 — 마운트된 호스트 플러그인으로 실제 로드해 본다
 for el in nvv4l2decoder nvv4l2h264enc nvvidconv; do
   if gst-inspect-1.0 "$el" >/dev/null 2>&1; then ok "GStreamer 요소 $el"
-  else bad "GStreamer 요소 $el 없음" "sudo apt install nvidia-l4t-gstreamer 후 docker compose up -d"; fi
+  else bad "GStreamer 요소 $el 없음" "sudo apt update && sudo apt install nvidia-jetpack 후 docker compose up -d (플래시 기본 구성에는 NVIDIA GStreamer 플러그인이 없다)"; fi
 done
 
 if [ "$fail" -ne 0 ]; then

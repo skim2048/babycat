@@ -109,7 +109,14 @@ newgrp docker        # 또는 로그아웃 후 재로그인
 docker ps            # 오류 없이 빈 목록이 나오면 정상
 ```
 
-보드의 JetPack은 6.2.1(L4T R36.4.x)이어야 한다(`head -1 /etc/nv_tegra_release`). 6.2.2(R36.5)는 동작하지 않으며, 그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
+보드의 JetPack은 6.2.1(L4T R36.4.x)이어야 한다(`head -1 /etc/nv_tegra_release`). 6.2.2(R36.5)는 동작하지 않는다. 플래시 기본 구성에는 NVIDIA GStreamer 플러그인이 없으므로 JetPack 구성 요소 전체를 설치한다. `apt update`를 먼저 하지 않으면 NVIDIA 저장소 목록이 없어 패키지를 찾지 못한다.
+
+```bash
+sudo apt update && sudo apt install nvidia-jetpack
+sudo reboot
+```
+
+그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
 
 `mkdir`를 미리 하는 이유는 소유자다. Docker가 없는 디렉터리를 만들면 root 소유가 되어 이후 `data/` 아래의 파일 작업(5단계의 복사, 클립 정리 등)에 `sudo`가 필요해진다.
 

@@ -66,7 +66,7 @@ Supported on JetPack 6.2.1 (L4T R36.4.x) only. JetPack 6.2.2 (L4T R36.5) is not 
 docker compose logs preflight
 ```
 
-The usual fixes are `sudo apt install nvidia-jetpack` (device nodes, libraries) and `sudo apt install nvidia-l4t-gstreamer` (GStreamer elements); the containers mount the host's plugin directory, so a plugin missing on the host is missing inside them too.
+The fix is the same for every item: `sudo apt update && sudo apt install nvidia-jetpack`, then reboot — a bare flash ships without the NVIDIA GStreamer plugins, and the containers mount the host's plugin directory, so a plugin missing on the host is missing inside them too. Run `apt update` first; on a freshly flashed board the NVIDIA repository index has not been fetched yet and `apt install` reports the package as not found.
 
 **3. Docker Engine with the Compose plugin.** Follow the official [Docker Engine install guide](https://docs.docker.com/engine/install/ubuntu/) — JetPack is Ubuntu-based, so use the Ubuntu instructions.
 
