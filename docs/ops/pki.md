@@ -101,6 +101,14 @@ cp .env.example .env
 mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
 ```
 
+새로 플래시한 보드에서는 그 전에 Docker 권한을 갖추어야 한다. 사용자가 `docker` 그룹에 없으면 `docker compose`가 `permission denied while trying to connect to the docker API`로 실패한다.
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker        # 또는 로그아웃 후 재로그인
+docker ps            # 오류 없이 빈 목록이 나오면 정상
+```
+
 보드의 JetPack은 6.2.1(L4T R36.4.x)이어야 한다(`head -1 /etc/nv_tegra_release`). 6.2.2(R36.5)는 동작하지 않으며, 그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
 
 `mkdir`를 미리 하는 이유는 소유자다. Docker가 없는 디렉터리를 만들면 root 소유가 되어 이후 `data/` 아래의 파일 작업(5단계의 복사, 클립 정리 등)에 `sudo`가 필요해진다.
