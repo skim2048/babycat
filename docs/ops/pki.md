@@ -49,7 +49,7 @@ mewly는 Root CA 인증서를 동봉하고 사용자가 설치한 CA 인증서�
 
 ## 4. 출고 절차
 
-Root CA의 생성, Device CA의 발급·전송, 발급 대장, 키 보관 규칙은 private 저장소 **babycat-ca**(`~/projects/babycat-ca/README.md`)가 담당한다. 이 절은 젯슨 보드 쪽에서 하는 일과 두 저장소 사이의 순서만 기술한다.
+Root CA의 생성, Device CA의 발급·전송, 발급 대장, 키 보관 규칙은 별도 저장소 **babycat-ca**(`~/projects/babycat-ca/README.md`)가 담당한다. 이 절은 젯슨 보드 쪽에서 하는 일과 두 저장소 사이의 순서만 기술한다.
 
 |순서|명령|어디에서|횟수|
 |---|---|---|---|
