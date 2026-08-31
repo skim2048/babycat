@@ -49,107 +49,40 @@ mewly는 Root CA 인증서를 동봉하고 사용자가 설치한 CA 인증서�
 
 ## 4. 출고 절차
 
-|단계|내용|어디에서|횟수|
+Root CA의 생성, Device CA의 발급·전송, 발급 대장, 키 보관 규칙은 private 저장소 **babycat-ca**(`~/projects/babycat-ca/README.md`)가 담당한다. 이 절은 젯슨 보드 쪽에서 하는 일과 두 저장소 사이의 순서만 기술한다.
+
+|순서|명령|어디에서|횟수|
 |---|---|---|---|
-|1|Root CA 생성|개발 PC|1회|
-|2|mewly에 Root CA 인증서 동봉|개발 PC → mewly 저장소|1회|
-|3|Device CA 발급|개발 PC|보드마다|
-|4|Babycat 설치 준비|젯슨 보드|보드마다|
-|5|Device CA 파일 복사|개발 PC → 젯슨 보드|보드마다|
-|6|기동과 확인|젯슨 보드|보드마다|
-|7|발급 결과 삭제|개발 PC|보드마다|
+|1|Root CA 생성과 mewly 동봉 (babycat-ca §3.1·3.2)|개발 PC|1회|
+|2|`sudo tools/setup-jetson.sh` 후 재부팅|젯슨 보드|보드마다|
+|3|`git clone <babycat 저장소 주소> ~/projects/babycat`|젯슨 보드|보드마다|
+|4|`./provision-device.sh issue <시리얼> --to <user@host>` (babycat-ca §3.3)|개발 PC|보드마다|
+|5|`tools/up.sh`|젯슨 보드|보드마다|
 
-### 4.1 Root CA 생성
+### 4.1 호스트 준비 (순서 2)
 
-```bash
-tools/provision-device.sh init
-ls -l ~/.babycat-ca/
-```
+`tools/setup-jetson.sh`가 L4T 릴리스(6.2.1, R36.4.x만 허용)를 확인하고, JetPack 구성 요소 전체(`nvidia-jetpack`)와 Docker Engine을 이 순서로 설치하며, 실행 사용자를 `docker` 그룹에 추가한다. 순서를 지키는 이유는 `nvidia-jetpack`이 끌어오는 `nvidia-container`가 먼저 설치된 `docker-ce`를 제거하기 때문이고(2026-08-27, 206에서 확인), 그룹 추가가 없으면 `docker compose`가 `permission denied while trying to connect to the docker API`로 실패한다.
 
-`~/.babycat-ca/`에 `root.key`(권한 600)와 `root.crt`가 생성된다. 이미 있으면 스크립트가 거부한다. 보관 위치를 바꾸려면 `ROOT_DIR` 환경 변수를 지정한다. 이 단계는 이후 보드를 몇 대 만들든 다시 하지 않는다.
+### 4.2 기동과 확인 (순서 5)
 
-### 4.2 mewly에 Root CA 인증서 동봉
+`tools/up.sh`가 `.env`가 없으면 대화형으로 생성하고(`HOST_IP`, 초기 계정), 데이터 디렉터리를 사용자 소유로 만들고(§주의), 서버 인증서에 서명할 CA를 표시한 뒤 `docker compose up -d --build`를 실행하고 preflight와 gateway의 결과를 요약한다. preflight가 실패하면 표시된 조치 후 다시 실행한다. 기동 후 다음으로 체인을 검증할 수 있다.
 
 ```bash
-tools/cp-rootcrt.sh ~/projects/mewly
-```
-
-`~/.babycat-ca/root.crt`가 `<mewly>/android/app/src/main/res/raw/babycat_ca.crt`로 복사된다. 출력의 `subject=`가 `Babycat Root CA`인지 확인한 뒤 mewly 앱을 빌드한다. 이 파일은 공개 파일이므로 mewly 저장소에 커밋해도 무방하다. Root CA를 재생성하지 않는 한 이 파일은 바뀌지 않으며, 재생성했다면 반드시 다시 복사한다.
-
-### 4.3 Device CA 발급
-
-```bash
-tools/provision-device.sh issue BC-2026-00000001
-find provision -type f
-```
-
-시리얼 형식은 `BC-<연도 4자리>-<일련번호 8자리>`이며, 스크립트가 형식을 검사한다. 같은 시리얼은 `provision/` 아래에 결과가 남아 있는 동안 두 번 발급할 수 없다. 결과는 `provision/BC-2026-00000001/`에 생성된다(`.gitignore` 대상).
-
-- `caddy/pki/authorities/local/root.crt` — Device CA 인증서
-- `caddy/pki/authorities/local/root.key` — Device CA 개인키(권한 600)
-- `manufacturer-root.crt` — Root CA 인증서 사본(참고용)
-
-### 4.4 Babycat 설치 준비
-
-젯슨 보드에서 README의 Getting Started와 같이 진행하되, `docker compose up` 전에 멈춘다.
-
-```bash
-git clone <babycat 저장소 주소> babycat
-cd babycat
-cp .env.example .env
-# .env 편집: HOST_IP, DEFAULT_USER, DEFAULT_PASS (VLM_MODELS는 기본값 사용 가능)
-mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
-```
-
-새로 플래시한 보드는 위 명령 전에 `sudo tools/setup-jetson.sh`를 실행하고 재부팅한다. 이 스크립트가 L4T 릴리스(6.2.1, R36.4.x만 허용)를 확인하고, JetPack 구성 요소 전체(`nvidia-jetpack`)와 Docker Engine을 이 순서로 설치하며, 실행 사용자를 `docker` 그룹에 추가한다. 순서를 지키는 이유는 `nvidia-jetpack`이 끌어오는 `nvidia-container`가 먼저 설치된 `docker-ce`를 제거하기 때문이고(2026-08-27, 206에서 확인), 그룹 추가가 없으면 `docker compose`가 `permission denied while trying to connect to the docker API`로 실패한다. 그 밖의 호스트 준비 상태는 6단계의 `docker compose up`이 `preflight` 검사로 확인하여 부족한 항목과 조치를 로그에 남긴다.
-
-`mkdir`를 미리 하는 이유는 소유자다. Docker가 없는 디렉터리를 만들면 root 소유가 되어 이후 `data/` 아래의 파일 작업(5단계의 복사, 클립 정리 등)에 `sudo`가 필요해진다.
-
-### 4.5 Device CA 파일 복사
-
-3단계의 `provision/BC-2026-00000001/caddy` 디렉터리를 보드의 `babycat/data/caddy/` 아래에 복사한다.
-
-```bash
-# 개발 PC와 보드가 다른 컴퓨터일 때
-scp -r provision/BC-2026-00000001/caddy <사용자>@<보드 IP>:~/babycat/data/caddy/
-# 같은 컴퓨터일 때
-cp -r provision/BC-2026-00000001/caddy data/caddy/
-```
-
-복사 후 보드에 다음 두 파일이 있어야 한다.
-
-- `data/caddy/caddy/pki/authorities/local/root.crt`
-- `data/caddy/caddy/pki/authorities/local/root.key`
-
-### 4.6 기동과 확인
-
-```bash
-docker compose build
-docker compose up -d
-docker compose logs preflight   # "all checks passed"가 아니면 표시된 조치 후 up을 다시 실행한다
-docker compose logs gateway
-```
-
-로그에 `issuer=O = Babycat, CN = Babycat Device CA BC-2026-00000001`이 보이면 정상이다. 다음 명령으로 체인을 검증할 수도 있다.
-
-```bash
-echo | openssl s_client -connect <HOST_IP>:8000 -CAfile ~/.babycat-ca/root.crt 2>/dev/null | grep 'Verify return code'
+echo | openssl s_client -connect <HOST_IP>:8000 -CAfile <Root CA 인증서> 2>/dev/null | grep 'Verify return code'
 # Verify return code: 0 (ok)
 ```
 
 이후 `HOST_IP`가 바뀌거나 서버 인증서 만료가 가까워지면 다음 기동 때 gateway가 스스로 재발급한다.
 
-### 4.7 발급 결과 삭제
+주의: 데이터 디렉터리를 Docker가 만들면 root 소유가 되어 이후 `data/` 아래의 파일 작업에 `sudo`가 필요해진다. `tools/up.sh`를 쓰지 않는 경우 README의 수동 절차대로 `mkdir`를 먼저 한다.
 
-```bash
-rm -r provision/BC-2026-00000001
-```
+### 4.3 개발 보드
 
-Device CA 개인키는 보드 안에만 있어야 한다. 새 보드를 준비할 때 기존 보드의 `data/caddy/`를 복사하지 않는다 — 그 안의 Device CA는 기존 보드의 것이며, 두 보드가 Device CA를 공유하면 보드마다 CA를 나눈 의미가 없어진다. 새 보드에는 3단계에서 새 시리얼로 발급한 것만 넣는다. 보드의 `data/caddy/`를 잃었을 때는 지운 파일을 되살리지 않고 3·5·6단계를 다시 수행한다. 클라이언트는 Root CA 인증서만 신뢰하므로 Device CA가 바뀌어도 클라이언트에서 할 일은 없다.
+Device CA 없이(순서 4 생략) `tools/up.sh`를 실행하면 gateway가 자체 CA를 만들어 서명한다. 그 보드의 `root.crt`를 폰·브라우저에 1회 설치한다(§3, §5).
 
-### 4.8 개발 보드를 제품 조건으로 전환
+### 4.4 Device CA의 교체와 개발 보드의 제품 전환
 
-이미 자체 CA로 기동한 보드에서 `data/caddy/caddy/pki`와 `data/caddy/site`를 삭제한 뒤 3·5·6·7단계를 수행한다. 그 보드의 자체 CA 인증서를 설치해 둔 클라이언트에서는 그 항목을 삭제해도 된다.
+보드에서 `data/caddy/caddy/pki`와 `data/caddy/site`를 삭제한 뒤 순서 4·5를 수행한다. 기존 보드의 `data/caddy/`를 다른 보드에 복사해서는 안 된다 — 그 안의 Device CA는 기존 보드의 것이며, 두 보드가 Device CA를 공유하면 보드마다 CA를 나눈 의미가 없어진다. 클라이언트는 Root CA 인증서만 신뢰하므로 Device CA가 바뀌어도 클라이언트에서 할 일은 없다.
 
 ## 5. 브라우저로 접속할 때
 
@@ -168,19 +101,16 @@ Device CA 개인키는 보드 안에만 있어야 한다. 새 보드를 준비�
 
 ## 6. 키 보관과 사고 대응
 
-- Root CA 개인키(`~/.babycat-ca/root.key`)는 저장소, 보드, 클라우드 동기화 폴더에 두지 않는다. 분실하면 신규 보드의 Device CA를 발급할 수 없으므로 오프라인 매체에 백업하고 그 위치를 별도로 기록한다.
-- Root CA 개인키가 유출되면 유출자가 임의의 Device CA를 만들 수 있다. 대응은 Root CA 재생성(4.1), mewly 재배포(4.2), 출고된 모든 보드의 Device CA 재발급·재복사(4.8)이며, 이는 전 보드에 대한 조치다.
-- Device CA 개인키가 유출되면 유출자가 그 보드 시리얼로 사설 대역 주소의 서버 인증서를 만들 수 있다. 영향은 같은 LAN 안으로 한정된다. 그 보드의 Device CA를 재발급하여 교체하되(4.8), 폐기 목록(CRL)을 배포하는 경로가 없으므로 유출된 Device CA는 만료(10년)까지 유효하다.
-- Root CA(20년)와 Device CA(10년)의 만료 전 갱신 절차는 정하지 않았다. 이 문서의 개정 시점에 정한다.
+babycat-ca의 README §4가 정한다. 요지는 다음과 같다: Root CA 개인키는 어떤 저장소·보드에도 두지 않고 오프라인으로 백업하며, Root CA 유출은 전 보드의 재발급·mewly 재배포를, Device CA 유출은 그 보드의 재발급(§4.4)을 요구한다. 폐기 목록(CRL) 경로는 없다.
 
 ## 7. 관련 파일
 
 |파일|역할|
 |---|---|
-|`tools/provision-device.sh`|Root CA 생성(`init`), Device CA 발급(`issue`)|
-|`tools/cp-rootcrt.sh`|Root CA 인증서를 mewly 리소스로 복사|
 |`tools/setup-jetson.sh`|갓 플래시한 보드의 준비: L4T 릴리스 확인, `nvidia-jetpack`·Docker 설치, `docker` 그룹 추가|
+|`tools/up.sh`|`.env` 생성, 데이터 디렉터리 생성, 기동, preflight·인증서 요약|
+|`docker/preflight/preflight.sh`|기동 시 호스트 코덱 경로 검증|
 |`docker/gateway/issue-cert.sh`|보드에서 서버 인증서 발급과 체인 생성. CA 파일이 없으면 자체 CA 생성|
 |`docker/gateway/entrypoint.sh`|기동 시 발급·갱신 필요 판정|
 |`docker/gateway/Caddyfile`|`cert.pem`·`key.pem`으로 TLS 종단|
-|`.gitignore`|`provision/`·`data/` 제외|
+|babycat-ca 저장소|Root CA·Device CA의 발급 도구, 발급 대장, 키 보관 규칙|

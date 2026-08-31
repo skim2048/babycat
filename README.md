@@ -76,18 +76,10 @@ Separately, a video source that provides an H.264 RTSP stream is required — an
 Babycat is distributed as source; images are built on the target device.
 
 ```bash
-# 1. Configure the environment
-cp .env.example .env
-# Edit .env — required: HOST_IP, DEFAULT_USER, DEFAULT_PASS, VLM_MODELS
-
-# 2. Create the data directories as your own user (otherwise the container
-#    runtime creates them owned by root)
-mkdir -p data/db/router data/db/recorder data/models data/state/analyzer data/state/recorder data/clips data/caddy
-
-# 3. Build and start
-docker compose build
-docker compose up -d
+tools/up.sh
 ```
+
+The script asks for `HOST_IP` and the initial account when `.env` does not exist yet (every other knob keeps its [`.env.example`](.env.example) default), creates the data directories owned by your user (the container runtime would otherwise create them owned by root), builds, starts, and prints the preflight verdict and the certificate issuer. Re-running it later is the normal way to restart the stack; with `.env` present it goes straight to `docker compose up -d --build`.
 
 On the first boot the analyzer downloads and pre-compiles the candidate VLM models (minutes to tens of minutes each; the results are cached under `data/models` for later boots), and an initial admin account is created. The first login response carries `must_change_password: true`; the reference clients turn this into a forced password change.
 
@@ -97,7 +89,7 @@ Every operator-tunable variable is documented in [`.env.example`](.env.example);
 
 The Request router exposes a single HTTPS API on port `8000` (TLS is terminated by the gateway). It covers authentication, video-source profile and PTZ (pan/tilt), client data persistence, the streaming and analysis lifecycle, clips, event and inference history with a summary aggregation, and a merged monitoring stream (SSE). The route table is in the SRS ([`docs/srs/4_external_interface_requirements.md`](docs/srs/4_external_interface_requirements.md)) and the request/response conventions in the SDD ([`docs/sdd/6_interface_design.md`](docs/sdd/6_interface_design.md)).
 
-The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env` and signs with the CA found at `data/caddy/caddy/pki/authorities/local/` — the per-device CA placed there at provisioning (`tools/provision-device.sh`), or a self-created CA when none is present. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
+The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env` and signs with the CA found at `data/caddy/caddy/pki/authorities/local/` — the per-device CA placed there at provisioning (the private `babycat-ca` repository), or a self-created CA when none is present. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
 Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, provisioning steps, and key custody are documented in [`docs/ops/pki.md`](docs/ops/pki.md).
 
