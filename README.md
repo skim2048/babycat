@@ -91,7 +91,7 @@ The Request router exposes a single HTTPS API on port `8000` (TLS is terminated 
 
 The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env` and signs with the CA found at `data/caddy/caddy/pki/authorities/local/` — the per-device CA placed there at provisioning (the separate `babycat-ca` repository), or a self-created CA when none is present. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
-Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, provisioning steps, and key custody are documented in [`docs/ops/pki.md`](docs/ops/pki.md).
+Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, the per-board issuance and shipping procedure, browser trust registration, and key custody are documented in the separate `babycat-ca` repository.
 
 ## Client
 

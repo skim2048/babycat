@@ -46,7 +46,7 @@ if [ -f "$DEVICE_CA" ]; then
   echo "== signing CA: $(openssl x509 -in "$DEVICE_CA" -noout -subject 2>/dev/null || echo 'unreadable (root-owned; issued at first boot)')"
 else
   echo "== signing CA: none installed — a development CA will be created at first boot"
-  echo "   (for a product board, install the Device CA first: see docs/ops/pki.md)"
+  echo "   (for a product board, install the Device CA first: see the babycat-ca repository)"
 fi
 
 # 4. Up

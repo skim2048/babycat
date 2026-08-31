@@ -4,7 +4,7 @@
 # not work. Issuance, renewal and adding connection hosts are performed by issue-cert.sh.
 # cert.pem is the chain of the leaf and the signing CA (data/caddy/caddy/pki/authorities/local/root.crt),
 # and clients trust the manufacturer Root CA (product) or that self-made CA (development)
-# — docs/ops/pki.md.
+# — see the babycat-ca repository.
 {
 	auto_https off
 }

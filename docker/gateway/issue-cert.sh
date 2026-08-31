@@ -2,7 +2,7 @@
 # Gateway server certificate issuance. Normally the gateway calls this itself at start
 # (entrypoint.sh), so the operator never runs it directly.
 #
-# Operating model (docs/ops/pki.md): the signing CA is whatever sits at $PKI/root.{crt,key}.
+# Operating model (see the babycat-ca repository): the signing CA is whatever sits at $PKI/root.{crt,key}.
 # - Product device: the Device CA installed at shipment (issued by the manufacturer Root CA) is there.
 #   Clients trust only the single manufacturer Root CA, so adding devices needs no reconfiguration.
 # - Development device: if the files are absent, a self-made root CA is created and its root.crt
