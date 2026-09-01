@@ -38,10 +38,10 @@ HLS는 `Client app → router → streamer`의 중계 연쇄이고, WebRTC는 �
 
 파이프라인 상태(`pipeline_state`)와 VLM 상태(`vlm_state`)의 두 축으로 표현하며, 값의 어휘는 §6.4 (4)의 표와 같다.
 
-- **idle** — 파이프라인이 없는 상태. 상세(`pipeline_state_detail`)가 `waiting_for_vlm`이면 모델 적재 대기, `waiting_for_start`이면 시작 요청 대기(기동 직후 또는 정지 후)다. 설정 저장(`/prompt`·`/camera`)은 이 상태를 바꾸지 않는다(`FR-025`).
+- **idle** — 파이프라인이 없는 상태. 상세(`pipeline_state_detail`)가 `waiting_for_vlm`이면 모델 적재 대기, `waiting_for_start`이면 시작 요청 대기(기동 직후 또는 정지 후)다. `start_failed: <원인>`이면 파이프라인 생성이 실패하여 없는 상태이며, 활성 플래그는 유지되어 시작 재요청이 수복 수단이다(§7.5). 설정 저장(`/prompt`·`/camera`)은 이 상태를 바꾸지 않는다(`FR-025`).
 - **starting** — 시작 요청(상세 `analysis_start`) 또는 기동 시 복원(상세 `startup`, `FR-014`)으로 파이프라인을 만들고 첫 프레임을 기다리는 상태. 스트림 접속 재시도(`FR-046`)는 이 상태와 아래 **stalled**·**restarting**의 반복으로 나타난다.
 - **streaming** — 프레임이 흐르고 추론이 도는 상태.
-- **stalled** — 워치독이 프레임 정지를 감지한 상태(상세 `watchdog_timeout`). 곧 **restarting**으로 이어진다.
+- **stalled** — 워치독이 프레임 정지를 감지한 상태(상세 `watchdog_timeout`). 곧 **restarting**으로 이어지며, 재시작의 파이프라인 생성이 실패하면 **idle**(상세 `start_failed`)로 간다.
 - **restarting** — 가동 중이던 파이프라인을 대체하는 상태(상세 `analysis_start` 또는 `watchdog_timeout`). 재시작 횟수(`pipeline_restart_count`)는 이 전이만 계수한다.
 - **stopped** — 프로세스 종료 중(상세 `shutdown`).
 - VLM 상태 **switching** — 모델 전환 중(`FR-032`). 자식 프로세스 교체 동안 분석이 중단되며, 완료 후 이전 상태로 복귀한다.
@@ -62,6 +62,7 @@ HLS는 `Client app → router → streamer`의 중계 연쇄이고, WebRTC는 �
 |실패|감지|대응|
 |---|---|---|
 |재배포 스트림 끊김|`analyzer` 파이프라인 워치독 / `recorder` 세그먼트 생성 중단(기동 10초 유예 뒤 5초 무생성)|파이프라인·기록기를 내부 재시작하고 접속을 재시도(`FR-046`)|
+|파이프라인 생성 불가(호스트의 GStreamer 요소 부재 등)|기동 복원·워치독·시작 요청의 파이프라인 생성 예외|idle(`start_failed: <원인>`)로 노출하고 프로세스는 유지한다. 호스트 조치 후 시작 재요청이 수복 수단이다|
 |`streamer` 컨테이너 재시작으로 소스 설정 소실|동반 프로세스의 기동 절차|스트리밍이 활성이었다면 적용 프로필을 스스로 재적용(`FR-015`)|
 |VLM 추론 정지·실패|추론 호출의 타임아웃·오류와 연속 실패 계수|다음 추론에서 자식 프로세스 재기동, 연속 3회 실패 시 프로세스 종료 → 컨테이너 재시작|
 |이벤트 통지 실패|`analyzer`의 호출 오류|기록 포기(재전송 없음, §6.3). 지속 상황은 다음 추론이 재판정|

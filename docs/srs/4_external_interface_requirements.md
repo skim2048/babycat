@@ -94,7 +94,7 @@
 
 |포트|프로토콜|컴포넌트|용도|
 |---|---|---|---|
-|8000/tcp|HTTPS|`gateway` → ***Request router***|단일 외부 진입점. TLS 종단 게이트웨이가 제어(`IF-001`) 및 HLS·WebRTC 시그널링 중계(`IF-003`)를 ***Request router***로 전달.|
+|8000/tcp|HTTPS|TLS 종단 게이트웨이 → ***Request router***|단일 외부 진입점. 배포 계층의 TLS 종단 게이트웨이(`NFR-016`)가 제어(`IF-001`) 및 HLS·WebRTC 시그널링 중계(`IF-003`)를 ***Request router***로 전달.|
 |8189/udp|UDP|***Video streamer***|WebRTC 미디어/ICE(`IF-003`). 프로토콜 자체의 DTLS-SRTP로 암호화.|
 
 - 위 포트는 운영 네트워크의 방화벽에서 개방되어야 한다.
