@@ -7,13 +7,12 @@
 |서비스|베이스|하드웨어 접근|볼륨|포트 공개|
 |---|---|---|---|---|
 |`gateway`|caddy 공식 이미지(`caddy:2`) + openssl|없음|`docker/gateway/Caddyfile`(ro)·`data/caddy`(Device CA·서빙 인증서)|8000/tcp (HTTPS)|
-|`preflight`|`recorder` 이미지 재사용, 엔트리포인트만 교체|호스트 `/dev`·`/tmp`·`/etc/nv_tegra_release`·GStreamer 플러그인·tegra 라이브러리(모두 ro)|`docker/preflight/preflight.sh`(ro)|없음|
 |`router`|python 3.11 slim + FastAPI|없음|`data/db/router`|없음|
 |`streamer`|python 3.11 slim + MediaMTX 1.20.1 정적 바이너리(다단계 복사) + FastAPI|없음|`config`|8189/udp|
 |`analyzer`|NanoLLM(jetson-containers)|NVDEC·GPU 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/models`·`data/state/analyzer`|없음|
 |`recorder`|ubuntu 22.04 + GStreamer + FastAPI + ffmpeg|NVDEC·NVENC 장치, 호스트 GStreamer 플러그인·tegra 라이브러리(ro), NvSciIPC 소켓, host IPC|`data/clips`·`data/db/recorder`·`data/state/recorder`, tmpfs(`/run/babycat-segments`)|없음|
 
-`preflight`는 기동 시 한 번 실행되고 종료하는 사전 검사다(`restart: "no"`). `analyzer`와 `recorder`는 `depends_on`의 `service_completed_successfully` 조건으로 그 성공을 기다리므로, 호스트에 L4T R36.4.x·장치 노드·NvSciIPC 소켓·tegra 라이브러리·NVIDIA GStreamer 요소 중 하나라도 없으면 두 서비스는 기동하지 않고 원인은 `preflight`의 로그에 남는다. 검사 항목은 2026-08-26~27의 실제 장애(`nvidia-l4t-gstreamer` 미설치, JetPack 6.2.2)에서 도출하였다. `analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다. 호스트의 `data/` 하위 디렉터리는 기동 전에 운영자 소유로 만들어 둔다(`README.md`) — 없으면 컨테이너 런타임이 root 소유로 만든다. 소스 코드는 볼륨으로 마운트하지 않으며 이미지에만 담는다(§8.2).
+`analyzer`와 `recorder`의 하드웨어 접근 항목이 같은 것은 우연이 아니다 — 둘 다 `nvv4l2decoder` 경로를 쓰며, `recorder`는 `nvv4l2h264enc`를 위해 NVENC 장치가 더해진다(§2.4 (3)). 데이터 볼륨은 §5.3의 소유 구획대로 서비스별로 좁혀 마운트하여, 소유하지 않은 데이터가 컨테이너 안에서 보이지 않게 한다. 호스트의 `data/` 하위 디렉터리는 기동 전에 운영자 소유로 만들어 둔다(`README.md`) — 없으면 컨테이너 런타임이 root 소유로 만든다. 소스 코드는 볼륨으로 마운트하지 않으며 이미지에만 담는다(§8.2).
 
 ## 8.2 이미지 빌드 (Image Build)
 
@@ -46,7 +45,7 @@
 |`CLIP_MIN_FREE_MB`·`CLIP_TARGET_FREE_MB`|`recorder`|선택|자동 정리 발동·회복 여유 수위(SRS `FR-033`)|
 |`RECORDER_ENCODE_BITRATE`·`RECORDER_ENCODE_FPS`|`recorder`|선택|세그먼트 재인코딩 비트레이트와 소스 프레임레이트 가정(§4.4)|
 
-TLS(§2.4 (8))의 서빙 인증서는 `gateway`가 기동 시 스스로 확보한다 — 기동 스크립트가 `HOST_IP`·`TLS_EXTRA_HOSTS`·localhost를 SAN 목록으로 삼아, 인증서가 없거나 그 목록이 바뀌었거나 만료 30일 이내이면 `issue-cert.sh`를 호출해 발급하고 `data/caddy/site/`에 둔다. 운영자의 발급 절차는 없으며, 설치는 `.env` 작성과 `docker compose up -d --build`로 끝난다. 호스트 준비는 `tools/setup-jetson.sh`(L4T 릴리스 확인, JetPack 구성 요소와 Docker 설치)와 기동 시의 `preflight`(검증)로 나뉘며, `.env` 작성과 데이터 디렉터리 생성은 `tools/up.sh`가 대신할 수 있다.
+TLS(§2.4 (8))의 서빙 인증서는 `gateway`가 기동 시 스스로 확보한다 — 기동 스크립트가 `HOST_IP`·`TLS_EXTRA_HOSTS`·localhost를 SAN 목록으로 삼아, 인증서가 없거나 그 목록이 바뀌었거나 만료 30일 이내이면 `issue-cert.sh`를 호출해 발급하고 `data/caddy/site/`에 둔다. 운영자의 발급 절차는 없으며, 설치는 `.env` 작성과 `docker compose up -d --build`로 끝난다. 호스트와 인스턴스의 준비는 `tools/setup-babycat.sh`(L4T 릴리스 확인, JetPack 구성 요소와 Docker 설치, `.env` 작성, 데이터 디렉터리 생성)가 수행하고, `tools/check-babycat.sh`가 구동 조건(호스트 코덱 경로, Docker 접근, `.env` 필수값)을 변경 없이 검사한다. 검사 항목은 2026-08-26~27의 실제 장애(`nvidia-l4t-gstreamer` 미설치, JetPack 6.2.2)에서 도출하였다.
 
 CA는 제조사 Root CA → 기기별 Device CA → 서빙 인증서의 세 단계다. 보호자 한 명이 기기 여러 대를 운용해도 클라이언트가 CA 하나(Root)만 신뢰하면 되도록 하기 위함이며, 기기 사이에 파일을 옮기는 절차를 두지 않는다. Root CA의 개인키는 저장소 밖(개발 PC)에 보관하고, 출고 시 별도 저장소(babycat-ca)의 발급 도구가 시리얼별 Device CA를 발급하여 기기의 `data/caddy/caddy/pki/authorities/local/`에 둔다. 발급 스크립트는 그 자리의 CA로 서명하므로 제품 기기와 개발 기기의 기동 절차는 같고, 파일이 없는 개발 기기만 자체 root CA를 생성한다. Device CA에는 사설 IPv4 대역·`localhost`·`.local`로 nameConstraints를 두어, 유출되어도 그 밖의 주소에 대한 인증서를 만들 수 없게 한다. `cert.pem`은 리프와 Device CA를 이어 붙인 체인이다 — 클라이언트는 Device CA를 모르기 때문이다. mewly는 Root CA를 리소스로 동봉하고 사용자 설치 CA도 신뢰하므로(network security config), 개발 기기의 자체 CA는 그 루트를 폰에 설치하면 접속된다. 절차와 키 보관 규칙은 babycat-ca 저장소에 있다.
 

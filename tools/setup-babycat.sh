@@ -1,7 +1,8 @@
 #!/bin/sh
-# Prepare a freshly flashed Jetson board for Babycat. Run once, on the board:
+# Prepare a freshly flashed Jetson board and this Babycat checkout. Run once,
+# on the board, from the cloned repository:
 #
-#   sudo tools/setup-jetson.sh
+#   sudo tools/setup-babycat.sh
 #
 # Steps, in this order (the order matters: nvidia-jetpack pulls in
 # nvidia-container, which removes an already installed docker-ce, so Docker
@@ -11,13 +12,18 @@
 #      GStreamer plugins, container toolkit, and the rest.
 #   3. Install Docker Engine with the Compose plugin, register the nvidia
 #      runtime, and add the invoking user to the docker group.
-# Every step is skipped when already done, so re-running is safe.
-# Device nodes, the NvSciIPC socket, and plugin loading are verified later by
-# the preflight service on every `docker compose up`.
+#   4. Create .env interactively when it does not exist (HOST_IP and the
+#      initial account; everything else keeps the .env.example defaults).
+#   5. Create the data directories owned by the invoking user (Docker would
+#      otherwise create them owned by root).
+# Every step is skipped when already done, so re-running is safe. Starting
+# the stack stays the operator's own step: docker compose up -d.
+# tools/check-babycat.sh verifies the result without changing anything.
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo: sudo $0" >&2; exit 1; }
 TARGET_USER="${SUDO_USER:-$(logname)}"
+cd "$(dirname "$0")/.."
 
 step() { echo; echo "== $1"; }
 
@@ -33,11 +39,13 @@ esac
 
 # 2. JetPack components
 step "JetPack components (nvidia-jetpack)"
+installed=0
 if dpkg -s nvidia-jetpack >/dev/null 2>&1; then
   echo "already installed: $(dpkg -s nvidia-jetpack | awk '/^Version/{print $2}')"
 else
   apt-get update
   DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-jetpack
+  installed=1
 fi
 
 # 3. Docker Engine
@@ -57,6 +65,7 @@ if dpkg -s docker-ce >/dev/null 2>&1 && dpkg -s containerd.io >/dev/null 2>&1; t
 else
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  installed=1
 fi
 
 # nvidia runtime — nvidia-container-toolkit was installed by nvidia-jetpack
@@ -73,6 +82,44 @@ else
   echo "added $TARGET_USER to the docker group (takes effect after re-login)"
 fi
 
+# 4. .env
+step ".env"
+if [ -f .env ]; then
+  echo "already present — left untouched"
+else
+  echo "creating one (see .env.example for every knob)"
+  echo "addresses of this board: $(hostname -I 2>/dev/null || echo unknown)"
+  printf "HOST_IP (reachable address; comma-separated list allowed): "
+  read -r host_ip < /dev/tty
+  [ -n "$host_ip" ] || { echo "HOST_IP is required" >&2; exit 1; }
+  printf "DEFAULT_USER (initial admin account name): "
+  read -r default_user < /dev/tty
+  [ -n "$default_user" ] || { echo "DEFAULT_USER is required" >&2; exit 1; }
+  printf "DEFAULT_PASS (initial password; a change is forced on first login): "
+  read -r default_pass < /dev/tty
+  [ -n "$default_pass" ] || { echo "DEFAULT_PASS is required" >&2; exit 1; }
+  sed -e "s|^HOST_IP=.*|HOST_IP=$host_ip|" \
+      -e "s|^DEFAULT_USER=.*|DEFAULT_USER=$default_user|" \
+      -e "s|^DEFAULT_PASS=.*|DEFAULT_PASS=$default_pass|" \
+      .env.example > .env
+  chown "$TARGET_USER":"$TARGET_USER" .env
+  chmod 600 .env
+  echo ".env written"
+fi
+
+# 5. Data directories — owned by the invoking user, not root
+step "data directories"
+for d in data data/db data/db/router data/db/recorder data/models \
+         data/state data/state/analyzer data/state/recorder data/clips data/caddy; do
+  [ -d "$d" ] || { mkdir "$d"; chown "$TARGET_USER":"$TARGET_USER" "$d"; }
+done
+echo "ready"
+
 step "done"
-echo "reboot now: sudo reboot"
-echo "after the reboot, run docker compose up -d in the babycat directory; preflight verifies the remaining conditions."
+if [ "$installed" -eq 1 ]; then
+  echo "packages were installed — reboot first: sudo reboot"
+fi
+echo "for a product board, have the Device CA installed first — it is issued and"
+echo "copied from the dev PC (https://github.com/skim2048/babycat-ca); a"
+echo "development board just starts without one."
+echo "verify with tools/check-babycat.sh, then start with: docker compose up -d"

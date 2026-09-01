@@ -60,14 +60,7 @@ Babycat runs on an NVIDIA Jetson device. The prerequisites below build on one an
 
 Supported on JetPack 6.2.1 (L4T R36.4.x) only. JetPack 6.2.2 (L4T R36.5) is not supported — the hardware decoder path does not open inside the containers (confirmed 2026-08-27) — and neither is JetPack 7.x, which changes the GPU driver and device-node layout while the inference stack depends on the JetPack 6 CUDA generation. Check with `head -1 /etc/nv_tegra_release`; it must read `R36 (release), REVISION: 4.x`.
 
-**2. JetPack components, Docker Engine, and the NVIDIA Container Toolkit.** A bare flash ships without the NVIDIA GStreamer plugins (`nvv4l2decoder`, `nvv4l2h264enc`) and without Docker. Run the setup script once on the board and reboot:
-
-```bash
-sudo tools/setup-jetson.sh
-sudo reboot
-```
-
-It checks the L4T release, installs `nvidia-jetpack` (which brings the codec plugins and the container toolkit), then installs Docker Engine with the Compose plugin, registers the `nvidia` runtime, and adds you to the `docker` group. The order matters — `nvidia-jetpack` removes a previously installed `docker-ce` — so do not install Docker by hand first. Every later `docker compose up` runs a `preflight` container that verifies the L4T release, the codec device nodes, the NvSciIPC socket, the tegra libraries, and the GStreamer elements, and refuses to start the analyzer and recorder if anything is missing; `docker compose logs preflight` shows the verdict and the fix for each failed item.
+**2. JetPack components, Docker Engine, and the NVIDIA Container Toolkit.** A bare flash ships without the NVIDIA GStreamer plugins (`nvv4l2decoder`, `nvv4l2h264enc`) and without Docker. The setup script in Getting Started installs all of it; the order matters — `nvidia-jetpack` removes a previously installed `docker-ce` — so do not install Docker by hand first. `tools/check-babycat.sh` verifies the result (L4T release, codec device nodes, NvSciIPC socket, tegra libraries, GStreamer elements, Docker access) without changing anything, and prints the fix for each failed item.
 
 Separately, a video source that provides an H.264 RTSP stream is required — an IP camera, or a substitute source replaying recorded video.
 
@@ -76,10 +69,17 @@ Separately, a video source that provides an H.264 RTSP stream is required — an
 Babycat is distributed as source; images are built on the target device.
 
 ```bash
-tools/up.sh
+# 1. Prepare the board and this checkout (once; reboot if it installed packages)
+sudo tools/setup-babycat.sh
+
+# 2. Verify (optional but recommended; changes nothing)
+tools/check-babycat.sh
+
+# 3. Build and start
+docker compose up -d
 ```
 
-The script asks for `HOST_IP` and the initial account when `.env` does not exist yet (every other knob keeps its [`.env.example`](.env.example) default), creates the data directories owned by your user (the container runtime would otherwise create them owned by root), builds, starts, and prints the preflight verdict and the certificate issuer. Re-running it later is the normal way to restart the stack; with `.env` present it goes straight to `docker compose up -d --build`.
+The setup script installs the JetPack components and Docker in the order that works, asks for `HOST_IP` and the initial account when `.env` does not exist yet (every other knob keeps its [`.env.example`](.env.example) default), and creates the data directories owned by your user (the container runtime would otherwise create them owned by root). Re-running it is safe; every step skips itself when already done. Starting and restarting the stack is always your own `docker compose up -d`.
 
 On the first boot the analyzer downloads and pre-compiles the candidate VLM models (minutes to tens of minutes each; the results are cached under `data/models` for later boots), and an initial admin account is created. The first login response carries `must_change_password: true`; the reference clients turn this into a forced password change.
 
@@ -91,7 +91,7 @@ The Request router exposes a single HTTPS API on port `8000` (TLS is terminated 
 
 The gateway issues its TLS certificate at startup: it takes the addresses from `HOST_IP` (plus `TLS_EXTRA_HOSTS` when set) in `.env` and signs with the CA found at `data/caddy/caddy/pki/authorities/local/` — the per-device CA placed there at provisioning (the separate `babycat-ca` repository), or a self-created CA when none is present. A changed address or an approaching expiry is picked up on the next start, so nothing has to be run by hand.
 
-Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, the per-board issuance and shipping procedure, browser trust registration, and key custody are documented in the separate `babycat-ca` repository.
+Production clients trust the manufacturer root only, so nothing is registered per device. A development device with a self-created CA needs its `root.crt` registered in each client's trust store once. The CA hierarchy, the per-board issuance and shipping procedure, browser trust registration, and key custody are documented in the separate [babycat-ca](https://github.com/skim2048/babycat-ca) repository.
 
 ## Client
 
