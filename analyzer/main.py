@@ -453,6 +453,7 @@ def make_frame_callback(ring: RingBuffer, infer_queue: queue.Queue):
 
 _pipeline = None
 _pipeline_lock = threading.Lock()
+_start_lock = threading.Lock()
 _pipeline_started_at: float = 0.0
 _last_frame_time: float = 0.0
 
@@ -470,44 +471,53 @@ def start_pipeline(ring: RingBuffer, infer_q: queue.Queue, reason: str = "startu
     """(Re)start the GStreamer pipeline. Stops and replaces any existing one;
     the state is reported as a restart only when a pipeline was running. @claude"""
     global _pipeline, _pipeline_started_at, _last_frame_time
-    with _pipeline_lock:
-        restart = _pipeline is not None
-        # @claude Stop wins: /stop drops the active flag before tearing down,
-        # @claude so a watchdog restart or a stale start callback that lost the
-        # @claude race must not revive the pipeline (FR-049, FR-051). Only a
-        # @claude new start request — which sets the flag first — passes here.
-        if not app_state.is_analysis_active():
-            log.info("Pipeline start skipped (%s): analysis is not active", reason)
-            return
-        if _pipeline is not None:
-            _pipeline.set_state(Gst.State.NULL)
-            log.info("Pipeline stopped (restart)")
+    # @claude _start_lock serializes whole (re)starts against each other;
+    # @claude _pipeline_lock only guards the reference and is never held
+    # @claude across set_state(NULL), which can block for a long time on a
+    # @claude broken pipeline — holding it there starved /stop into the
+    # @claude router's timeout (observed 2026-08-27).
+    with _start_lock:
+        with _pipeline_lock:
+            old = _pipeline
             _pipeline = None
+        restart = old is not None
+        if old is not None:
+            old.set_state(Gst.State.NULL)
+            log.info("Pipeline stopped (restart)")
 
-        # @claude Inference sees only frames this pipeline extracted (SDD §7.2):
-        # @claude frames left from a previous pipeline — an older moment, or an
-        # @claude older camera after a profile switch — must never feed a
-        # @claude judgment. Clearing at start covers stop/start, watchdog
-        # @claude restarts, and profile-switch restarts with one rule.
-        ring.clear()
-        try:
-            infer_q.get_nowait()
-        except queue.Empty:
-            pass
+        with _pipeline_lock:
+            # @claude Stop wins: /stop drops the active flag before tearing down,
+            # @claude so a watchdog restart or a stale start callback that lost the
+            # @claude race must not revive the pipeline (FR-049, FR-051). Only a
+            # @claude new start request — which sets the flag first — passes here.
+            if not app_state.is_analysis_active():
+                log.info("Pipeline start skipped (%s): analysis is not active", reason)
+                return
 
-        pipeline_str = build_pipeline_str(MEDIAMTX_URL, TARGET_FPS)
-        log.info("Pipeline: %s", pipeline_str)
+            # @claude Inference sees only frames this pipeline extracted (SDD §7.2):
+            # @claude frames left from a previous pipeline — an older moment, or an
+            # @claude older camera after a profile switch — must never feed a
+            # @claude judgment. Clearing at start covers stop/start, watchdog
+            # @claude restarts, and profile-switch restarts with one rule.
+            ring.clear()
+            try:
+                infer_q.get_nowait()
+            except queue.Empty:
+                pass
 
-        _pipeline = Gst.parse_launch(pipeline_str)
-        sink = _pipeline.get_by_name('sink')
-        sink.connect('new-sample', make_frame_callback(ring, infer_q))
+            pipeline_str = build_pipeline_str(MEDIAMTX_URL, TARGET_FPS)
+            log.info("Pipeline: %s", pipeline_str)
 
-        _pipeline.set_state(Gst.State.PLAYING)
-        now = time.time()
-        _pipeline_started_at = now
-        _last_frame_time = now
-        app_state.mark_pipeline_starting(reason, restart=restart, started_at=now)
-        log.info("Pipeline PLAYING")
+            _pipeline = Gst.parse_launch(pipeline_str)
+            sink = _pipeline.get_by_name('sink')
+            sink.connect('new-sample', make_frame_callback(ring, infer_q))
+
+            _pipeline.set_state(Gst.State.PLAYING)
+            now = time.time()
+            _pipeline_started_at = now
+            _last_frame_time = now
+            app_state.mark_pipeline_starting(reason, restart=restart, started_at=now)
+            log.info("Pipeline PLAYING")
 
 
 def start_analysis() -> bool:
@@ -528,10 +538,13 @@ def stop_analysis() -> None:
         # @claude in start_pipeline.
         if app_state.is_analysis_active():
             return
-        if _pipeline is not None:
-            _pipeline.set_state(Gst.State.NULL)
-            _pipeline = None
-            log.info("Pipeline stopped (analysis_stop)")
+        old = _pipeline
+        _pipeline = None
+    # @claude Tear down outside the lock: NULL on a broken pipeline can block,
+    # @claude and nothing else references the detached object.
+    if old is not None:
+        old.set_state(Gst.State.NULL)
+        log.info("Pipeline stopped (analysis_stop)")
     _pipeline_lifecycle.mark_waiting_for_start()
 
 
@@ -572,7 +585,14 @@ def watchdog_worker() -> None:
             )
             if last <= started:
                 timeout = min(timeout * 2, WATCHDOG_TIMEOUT_MAX)
-            _pipeline_lifecycle.handle_watchdog_timeout(start_pipeline)
+            try:
+                _pipeline_lifecycle.handle_watchdog_timeout(start_pipeline)
+            except Exception as e:
+                # @claude Same protection as the startup path: an unbuildable
+                # @claude pipeline surfaces as idle/start_failed, not a dead
+                # @claude watchdog or a dead process.
+                log.error("watchdog pipeline restart failed: %s", e)
+                app_state.mark_pipeline_idle(f"start_failed: {str(e)[:160]}")
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -670,8 +690,16 @@ def main() -> None:
 
     # @claude Analysis starts only on the explicit request (FR-025), or resumes
     # @claude when the persisted state says it was running (FR-014).
-    if not _pipeline_lifecycle.ensure_startup_started(start_pipeline):
-        log.info("Pipeline deferred — waiting for the analysis start request")
+    # @claude A pipeline that cannot be built (e.g. a missing GStreamer element)
+    # @claude must not kill the process — that put the analyzer into a
+    # @claude restart-and-reload loop (observed 2026-08-27). The active flag
+    # @claude stays set, so a later /start retries after the host is fixed.
+    try:
+        if not _pipeline_lifecycle.ensure_startup_started(start_pipeline):
+            log.info("Pipeline deferred — waiting for the analysis start request")
+    except Exception as e:
+        log.error("startup pipeline start failed: %s", e)
+        app_state.mark_pipeline_idle(f"start_failed: {str(e)[:160]}")
 
     loop = GLib.MainLoop()
     try:
